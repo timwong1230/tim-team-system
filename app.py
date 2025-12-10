@@ -22,7 +22,6 @@ def init_db():
     run_query("""CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, date TEXT, type TEXT, points INTEGER, note TEXT)""")
     
     if not run_query("SELECT * FROM users", fetch=True):
-        # 名單定義 (緊湊寫法防止斷行)
         users = [
             ('Admin', 'admin123', 'Leader', 'Boss'),
             ('Tim', '1234', 'Member', 'Tim Team'),
@@ -32,7 +31,6 @@ def init_db():
             ('Wilson', '1234', 'Member', 'Tim Team')
         ]
         for u in users:
-            # 網址分開寫，防止錯誤
             base = "https://ui-avatars.com/api/?name="
             url = f"{base}{u[0]}&background=random"
             run_query("INSERT INTO users VALUES (?,?,?,?,?,?)", (u[0], u[1], u[2], u[3], 0, url))
@@ -103,76 +101,4 @@ else:
     st.sidebar.divider()
     menu = st.sidebar.radio("Menu", ["📊 全年 Dashboard", "📅 每月龍虎榜", "🤝 招募龍虎榜", "📝 活動打卡", "👤 設定"])
     st.sidebar.divider()
-    if st.sidebar.button("Logout"):
-        st.session_state['logged_in'] = False
-        st.rerun()
-
-    if menu == "📊 全年 Dashboard":
-        st.title("📊 2026 全年總覽")
-        df = get_leaderboard_data("全年總計")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("💰 全年總 FYC", f"${df['fyc'].sum():,}")
-        c2.metric("🎯 總活動分", int(df['Total_Score'].sum()))
-        c3.metric("🤝 總 Recruit", int(df['recruit'].sum()))
-        
-        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
-                     column_config={"avatar": st.column_config.ImageColumn("頭像"), "fyc": st.column_config.ProgressColumn("MDRT", format="$%d", max_value=800000)}, use_container_width=True)
-
-        if st.session_state['role'] == 'Leader':
-            st.divider()
-            st.subheader("⚙️ Admin 入數")
-            with st.form("admin"):
-                c1, c2 = st.columns(2)
-                tgt = c1.selectbox("同事", df['username'].tolist())
-                mth = c2.selectbox("月份", ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"])
-                c3, c4 = st.columns(2)
-                amt = c3.number_input("該月 FYC", step=1000)
-                rec = c4.number_input("總 Recruit", step=1)
-                if st.form_submit_button("更新"):
-                    update_monthly_fyc(tgt, mth, amt)
-                    update_recruit(tgt, rec)
-                    st.success("Updated!")
-                    st.rerun()
-
-    elif menu == "📅 每月龍虎榜":
-        st.title("📅 每月業績")
-        month = st.selectbox("月份", ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"])
-        df = get_leaderboard_data(month)
-        if df['fyc'].sum() > 0:
-            top = df.sort_values(by='fyc', ascending=False).iloc[0]
-            if top['fyc'] > 0:
-                st.balloons()
-                st.success(f"👑 Top Sales: {top['username']} (${top['fyc']:,})")
-        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
-                     column_config={"avatar": st.column_config.ImageColumn("頭像"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}, use_container_width=True)
-
-    elif menu == "🤝 招募龍虎榜":
-        st.title("🤝 招募龍虎榜")
-        df = get_leaderboard_data("全年總計")
-        st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
-                     column_config={"avatar": st.column_config.ImageColumn("頭像"), "recruit": st.column_config.NumberColumn("Recruit", format="%d")}, use_container_width=True)
-
-    elif menu == "📝 活動打卡":
-        st.header("📝 打卡")
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            with st.form("act"):
-                d = st.date_input("日期")
-                t = st.selectbox("種類", ["Meeting (1分)", "Insurance Talk (2分)", "Closing (5分)"])
-                n = st.text_area("備註")
-                if st.form_submit_button("提交"):
-                    add_activity(st.session_state['user'], d, t, n)
-                    st.success("Saved!")
-        with c2:
-            st.dataframe(get_user_activities(st.session_state['user']), use_container_width=True, hide_index=True)
-
-    elif menu == "👤 設定":
-        st.title("設定")
-        f = st.file_uploader("Upload Image", type=['jpg', 'png'])
-        if f and st.button("更換"):
-            code = process_image_upload(f)
-            if code:
-                update_avatar(st.session_state['user'], code)
-                st.session_state['avatar'] = code
-                st.success("Success!")
-                st.rerun()
+    if st.sidebar.button("
