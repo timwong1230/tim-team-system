@@ -8,7 +8,7 @@ import base64
 st.set_page_config(page_title="TIM TEAM Workspace", page_icon="🦁", layout="wide")
 DB_FILE = 'tim_team.db'
 
-# --- 2. CSS ---
+# --- 2. CSS Styling ---
 st.markdown("""
 <style>
     .stApp {background-color: #F8F9FA;}
@@ -35,8 +35,4 @@ def run_query(query, params=(), fetch=False):
             c = conn.cursor()
             c.execute(query, params)
             if fetch: return c.fetchall()
-            conn.commit()
-    except: return []
-
-def init_db():
-    # 使用三引號防止斷行
+            conn.commit
