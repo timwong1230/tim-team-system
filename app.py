@@ -19,7 +19,6 @@ def run_query(query, params=(), fetch=False):
     except: return []
 
 def init_db():
-    # Use triple quotes for multi-line SQL safety
     run_query("""CREATE TABLE IF NOT EXISTS users 
                  (username TEXT PRIMARY KEY, password TEXT, role TEXT, team TEXT, recruit INTEGER, avatar TEXT)""")
     run_query("""CREATE TABLE IF NOT EXISTS monthly_fyc 
@@ -27,7 +26,6 @@ def init_db():
     run_query("""CREATE TABLE IF NOT EXISTS activities 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, date TEXT, type TEXT, points INTEGER, note TEXT)""")
     
-    # Default Data
     if not run_query("SELECT * FROM users", fetch=True):
         users = [
             ('Admin', 'admin123', 'Leader', 'Boss'),
@@ -46,8 +44,7 @@ init_db()
 
 # --- Actions ---
 def login_user(username, password):
-    sql = 'SELECT * FROM users WHERE username =? AND password = ?'
-    return run_query(sql, (username, password), fetch=True)
+    return run_query('SELECT * FROM users WHERE username =? AND password = ?', (username, password), fetch=True)
 
 def update_avatar(username, img):
     run_query("UPDATE users SET avatar = ? WHERE username = ?", (img, username))
@@ -56,29 +53,41 @@ def add_activity(username, date, act_type, note):
     pts = 1
     if "Insurance" in act_type: pts = 2
     elif "Closing" in act_type: pts = 5
-    sql = "INSERT INTO activities (username, date, type, points, note) VALUES (?, ?, ?, ?, ?)"
-    run_query(sql, (username, date, act_type, pts, note))
+    run_query("INSERT INTO activities (username, date, type, points, note) VALUES (?, ?, ?, ?, ?)", (username, date, act_type, pts, note))
 
 def update_monthly_fyc(username, month, amount):
-    sql_check = "SELECT id FROM monthly_fyc WHERE username=? AND month=?"
-    exist = run_query(sql_check, (username, month), fetch=True)
-    if exist: 
-        run_query("UPDATE monthly_fyc SET amount=? WHERE id=?", (amount, exist[0][0]))
-    else: 
-        run_query("INSERT INTO monthly_fyc (username, month, amount) VALUES (?,?,?)", (username, month, amount))
+    exist = run_query("SELECT id FROM monthly_fyc WHERE username=? AND month=?", (username, month), fetch=True)
+    if exist: run_query("UPDATE monthly_fyc SET amount=? WHERE id=?", (amount, exist[0][0]))
+    else: run_query("INSERT INTO monthly_fyc (username, month, amount) VALUES (?,?,?)", (username, month, amount))
 
 def update_recruit(username, amount):
     run_query("UPDATE users SET recruit=? WHERE username=?", (amount, username))
 
+# --- New Admin Functions ---
+def get_all_activities():
+    with sqlite3.connect(DB_FILE) as conn:
+        return pd.read_sql_query("SELECT id, username, date, type, points, note FROM activities ORDER BY date DESC", conn)
+
+def delete_activity(act_id):
+    run_query("DELETE FROM activities WHERE id=?", (act_id,))
+
+def update_activity(act_id, date, act_type, note):
+    pts = 1
+    if "Insurance" in act_type: pts = 2
+    elif "Closing" in act_type: pts = 5
+    run_query("UPDATE activities SET date=?, type=?, points=?, note=? WHERE id=?", (date, act_type, pts, note, act_id))
+
+def get_activity_by_id(act_id):
+    return run_query("SELECT * FROM activities WHERE id=?", (act_id,), fetch=True)
+
+# --- Data Fetching ---
 def get_leaderboard_data(selected_month=None):
     with sqlite3.connect(DB_FILE) as conn:
         df_users = pd.read_sql_query("SELECT username, team, recruit, avatar FROM users WHERE role='Member'", conn)
-        
         if selected_month == "全年總計":
             sql_fyc = "SELECT username, SUM(amount) as fyc FROM monthly_fyc GROUP BY username"
         else:
             sql_fyc = f"SELECT username, amount as fyc FROM monthly_fyc WHERE month='{selected_month}'"
-        
         df_fyc = pd.read_sql_query(sql_fyc, conn)
         df_act = pd.read_sql_query("SELECT username, SUM(points) as Total_Score FROM activities GROUP BY username", conn)
     
@@ -88,8 +97,7 @@ def get_leaderboard_data(selected_month=None):
 
 def get_user_activities(username):
     with sqlite3.connect(DB_FILE) as conn:
-        sql = f"SELECT date, type, points, note FROM activities WHERE username='{username}' ORDER BY date DESC"
-        return pd.read_sql_query(sql, conn)
+        return pd.read_sql_query(f"SELECT date, type, points, note FROM activities WHERE username='{username}' ORDER BY date DESC", conn)
 
 def process_image_upload(file):
     if file:
@@ -115,21 +123,19 @@ if not st.session_state['logged_in']:
             st.rerun()
         else: st.sidebar.error("Error")
 
-# --- Main App View ---
+# --- Main App ---
 else:
     st.sidebar.image(st.session_state.get('avatar', ''), width=100)
     st.sidebar.title(st.session_state['user'])
     st.sidebar.divider()
-    
     opts = ["📊 全年 Dashboard", "📅 每月龍虎榜", "🤝 招募龍虎榜", "📝 活動打卡", "👤 設定"]
     menu = st.sidebar.radio("Menu", opts)
-    
     st.sidebar.divider()
     if st.sidebar.button("Logout"):
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # 1. 全年 Dashboard
+    # 1. Dashboard
     if menu == "📊 全年 Dashboard":
         st.title("📊 2026 全年總覽")
         df = get_leaderboard_data("全年總計")
@@ -138,33 +144,65 @@ else:
         c2.metric("🎯 總活動分", int(df['Total_Score'].sum()))
         c3.metric("🤝 總 Recruit", int(df['recruit'].sum()))
         
-        cfg = {"avatar": st.column_config.ImageColumn("頭像"), 
-               "fyc": st.column_config.ProgressColumn("MDRT", format="$%d", max_value=800000)}
-        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
-                     column_config=cfg, use_container_width=True)
+        cfg = {"avatar": st.column_config.ImageColumn("頭像"), "fyc": st.column_config.ProgressColumn("MDRT", format="$%d", max_value=800000)}
+        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True)
 
+        # Admin Panel
         if st.session_state['role'] == 'Leader':
             st.divider()
             st.subheader("⚙️ Admin 管理台")
-            ac1, ac2 = st.columns(2)
-            with ac1:
-                st.info("💰 更新月度 FYC")
+            
+            tab1, tab2, tab3 = st.tabs(["💰 入 FYC", "🤝 入 Recruitment", "📝 管理活動紀錄 (Edit/Delete)"])
+            
+            with tab1:
                 with st.form("admin_fyc"):
                     tgt = st.selectbox("同事", df['username'].tolist(), key="u1")
                     mth = st.selectbox("月份", ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"])
                     amt = st.number_input("FYC ($)", step=1000)
                     if st.form_submit_button("更新 FYC"):
                         update_monthly_fyc(tgt, mth, amt)
-                        st.success("Updated!")
+                        st.success("FYC Updated!")
                         st.rerun()
-            with ac2:
-                st.info("🤝 更新總 Recruitment")
+            
+            with tab2:
                 with st.form("admin_rec"):
                     tgt_r = st.selectbox("同事", df['username'].tolist(), key="u2")
                     rec = st.number_input("總人數", step=1, min_value=0)
                     if st.form_submit_button("更新 Recruit"):
                         update_recruit(tgt_r, rec)
-                        st.success("Updated!")
+                        st.success("Recruitment Updated!")
+                        st.rerun()
+
+            with tab3:
+                st.write("以下係全隊活動紀錄，請記住 **ID** 進行修改或刪除。")
+                all_acts = get_all_activities()
+                st.dataframe(all_acts, use_container_width=True)
+                
+                c_edit, c_del = st.columns(2)
+                
+                with c_edit:
+                    st.info("✏️ 修改紀錄")
+                    edit_id = st.number_input("輸入要修改的 ID", min_value=0, step=1, key="eid")
+                    if edit_id > 0:
+                        curr = get_activity_by_id(edit_id)
+                        if curr:
+                            with st.form("edit_form"):
+                                st.caption(f"正在修改: {curr[0][1]} 的紀錄 (原本: {curr[0][3]})")
+                                new_d = st.date_input("新日期")
+                                new_t = st.selectbox("新種類", ["Meeting (1分)", "Insurance Talk (2分)", "Closing (5分)"])
+                                new_n = st.text_area("新備註", value=curr[0][5])
+                                if st.form_submit_button("確認修改"):
+                                    update_activity(edit_id, new_d, new_t, new_n)
+                                    st.success("修改成功！")
+                                    st.rerun()
+                        else: st.warning("搵唔到此 ID")
+
+                with c_del:
+                    st.info("🗑️ 刪除紀錄")
+                    del_id = st.number_input("輸入要刪除的 ID", min_value=0, step=1, key="did")
+                    if st.button("確認刪除", type="primary"):
+                        delete_activity(del_id)
+                        st.success(f"ID {del_id} 已刪除！")
                         st.rerun()
 
     # 2. 每月龍虎榜
@@ -178,20 +216,15 @@ else:
             if top['fyc'] > 0:
                 st.balloons()
                 st.success(f"👑 Top Sales: {top['username']} (${top['fyc']:,})")
-        
-        cfg = {"avatar": st.column_config.ImageColumn("頭像"), 
-               "fyc": st.column_config.NumberColumn("FYC", format="$%d")}
-        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
-                     column_config=cfg, use_container_width=True)
+        cfg = {"avatar": st.column_config.ImageColumn("頭像"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}
+        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True)
 
     # 3. 招募榜
     elif menu == "🤝 招募龍虎榜":
         st.title("🤝 招募龍虎榜")
         df = get_leaderboard_data("全年總計")
-        cfg = {"avatar": st.column_config.ImageColumn("頭像"), 
-               "recruit": st.column_config.NumberColumn("Recruit", format="%d")}
-        st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
-                     column_config=cfg, use_container_width=True)
+        cfg = {"avatar": st.column_config.ImageColumn("頭像"), "recruit": st.column_config.NumberColumn("Recruit", format="%d")}
+        st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config=cfg, use_container_width=True)
 
     # 4. 打卡
     elif menu == "📝 活動打卡":
