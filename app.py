@@ -8,6 +8,16 @@ import base64
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🏆", layout="wide")
 DB_FILE = 'tim_team.db'
 
+# --- Template 設定 ---
+NOTE_TEMPLATE = """Name: 
+3Q左未? 有咩feedback?
+Fact find左咩?
+下次見面日期: 
+下一步行動?
+Sell咩?"""
+
+ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "簽單 (5分)"]
+
 st.markdown("""
 <style>
     .stApp {background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);}
@@ -67,18 +77,28 @@ init_db()
 def login(u, p): return run_query('SELECT * FROM users WHERE username=? AND password=?', (u, p), fetch=True)
 def update_avt(u, i): run_query("UPDATE users SET avatar=? WHERE username=?", (i, u))
 def update_pw(u, p): run_query("UPDATE users SET password=? WHERE username=?", (p, u))
+
+def get_points(act_type):
+    if "簽單" in act_type: return 5
+    if "傾" in act_type: return 2 # 傾保險 / 傾招募
+    return 1 # 見面
+
 def add_act(u, d, t, n):
-    pts = 5 if "Closing" in t else (2 if "Insurance" in t else 1)
+    pts = get_points(t)
     run_query("INSERT INTO activities (username, date, type, points, note) VALUES (?,?,?,?,?)", (u, d, t, pts, n))
+
 def upd_fyc(u, m, a):
     eid = run_query("SELECT id FROM monthly_fyc WHERE username=? AND month=?", (u, m), fetch=True)
     if eid: run_query("UPDATE monthly_fyc SET amount=? WHERE id=?", (a, eid[0][0]))
     else: run_query("INSERT INTO monthly_fyc (username, month, amount) VALUES (?,?,?)", (u, m, a))
+
 def upd_rec(u, a): run_query("UPDATE users SET recruit=? WHERE username=?", (a, u))
 def del_act(id): run_query("DELETE FROM activities WHERE id=?", (id,))
+
 def upd_act(id, d, t, n):
-    pts = 5 if "Closing" in t else (2 if "Insurance" in t else 1)
+    pts = get_points(t)
     run_query("UPDATE activities SET date=?, type=?, points=?, note=? WHERE id=?", (d, t, pts, n, id))
+
 def get_act_by_id(id): return run_query("SELECT * FROM activities WHERE id=?", (id,), fetch=True)
 def get_all_act():
     with sqlite3.connect(DB_FILE) as c: return pd.read_sql("SELECT id, username, date, type, points, note FROM activities ORDER BY date DESC", c)
@@ -161,7 +181,15 @@ else:
                     ce, cd = st.columns(2)
                     with ce:
                         eid = st.number_input("修改 ID", step=1)
-                        if eid>0 and st.button("修改"): st.info("請輸入資料")
+                        if eid>0 and get_act_by_id(eid):
+                            with st.expander(f"修改 #{eid}", expanded=True):
+                                nd = st.date_input("日期")
+                                nt = st.selectbox("種類", ACTIVITY_TYPES)
+                                nn = st.text_area("備註")
+                                if st.button("確認修改"):
+                                    upd_act(eid, nd, nt, nn)
+                                    st.success("已修改")
+                                    st.rerun()
                     with cd:
                         did = st.number_input("刪除 ID", step=1)
                         if st.button("刪除"):
@@ -232,8 +260,9 @@ else:
         with c1:
             with st.container(border=True):
                 d = st.date_input("日期")
-                t = st.selectbox("種類", ["Meeting (1分)", "Insurance Talk (2分)", "Closing (5分)"])
-                n = st.text_area("備註")
+                t = st.selectbox("種類", ACTIVITY_TYPES)
+                # 使用預設 Template
+                n = st.text_area("備註", value=NOTE_TEMPLATE, height=200)
                 if st.button("提交紀錄", type="primary", use_container_width=True):
                     add_act(st.session_state['user'], d, t, n)
                     st.toast("Saved!", icon="✅")
@@ -262,7 +291,6 @@ else:
                 cp = st.text_input("確認新密碼", type="password")
                 if st.button("更改密碼"):
                     u = st.session_state['user']
-                    # 驗證舊密碼
                     valid = login(u, op)
                     if valid:
                         if np == cp and np != "":
