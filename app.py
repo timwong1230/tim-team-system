@@ -5,10 +5,10 @@ import datetime
 import base64
 
 # --- 1. 系統設定 ---
-st.set_page_config(page_title="TIM TEAM 2026", page_icon="🏆", layout="wide")
+st.set_page_config(page_title="TIM TEAM 2026", page_icon="⚖️", layout="wide")
 DB_FILE = 'tim_team.db'
 
-# --- Template 設定 ---
+# Template
 NOTE_TEMPLATE = """Name: 
 3Q左未? 有咩feedback?
 Fact find左咩?
@@ -34,6 +34,13 @@ st.markdown("""
     .reward-title {color: #d4af37; font-size: 1.2em; font-weight: bold;}
     .reward-prize {color: #e74c3c; font-size: 1.5em; font-weight: 900;}
     
+    /* 罰款卡片樣式 */
+    .penalty-card {
+        background: #fff0f0; border: 2px solid #ff4b4b;
+        border-radius: 10px; padding: 15px; text-align: center; color: #ff4b4b;
+        font-weight: bold; margin-bottom: 10px;
+    }
+
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.9);
         border: 1px solid #ddd; border-radius: 12px; padding: 15px;
@@ -80,8 +87,8 @@ def update_pw(u, p): run_query("UPDATE users SET password=? WHERE username=?", (
 
 def get_points(act_type):
     if "簽單" in act_type: return 5
-    if "傾" in act_type: return 2 # 傾保險 / 傾招募
-    return 1 # 見面
+    if "傾" in act_type: return 2
+    return 1
 
 def add_act(u, d, t, n):
     pts = get_points(t)
@@ -121,6 +128,24 @@ def proc_img(f):
     try: return f"data:image/png;base64,{base64.b64encode(f.getvalue()).decode()}" if f else None
     except: return None
 
+# --- New Logic: Weekly Stats ---
+def get_weekly_data():
+    today = datetime.date.today()
+    start_week = today - datetime.timedelta(days=today.weekday()) # Monday
+    with sqlite3.connect(DB_FILE) as c:
+        users = pd.read_sql("SELECT username, avatar FROM users WHERE role='Member'", c)
+        sql = f"SELECT username, points FROM activities WHERE date >= '{start_week}'"
+        acts = pd.read_sql(sql, c)
+    
+    if not acts.empty:
+        stats = acts.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
+        stats.columns = ['username', 'wk_score', 'wk_count']
+    else:
+        stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
+        
+    df = pd.merge(users, stats, on='username', how='left').fillna(0)
+    return df, start_week, today
+
 # --- 4. UI ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
@@ -147,12 +172,13 @@ else:
             st.markdown(f"**{st.session_state['user']}**")
             st.caption(f"{st.session_state['role']}")
         st.divider()
-        menu = st.radio("導航", ["📊 團隊總覽", "🏆 年度挑戰", "📅 每月業績", "🤝 招募龍虎榜", "📝 活動打卡", "👤 個人設定"])
+        menu = st.radio("導航", ["📊 團隊總覽", "⚖️ 活動賞罰", "🏆 年度挑戰", "📅 每月業績", "🤝 招募榜", "📝 活動打卡", "👤 設定"])
         st.markdown("<br>"*5, unsafe_allow_html=True)
         if st.button("安全登出", use_container_width=True):
             st.session_state['logged_in'] = False
             st.rerun()
 
+    # --- 1. Dashboard ---
     if menu == "📊 團隊總覽":
         st.markdown("## 📊 2026 年度總覽")
         df = get_data("Yearly")
@@ -197,26 +223,70 @@ else:
                             st.success("Deleted")
                             st.rerun()
                 with t4:
-                    st.info("⚠️ 強制重設同事密碼")
+                    st.info("⚠️ 強制重設密碼")
                     pw_u = st.selectbox("選擇同事", df['username'].tolist(), key="pw_u")
-                    if st.button(f"重設 {pw_u} 密碼為 1234"):
+                    if st.button(f"重設 {pw_u} 為 1234"):
                         update_pw(pw_u, "1234")
-                        st.success(f"{pw_u} 密碼已重設為 1234")
+                        st.success("已重設")
 
         c1, c2, c3 = st.columns(3)
         c1.metric("💰 全年 FYC", f"${df['fyc'].sum():,}")
         c2.metric("🎯 總活動", int(df['Total_Score'].sum()))
         c3.metric("👥 招募", int(df['recruit'].sum()))
         
-        st.markdown("### 🏆 實時 MDRT 進度")
         with st.container(border=True):
-            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT ($800k)", format="$%d", max_value=800000)}
+            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT", format="$%d", max_value=800000)}
             st.dataframe(df[['avatar', 'username', 'fyc', 'recruit']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
+    # --- 2. Weekly Reward/Penalty (New!) ---
+    elif menu == "⚖️ 活動賞罰":
+        df, start, end = get_weekly_data()
+        st.markdown(f"## ⚖️ 本週活動賞罰 ({start} 至 {end})")
+        st.info("每週最高分獲 $100，活動少於 3 次罰 $100。")
+        
+        c1, c2 = st.columns(2)
+        
+        # Determine Winner
+        with c1:
+            max_score = df['wk_score'].max()
+            if max_score > 0:
+                winners = df[df['wk_score'] == max_score]
+                prize = 100 / len(winners)
+                names = ", ".join(winners['username'].tolist())
+                st.markdown(f"""
+                <div class="reward-card">
+                    <div class="reward-title">🏆 本週領先</div>
+                    <h3>{names}</h3>
+                    <div class="reward-prize">獎金: ${int(prize)}</div>
+                    <p>分數: {int(max_score)}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("本週暫無活動")
+
+        # Determine Penalty
+        with c2:
+            # Filter those with < 3 activities
+            lazy = df[df['wk_count'] < 3]
+            if not lazy.empty:
+                st.markdown('<div style="text-align:center; font-weight:bold; color:#ff4b4b; margin-bottom:10px;">⚠️ 未達標名單 (少於3次)</div>', unsafe_allow_html=True)
+                for i, r in lazy.iterrows():
+                    st.markdown(f'<div class="penalty-card">{r["username"]} (次數: {int(r["wk_count"])}) - 罰 $100</div>', unsafe_allow_html=True)
+            else:
+                st.success("✅ 全員達標！")
+
+        st.subheader("本週戰況表")
+        with st.container(border=True):
+            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), 
+                   "wk_score": st.column_config.NumberColumn("本週分數"),
+                   "wk_count": st.column_config.ProgressColumn("活動次數 (目標3次)", min_value=0, max_value=5, format="%d")}
+            st.dataframe(df[['avatar', 'username', 'wk_score', 'wk_count']].sort_values(by='wk_score', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
+
+    # --- 3. Challenges ---
     elif menu == "🏆 年度挑戰":
         st.markdown("## 🏆 2026 年度挑戰")
-        st.markdown("### 🔥 Q1 88000 Challenge")
         q1_df = get_q1_data()
+        st.markdown("### 🔥 Q1 88000 Challenge")
         with st.container(border=True):
             for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
                 with st.container():
@@ -237,6 +307,7 @@ else:
         with c4:
             st.markdown('<div class="reward-card"><div class="reward-title">🍽️ 每月冠軍</div><div class="reward-prize">Tim 請食飯</div></div>', unsafe_allow_html=True)
 
+    # --- 4. Monthly ---
     elif menu == "📅 每月業績":
         st.header("📅 每月業績")
         m = st.selectbox("月份", [f"2026-{i:02d}" for i in range(1,13)])
@@ -248,12 +319,14 @@ else:
         cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}
         st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
-    elif menu == "🤝 招募龍虎榜":
-        st.header("🤝 招募龍虎榜")
+    # --- 5. Recruit ---
+    elif menu == "🤝 招募榜":
+        st.header("🤝 招募榜")
         df = get_data("Yearly")
         cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}
         st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
+    # --- 6. Activities ---
     elif menu == "📝 活動打卡":
         st.header("📝 活動打卡")
         c1, c2 = st.columns([1, 1.5])
@@ -261,7 +334,6 @@ else:
             with st.container(border=True):
                 d = st.date_input("日期")
                 t = st.selectbox("種類", ACTIVITY_TYPES)
-                # 使用預設 Template
                 n = st.text_area("備註", value=NOTE_TEMPLATE, height=200)
                 if st.button("提交紀錄", type="primary", use_container_width=True):
                     add_act(st.session_state['user'], d, t, n)
@@ -269,32 +341,30 @@ else:
         with c2:
             st.dataframe(get_user_act(st.session_state['user']), use_container_width=True, hide_index=True)
 
-    elif menu == "👤 個人設定":
-        st.header("個人設定")
-        t1, t2 = st.tabs(["🖼️ 更換頭像", "🔐 修改密碼"])
+    # --- 7. Settings ---
+    elif menu == "👤 設定":
+        st.header("設定")
+        t1, t2 = st.tabs(["🖼️ 頭像", "🔐 密碼"])
         with t1:
-            with st.container(border=True):
-                c1, c2 = st.columns([1, 3])
-                c1.image(st.session_state.get('avatar', ''), width=100)
-                f = c2.file_uploader("Upload", type=['jpg', 'png'])
-                if f and c2.button("更換頭像"):
-                    c = proc_img(f)
-                    if c:
-                        update_avt(st.session_state['user'], c)
-                        st.session_state['avatar'] = c
-                        st.success("Updated")
-                        st.rerun()
+            c1, c2 = st.columns([1, 3])
+            c1.image(st.session_state.get('avatar', ''), width=100)
+            f = c2.file_uploader("Upload", type=['jpg', 'png'])
+            if f and c2.button("更換"):
+                c = proc_img(f)
+                if c:
+                    update_avt(st.session_state['user'], c)
+                    st.session_state['avatar'] = c
+                    st.success("Updated")
+                    st.rerun()
         with t2:
-            with st.container(border=True):
-                op = st.text_input("舊密碼", type="password")
-                np = st.text_input("新密碼", type="password")
-                cp = st.text_input("確認新密碼", type="password")
-                if st.button("更改密碼"):
-                    u = st.session_state['user']
-                    valid = login(u, op)
-                    if valid:
-                        if np == cp and np != "":
-                            update_pw(u, np)
-                            st.success("密碼已更改！請重新登入。")
-                        else: st.error("新密碼不一致")
-                    else: st.error("舊密碼錯誤")
+            op = st.text_input("舊密碼", type="password")
+            np = st.text_input("新密碼", type="password")
+            cp = st.text_input("確認", type="password")
+            if st.button("更改"):
+                u = st.session_state['user']
+                if login(u, op):
+                    if np == cp and np != "":
+                        update_pw(u, np)
+                        st.success("成功更改")
+                    else: st.error("不一致")
+                else: st.error("舊密碼錯")
