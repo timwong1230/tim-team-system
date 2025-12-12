@@ -34,11 +34,15 @@ st.markdown("""
     .reward-title {color: #d4af37; font-size: 1.2em; font-weight: bold;}
     .reward-prize {color: #e74c3c; font-size: 1.5em; font-weight: 900;}
     
-    /* 罰款卡片樣式 */
-    .penalty-card {
-        background: #fff0f0; border: 2px solid #ff4b4b;
-        border-radius: 10px; padding: 15px; text-align: center; color: #ff4b4b;
-        font-weight: bold; margin-bottom: 10px;
+    /* 罰款區樣式 */
+    .penalty-zone {
+        background-color: #fff5f5; border: 1px solid #ffcccc;
+        padding: 15px; border-radius: 10px; color: #c0392b;
+    }
+    /* 獎勵區樣式 */
+    .winner-zone {
+        background-color: #f0f9eb; border: 1px solid #cce5ff;
+        padding: 15px; border-radius: 10px; color: #27ae60;
     }
 
     div[data-testid="stMetric"] {
@@ -128,7 +132,7 @@ def proc_img(f):
     try: return f"data:image/png;base64,{base64.b64encode(f.getvalue()).decode()}" if f else None
     except: return None
 
-# --- New Logic: Weekly Stats ---
+# --- New Logic: Weekly Winner Takes All ---
 def get_weekly_data():
     today = datetime.date.today()
     start_week = today - datetime.timedelta(days=today.weekday()) # Monday
@@ -172,7 +176,7 @@ else:
             st.markdown(f"**{st.session_state['user']}**")
             st.caption(f"{st.session_state['role']}")
         st.divider()
-        menu = st.radio("導航", ["📊 團隊總覽", "⚖️ 活動賞罰", "🏆 年度挑戰", "📅 每月業績", "🤝 招募榜", "📝 活動打卡", "👤 設定"])
+        menu = st.radio("導航", ["📊 團隊總覽", "⚖️ 活動量獎罰計劃", "🏆 年度挑戰", "📅 每月業績", "🤝 招募龍虎榜", "📝 活動打卡", "👤 設定"])
         st.markdown("<br>"*5, unsafe_allow_html=True)
         if st.button("安全登出", use_container_width=True):
             st.session_state['logged_in'] = False
@@ -235,47 +239,63 @@ else:
         c3.metric("👥 招募", int(df['recruit'].sum()))
         
         with st.container(border=True):
-            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT", format="$%d", max_value=800000)}
+            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT ($800k)", format="$%d", max_value=800000)}
             st.dataframe(df[['avatar', 'username', 'fyc', 'recruit']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
-    # --- 2. Weekly Reward/Penalty (New!) ---
-    elif menu == "⚖️ 活動賞罰":
+    # --- 2. Weekly Winner Takes All (New Logic) ---
+    elif menu == "⚖️ 活動量獎罰計劃":
         df, start, end = get_weekly_data()
-        st.markdown(f"## ⚖️ 本週活動賞罰 ({start} 至 {end})")
-        st.info("每週最高分獲 $100，活動少於 3 次罰 $100。")
+        st.markdown(f"## ⚖️ 本週活動量獎罰計劃 ({start} 至 {end})")
         
-        c1, c2 = st.columns(2)
+        # Logic Calculation
+        lazy_ppl = df[df['wk_count'] < 3]
+        penalty_pool = len(lazy_ppl) * 100
         
-        # Determine Winner
-        with c1:
-            max_score = df['wk_score'].max()
-            if max_score > 0:
-                winners = df[df['wk_score'] == max_score]
-                prize = 100 / len(winners)
-                names = ", ".join(winners['username'].tolist())
-                st.markdown(f"""
-                <div class="reward-card">
-                    <div class="reward-title">🏆 本週領先</div>
-                    <h3>{names}</h3>
-                    <div class="reward-prize">獎金: ${int(prize)}</div>
-                    <p>分數: {int(max_score)}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.warning("本週暫無活動")
+        max_score = df['wk_score'].max()
+        winners = df[df['wk_score'] == max_score]
+        
+        # Display Logic
+        if max_score == 0:
+            st.warning("⚠️ 本週暫無任何活動紀錄。")
+        else:
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.markdown("### 🏆 贏家 (Winner Takes All)")
+                with st.container(border=True):
+                    # Prize Calculation
+                    if penalty_pool > 0:
+                        total_prize = penalty_pool
+                        source_text = f"來自 {len(lazy_ppl)} 位未達標同事的罰款"
+                    else:
+                        total_prize = 100
+                        source_text = "全隊達標！由 Tim 自掏腰包獎勵"
+                    
+                    share = total_prize / len(winners)
+                    
+                    st.markdown(f"<h2 style='color:#27ae60; text-align:center;'>總獎金: ${total_prize}</h2>", unsafe_allow_html=True)
+                    st.caption(f"💰 資金來源: {source_text}")
+                    st.divider()
+                    
+                    for i, w in winners.iterrows():
+                        c_img, c_info = st.columns([1, 4])
+                        with c_img: st.image(w['avatar'], width=50)
+                        with c_info: 
+                            st.markdown(f"**{w['username']}** (分數: {int(w['wk_score'])})")
+                            st.markdown(f"👉 **獲得: ${int(share)}**")
 
-        # Determine Penalty
-        with c2:
-            # Filter those with < 3 activities
-            lazy = df[df['wk_count'] < 3]
-            if not lazy.empty:
-                st.markdown('<div style="text-align:center; font-weight:bold; color:#ff4b4b; margin-bottom:10px;">⚠️ 未達標名單 (少於3次)</div>', unsafe_allow_html=True)
-                for i, r in lazy.iterrows():
-                    st.markdown(f'<div class="penalty-card">{r["username"]} (次數: {int(r["wk_count"])}) - 罰 $100</div>', unsafe_allow_html=True)
-            else:
-                st.success("✅ 全員達標！")
+            with c2:
+                st.markdown("### ⚡ 罰款區 (<3次)")
+                with st.container(border=True):
+                    if not lazy_ppl.empty:
+                        st.error(f"每人罰款 $100，共 ${penalty_pool} 注入獎金池。")
+                        for i, l in lazy_ppl.iterrows():
+                            st.markdown(f"❌ **{l['username']}** (次數: {int(l['wk_count'])})")
+                    else:
+                        st.success("🎉 全員達標！無人需要罰款！")
 
-        st.subheader("本週戰況表")
+        st.markdown("---")
+        st.subheader("📊 本週戰況表")
         with st.container(border=True):
             cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), 
                    "wk_score": st.column_config.NumberColumn("本週分數"),
@@ -320,8 +340,8 @@ else:
         st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
     # --- 5. Recruit ---
-    elif menu == "🤝 招募榜":
-        st.header("🤝 招募榜")
+    elif menu == "🤝 招募龍虎榜":
+        st.header("🤝 招募龍虎榜")
         df = get_data("Yearly")
         cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}
         st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
