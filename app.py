@@ -34,17 +34,6 @@ st.markdown("""
     .reward-title {color: #d4af37; font-size: 1.2em; font-weight: bold;}
     .reward-prize {color: #e74c3c; font-size: 1.5em; font-weight: 900;}
     
-    /* 罰款區樣式 */
-    .penalty-zone {
-        background-color: #fff5f5; border: 1px solid #ffcccc;
-        padding: 15px; border-radius: 10px; color: #c0392b;
-    }
-    /* 獎勵區樣式 */
-    .winner-zone {
-        background-color: #f0f9eb; border: 1px solid #cce5ff;
-        padding: 15px; border-radius: 10px; color: #27ae60;
-    }
-
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.9);
         border: 1px solid #ddd; border-radius: 12px; padding: 15px;
@@ -132,10 +121,9 @@ def proc_img(f):
     try: return f"data:image/png;base64,{base64.b64encode(f.getvalue()).decode()}" if f else None
     except: return None
 
-# --- New Logic: Weekly Winner Takes All ---
 def get_weekly_data():
     today = datetime.date.today()
-    start_week = today - datetime.timedelta(days=today.weekday()) # Monday
+    start_week = today - datetime.timedelta(days=today.weekday())
     with sqlite3.connect(DB_FILE) as c:
         users = pd.read_sql("SELECT username, avatar FROM users WHERE role='Member'", c)
         sql = f"SELECT username, points FROM activities WHERE date >= '{start_week}'"
@@ -242,41 +230,44 @@ else:
             cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT ($800k)", format="$%d", max_value=800000)}
             st.dataframe(df[['avatar', 'username', 'fyc', 'recruit']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
-    # --- 2. Weekly Winner Takes All (New Logic) ---
+    # --- 2. Weekly Winner ---
     elif menu == "⚖️ 活動量獎罰計劃":
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ 本週活動量獎罰計劃 ({start} 至 {end})")
         
-        # Logic Calculation
+        # 規則說明 (New!)
+        with st.expander("📜 查看遊戲規則 (Winner Takes All)", expanded=True):
+            st.info("""
+            1. **最低要求**：每週活動量不足 **3次** 者，罰款 **$100**。
+            2. **獎金池**：所有罰款將注入「每週獎金池」。
+            3. **贏家通吃**：該週 **活動量分數最高** 的同事，將獲得 **全數獎金**！
+            4. **保底獎金**：如全員達標 (無人罰款)，由 **Tim** 送出 **$100** 獎勵最高分者。
+            5. **打和機制**：如最高分者多於一人，獎金平分。
+            """)
+
         lazy_ppl = df[df['wk_count'] < 3]
         penalty_pool = len(lazy_ppl) * 100
-        
         max_score = df['wk_score'].max()
         winners = df[df['wk_score'] == max_score]
         
-        # Display Logic
         if max_score == 0:
             st.warning("⚠️ 本週暫無任何活動紀錄。")
         else:
             c1, c2 = st.columns(2)
-            
             with c1:
-                st.markdown("### 🏆 贏家 (Winner Takes All)")
+                st.markdown("### 🏆 本週贏家")
                 with st.container(border=True):
-                    # Prize Calculation
                     if penalty_pool > 0:
                         total_prize = penalty_pool
-                        source_text = f"來自 {len(lazy_ppl)} 位未達標同事的罰款"
+                        src = f"來自 {len(lazy_ppl)} 位未達標同事"
                     else:
                         total_prize = 100
-                        source_text = "全隊達標！由 Tim 自掏腰包獎勵"
+                        src = "全隊達標！Tim 請客"
                     
                     share = total_prize / len(winners)
-                    
                     st.markdown(f"<h2 style='color:#27ae60; text-align:center;'>總獎金: ${total_prize}</h2>", unsafe_allow_html=True)
-                    st.caption(f"💰 資金來源: {source_text}")
+                    st.caption(f"💰 {src}")
                     st.divider()
-                    
                     for i, w in winners.iterrows():
                         c_img, c_info = st.columns([1, 4])
                         with c_img: st.image(w['avatar'], width=50)
@@ -288,11 +279,11 @@ else:
                 st.markdown("### ⚡ 罰款區 (<3次)")
                 with st.container(border=True):
                     if not lazy_ppl.empty:
-                        st.error(f"每人罰款 $100，共 ${penalty_pool} 注入獎金池。")
+                        st.error(f"共 ${penalty_pool} 注入獎金池。")
                         for i, l in lazy_ppl.iterrows():
-                            st.markdown(f"❌ **{l['username']}** (次數: {int(l['wk_count'])})")
+                            st.markdown(f"❌ **{l['username']}** (次數: {int(l['wk_count'])}) - 罰 $100")
                     else:
-                        st.success("🎉 全員達標！無人需要罰款！")
+                        st.success("🎉 全員達標！")
 
         st.markdown("---")
         st.subheader("📊 本週戰況表")
