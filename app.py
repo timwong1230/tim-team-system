@@ -5,7 +5,7 @@ import datetime
 import base64
 
 # --- 1. 系統設定 ---
-st.set_page_config(page_title="TIM TEAM 2026", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide")
 DB_FILE = 'tim_team.db'
 
 # --- 智能 Templates ---
@@ -66,6 +66,20 @@ st.markdown("""
     h1, h2, h3, p, div, label {font-family: 'Microsoft JhengHei', sans-serif;}
     [data-testid="stSidebar"] {background-color: #ffffff; border-right: 1px solid #eeeeee; box-shadow: 4px 0 15px rgba(0,0,0,0.02);}
     
+    /* Login 頁面金句卡 */
+    .login-card {
+        background: #fff;
+        border-left: 6px solid #d4af37;
+        padding: 20px;
+        margin-bottom: 25px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        text-align: center;
+    }
+    .login-goal {color: #1a1a1a; font-size: 1.5em; font-weight: 900; margin-bottom: 10px;}
+    .login-desc {color: #555; font-size: 1em; line-height: 1.6;}
+    .highlight {color: #d4af37; font-weight: bold; font-size: 1.1em;}
+
     .reward-card {
         background: linear-gradient(135deg, #fff 0%, #fdfbfb 100%);
         border: 2px solid #d4af37;
@@ -75,8 +89,6 @@ st.markdown("""
     }
     .reward-title {color: #d4af37; font-size: 1.2em; font-weight: bold;}
     .reward-prize {color: #e74c3c; font-size: 1.5em; font-weight: 900;}
-    
-    .penalty-zone {background-color: #fff5f5; border: 1px solid #ffcccc; padding: 15px; border-radius: 10px; color: #c0392b;}
     
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.9);
@@ -190,10 +202,22 @@ if not st.session_state['logged_in']:
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         with st.container(border=True):
-            st.markdown("<h1 style='text-align: center; color: #d4af37;'>🦁 TIM TEAM</h1>", unsafe_allow_html=True)
+            st.markdown("<h1 style='text-align: center; color: #d4af37;'>🦁 TIM TEAM 2026</h1>", unsafe_allow_html=True)
+            
+            # --- 洗腦式 Login 畫面 ---
+            st.markdown("""
+            <div class="login-card">
+                <div class="login-goal">🎯 年度目標：M + 2</div>
+                <div class="login-desc">
+                    由基本做起 · 持續做好活動量<br>
+                    <span class="highlight">MDRT + 2 Recruits = 百萬年薪 💰</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             u = st.text_input("用戶名")
             p = st.text_input("密碼", type="password")
-            if st.button("立即登入", use_container_width=True):
+            if st.button("立即登入 · 開展百萬之路", use_container_width=True):
                 d = login(u, p)
                 if d:
                     st.session_state.update({'logged_in':True, 'user':d[0][0], 'role':d[0][2], 'avatar':d[0][5]})
@@ -389,7 +413,6 @@ else:
                 # 智能動態 Template 邏輯
                 t = st.selectbox("種類", ACTIVITY_TYPES)
                 
-                # 根據選擇自動切換 Template
                 if "招募" in t or "新人" in t:
                     default_note = TEMPLATE_RECRUIT
                 elif "新人出code" in t or "新人報考試" in t:
