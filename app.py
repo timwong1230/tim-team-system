@@ -16,7 +16,15 @@ Fact find左咩?
 下一步行動?
 Sell咩?"""
 
-ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "簽單 (5分)"]
+# 更新活動列表
+ACTIVITY_TYPES = [
+    "見面 (1分)", 
+    "傾保險 (2分)", 
+    "傾招募 (2分)", 
+    "新人報考試 (3分)", 
+    "簽單 (5分)", 
+    "新人出code (8分)"
+]
 
 st.markdown("""
 <style>
@@ -78,8 +86,11 @@ def login(u, p): return run_query('SELECT * FROM users WHERE username=? AND pass
 def update_avt(u, i): run_query("UPDATE users SET avatar=? WHERE username=?", (i, u))
 def update_pw(u, p): run_query("UPDATE users SET password=? WHERE username=?", (p, u))
 
+# 更新計分邏輯
 def get_points(act_type):
+    if "出code" in act_type: return 8
     if "簽單" in act_type: return 5
+    if "報考試" in act_type: return 3
     if "傾" in act_type: return 2
     return 1
 
@@ -235,14 +246,12 @@ else:
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ 本週活動量獎罰計劃 ({start} 至 {end})")
         
-        # 規則說明 (New!)
         with st.expander("📜 查看遊戲規則 (Winner Takes All)", expanded=True):
             st.info("""
             1. **最低要求**：每週活動量不足 **3次** 者，罰款 **$100**。
             2. **獎金池**：所有罰款將注入「每週獎金池」。
             3. **贏家通吃**：該週 **活動量分數最高** 的同事，將獲得 **全數獎金**！
             4. **保底獎金**：如全員達標 (無人罰款)，由 **Tim** 送出 **$100** 獎勵最高分者。
-            5. **打和機制**：如最高分者多於一人，獎金平分。
             """)
 
         lazy_ppl = df[df['wk_count'] < 3]
