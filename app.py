@@ -8,15 +8,49 @@ import base64
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="⚖️", layout="wide")
 DB_FILE = 'tim_team.db'
 
-# Template
-NOTE_TEMPLATE = """Name: 
-3Q左未? 有咩feedback?
-Fact find左咩?
-下次見面日期: 
-下一步行動?
-Sell咩?"""
+# --- 智能 Templates ---
+# 1. 通用/銷售 Template
+TEMPLATE_SALES = """【客戶資料】
+Name: 
+3Q Check (缺口/預算/決策權): 
+Fact Find 重點: 
 
-# 更新活動列表
+【面談內容】
+推介左咩 Plan?: 
+客戶反應/抗拒點: 
+Recruit 潛質? (高/中/低): 
+
+【下一步】
+下次見面日期: 
+Action Items: """
+
+# 2. 招募 Template
+TEMPLATE_RECRUIT = """【準增員資料】
+Name: 
+背景/現職: 
+對現狀不滿 (Pain Points): 
+對行業最大顧慮: 
+
+【面談內容】
+Sell 左咩 Vision?: 
+有無邀請去 COP/BOP?: 
+
+【下一步】
+下次跟進日期: 
+Action Items: """
+
+# 3. 新人跟進 Template
+TEMPLATE_NEWBIE = """【新人跟進】
+新人 Name: 
+今日進度 (考牌/Training/出Code): 
+遇到咩困難?: 
+Leader 俾左咩建議?: 
+
+【下一步】
+Target: 
+下次 Review 日期: """
+
+# 活動列表
 ACTIVITY_TYPES = [
     "見面 (1分)", 
     "傾保險 (2分)", 
@@ -41,6 +75,8 @@ st.markdown("""
     }
     .reward-title {color: #d4af37; font-size: 1.2em; font-weight: bold;}
     .reward-prize {color: #e74c3c; font-size: 1.5em; font-weight: 900;}
+    
+    .penalty-zone {background-color: #fff5f5; border: 1px solid #ffcccc; padding: 15px; border-radius: 10px; color: #c0392b;}
     
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.9);
@@ -86,7 +122,6 @@ def login(u, p): return run_query('SELECT * FROM users WHERE username=? AND pass
 def update_avt(u, i): run_query("UPDATE users SET avatar=? WHERE username=?", (i, u))
 def update_pw(u, p): run_query("UPDATE users SET password=? WHERE username=?", (p, u))
 
-# 更新計分邏輯
 def get_points(act_type):
     if "出code" in act_type: return 8
     if "簽單" in act_type: return 5
@@ -139,13 +174,11 @@ def get_weekly_data():
         users = pd.read_sql("SELECT username, avatar FROM users WHERE role='Member'", c)
         sql = f"SELECT username, points FROM activities WHERE date >= '{start_week}'"
         acts = pd.read_sql(sql, c)
-    
     if not acts.empty:
         stats = acts.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
         stats.columns = ['username', 'wk_score', 'wk_count']
     else:
         stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
-        
     df = pd.merge(users, stats, on='username', how='left').fillna(0)
     return df, start_week, today
 
@@ -353,8 +386,19 @@ else:
         with c1:
             with st.container(border=True):
                 d = st.date_input("日期")
+                # 智能動態 Template 邏輯
                 t = st.selectbox("種類", ACTIVITY_TYPES)
-                n = st.text_area("備註", value=NOTE_TEMPLATE, height=200)
+                
+                # 根據選擇自動切換 Template
+                if "招募" in t or "新人" in t:
+                    default_note = TEMPLATE_RECRUIT
+                elif "新人出code" in t or "新人報考試" in t:
+                    default_note = TEMPLATE_NEWBIE
+                else:
+                    default_note = TEMPLATE_SALES
+
+                n = st.text_area("備註", value=default_note, height=220)
+                
                 if st.button("提交紀錄", type="primary", use_container_width=True):
                     add_act(st.session_state['user'], d, t, n)
                     st.toast("Saved!", icon="✅")
