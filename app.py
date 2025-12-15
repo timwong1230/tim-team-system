@@ -5,6 +5,7 @@ import base64
 import json
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import WorksheetNotFound
 
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide")
@@ -25,7 +26,7 @@ def get_gs_client():
         client = gspread.authorize(creds)
         return client
     except Exception as e:
-        st.error(f"連線失敗，請檢查 Secrets 設定: {e}")
+        st.error(f"連線失敗: {e}")
         return None
 
 def get_sheet(sheet_name):
@@ -35,7 +36,9 @@ def get_sheet(sheet_name):
             sh = client.open("tim_team_db")
             try:
                 worksheet = sh.worksheet(sheet_name)
-            except:
+                return worksheet
+            except WorksheetNotFound:
+                # 只有真係搵唔到先至 Create，避免 [400] Error
                 worksheet = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
                 if sheet_name == "users":
                     worksheet.append_row(["username", "password", "role", "team", "recruit", "avatar"])
@@ -43,70 +46,93 @@ def get_sheet(sheet_name):
                     worksheet.append_row(["id", "username", "month", "amount"])
                 elif sheet_name == "activities":
                     worksheet.append_row(["id", "username", "date", "type", "points", "note"])
-            return worksheet
+                return worksheet
         except Exception as e:
-            st.error(f"搵唔到 Google Sheet 'tim_team_db'。錯誤: {e}")
+            # 這裡捕獲 Quota Error，避免 App 崩潰
+            st.warning(f"⚠️ 系統繁忙 (Google API 限流)，請稍等 1 分鐘再試。")
             return None
     return None
 
-# --- 3. 數據庫操作 ---
+# --- 3. 數據庫操作 (加入 Caching) ---
+# TTL=60秒，避免頻繁讀取 Google Sheets 導致 Quota Exceeded
+@st.cache_data(ttl=60)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     if ws:
-        data = ws.get_all_records()
-        return pd.DataFrame(data)
+        try:
+            data = ws.get_all_records()
+            return pd.DataFrame(data)
+        except Exception:
+            return pd.DataFrame() # Return empty if read fails
     return pd.DataFrame()
+
+def clear_cache():
+    st.cache_data.clear()
 
 def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     ws = get_sheet(sheet_name)
     if not ws: return
 
-    if action == "INSERT":
-        if sheet_name in ["activities", "monthly_fyc"]:
-            records = ws.get_all_records()
-            new_id = 1
-            if records:
-                ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
-                if ids: new_id = max(ids) + 1
-            data_dict['id'] = new_id
-        
-        headers = ws.row_values(1)
-        row_to_add = [data_dict.get(h, "") for h in headers]
-        ws.append_row(row_to_add)
-
-    elif action == "UPDATE":
-        cell = ws.find(str(row_id))
-        if cell:
-            row_num = cell.row
+    try:
+        if action == "INSERT":
+            if sheet_name in ["activities", "monthly_fyc"]:
+                records = ws.get_all_records()
+                new_id = 1
+                if records:
+                    ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
+                    if ids: new_id = max(ids) + 1
+                data_dict['id'] = new_id
+            
             headers = ws.row_values(1)
-            for col_name, val in data_dict.items():
-                if col_name in headers:
-                    col_idx = headers.index(col_name) + 1
-                    ws.update_cell(row_num, col_idx, val)
+            row_to_add = [data_dict.get(h, "") for h in headers]
+            ws.append_row(row_to_add)
 
-    elif action == "DELETE":
-        cell = ws.find(str(row_id))
-        if cell:
-            ws.delete_rows(cell.row)
+        elif action == "UPDATE":
+            cell = ws.find(str(row_id))
+            if cell:
+                row_num = cell.row
+                headers = ws.row_values(1)
+                for col_name, val in data_dict.items():
+                    if col_name in headers:
+                        col_idx = headers.index(col_name) + 1
+                        ws.update_cell(row_num, col_idx, val)
+
+        elif action == "DELETE":
+            cell = ws.find(str(row_id))
+            if cell:
+                ws.delete_rows(cell.row)
+        
+        # 寫入成功後，清除 Cache，讓使用者即時看到更新
+        clear_cache()
+        
+    except Exception as e:
+        st.error(f"寫入失敗: {e}")
 
 def init_db_gs():
+    # 使用 Cache 讀取，避免每次檢查都 Call API
     df = read_data("users")
     if df.empty:
-        users = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
-                 ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
+        # 如果 Cache 是空的，嘗試直接讀一次確認 (Double Check)
         ws = get_sheet("users")
-        for u in users:
-            url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-            user_data = {"username": u[0], "password": u[1], "role": u[2], "team": "Tim Team", "recruit": 0, "avatar": url}
-            headers = ws.row_values(1)
-            row = [user_data.get(h, "") for h in headers]
-            ws.append_row(row)
+        if ws and not ws.get_all_values():
+            users = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
+                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
+            for u in users:
+                url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
+                user_data = {"username": u[0], "password": u[1], "role": u[2], "team": "Tim Team", "recruit": 0, "avatar": url}
+                headers = ws.row_values(1)
+                row = [user_data.get(h, "") for h in headers]
+                ws.append_row(row)
+            clear_cache()
 
 init_db_gs()
 
 # --- 4. Logic Functions ---
 def login(u, p):
     df = read_data("users")
+    if df.empty: return []
+    # Convert numbers to string for comparison
+    df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
     if not user.empty: return user.values.tolist()
     return []
@@ -114,12 +140,16 @@ def login(u, p):
 def update_avt(u, i): 
     ws = get_sheet("users")
     cell = ws.find(u)
-    if cell: ws.update_cell(cell.row, ws.row_values(1).index("avatar") + 1, i)
+    if cell: 
+        ws.update_cell(cell.row, ws.row_values(1).index("avatar") + 1, i)
+        clear_cache()
 
 def update_pw(u, p):
     ws = get_sheet("users")
     cell = ws.find(u)
-    if cell: ws.update_cell(cell.row, ws.row_values(1).index("password") + 1, p)
+    if cell: 
+        ws.update_cell(cell.row, ws.row_values(1).index("password") + 1, p)
+        clear_cache()
 
 def add_act(u, d, t, n):
     pts = 1
@@ -141,7 +171,9 @@ def upd_fyc(u, m, a):
 def upd_rec(u, a):
     ws = get_sheet("users")
     cell = ws.find(u)
-    if cell: ws.update_cell(cell.row, ws.row_values(1).index("recruit") + 1, a)
+    if cell: 
+        ws.update_cell(cell.row, ws.row_values(1).index("recruit") + 1, a)
+        clear_cache()
 
 def del_act(id): run_query_gs("DELETE", "activities", row_id=id)
 
@@ -165,6 +197,8 @@ def get_all_act():
 
 def get_data(month=None):
     users = read_data("users")
+    if users.empty: return pd.DataFrame()
+    
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
     fyc_df = read_data("monthly_fyc")
     act_df = read_data("activities")
@@ -181,6 +215,7 @@ def get_data(month=None):
 
 def get_q1_data():
     users = read_data("users")
+    if users.empty: return pd.DataFrame()
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
@@ -202,6 +237,7 @@ def get_weekly_data():
     today = datetime.date.today()
     start_week = today - datetime.timedelta(days=today.weekday())
     users = read_data("users")
+    if users.empty: return pd.DataFrame(), start_week, today
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     act_df = read_data("activities")
     
@@ -217,7 +253,7 @@ def get_weekly_data():
     df = pd.merge(users, stats, on='username', how='left').fillna(0)
     return df, start_week, today
 
-# --- Templates & Constants (已更新 V31) ---
+# --- Templates & Constants (V31) ---
 TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
 TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
 TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
@@ -259,7 +295,7 @@ if not st.session_state['logged_in']:
                 if d:
                     st.session_state.update({'logged_in':True, 'user':d[0][0], 'role':d[0][2], 'avatar':d[0][5]})
                     st.rerun()
-                else: st.error("帳號或密碼錯誤 (或連接數據庫失敗)")
+                else: st.error("帳號或密碼錯誤 (或系統繁忙)")
 else:
     with st.sidebar:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -312,60 +348,63 @@ else:
                     pw_u = st.selectbox("選擇同事", df['username'].tolist(), key="pw_u")
                     if st.button(f"重設 {pw_u} 為 1234"): update_pw(pw_u, "1234"); st.success("已重設")
         c1, c2, c3 = st.columns(3)
-        c1.metric("💰 全年 FYC", f"${df['fyc'].sum():,}")
-        c2.metric("🎯 總活動", int(df['Total_Score'].sum()))
-        c3.metric("👥 招募", int(df['recruit'].sum()))
-        with st.container(border=True):
-            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT ($800k)", format="$%d", max_value=800000)}
-            st.dataframe(df[['avatar', 'username', 'fyc', 'recruit']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
+        if not df.empty:
+            c1.metric("💰 全年 FYC", f"${df['fyc'].sum():,}")
+            c2.metric("🎯 總活動", int(df['Total_Score'].sum()))
+            c3.metric("👥 招募", int(df['recruit'].sum()))
+            with st.container(border=True):
+                cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.ProgressColumn("MDRT ($800k)", format="$%d", max_value=800000)}
+                st.dataframe(df[['avatar', 'username', 'fyc', 'recruit']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
     elif menu == "⚖️ 活動量獎罰計劃":
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ 本週活動量獎罰計劃 ({start} 至 {end})")
         with st.expander("📜 查看遊戲規則 (Winner Takes All)", expanded=True):
             st.info("""1. 每週活動量不足 **3次** 者，罰款 **$100**。\n2. 罰款注入「每週獎金池」。\n3. **分數最高** 者獨得獎金。\n4. 若無人罰款，**Tim 送出 $100**。""")
-        lazy_ppl = df[df['wk_count'] < 3]
-        penalty_pool = len(lazy_ppl) * 100
-        max_score = df['wk_score'].max()
-        winners = df[df['wk_score'] == max_score]
-        if max_score == 0: st.warning("⚠️ 本週暫無任何活動紀錄。")
-        else:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 🏆 本週贏家")
-                with st.container(border=True):
-                    total_prize = penalty_pool if penalty_pool > 0 else 100
-                    src = f"來自 {len(lazy_ppl)} 位未達標同事" if penalty_pool > 0 else "全隊達標！Tim 請客"
-                    share = total_prize / len(winners)
-                    st.markdown(f"<h2 style='color:#27ae60; text-align:center;'>總獎金: ${total_prize}</h2>", unsafe_allow_html=True)
-                    st.caption(f"💰 {src}")
-                    st.divider()
-                    for i, w in winners.iterrows():
-                        c_img, c_info = st.columns([1, 4])
-                        with c_img: st.image(w['avatar'], width=50)
-                        with c_info: st.markdown(f"**{w['username']}** (分數: {int(w['wk_score'])})\n👉 **獲得: ${int(share)}**")
-            with c2:
-                st.markdown("### ⚡ 罰款區 (<3次)")
-                with st.container(border=True):
-                    if not lazy_ppl.empty:
-                        st.error(f"共 ${penalty_pool} 注入獎金池。")
-                        for i, l in lazy_ppl.iterrows(): st.markdown(f"❌ **{l['username']}** (次數: {int(l['wk_count'])}) - 罰 $100")
-                    else: st.success("🎉 全員達標！")
-        st.subheader("📊 本週戰況表")
-        with st.container(border=True):
-            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "wk_score": st.column_config.NumberColumn("本週分數"), "wk_count": st.column_config.ProgressColumn("次數 (目標3次)", min_value=0, max_value=5, format="%d")}
-            st.dataframe(df[['avatar', 'username', 'wk_score', 'wk_count']].sort_values(by='wk_score', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
+        if not df.empty:
+            lazy_ppl = df[df['wk_count'] < 3]
+            penalty_pool = len(lazy_ppl) * 100
+            max_score = df['wk_score'].max()
+            winners = df[df['wk_score'] == max_score]
+            if max_score == 0: st.warning("⚠️ 本週暫無任何活動紀錄。")
+            else:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("### 🏆 本週贏家")
+                    with st.container(border=True):
+                        total_prize = penalty_pool if penalty_pool > 0 else 100
+                        src = f"來自 {len(lazy_ppl)} 位未達標同事" if penalty_pool > 0 else "全隊達標！Tim 請客"
+                        share = total_prize / len(winners)
+                        st.markdown(f"<h2 style='color:#27ae60; text-align:center;'>總獎金: ${total_prize}</h2>", unsafe_allow_html=True)
+                        st.caption(f"💰 {src}")
+                        st.divider()
+                        for i, w in winners.iterrows():
+                            c_img, c_info = st.columns([1, 4])
+                            with c_img: st.image(w['avatar'], width=50)
+                            with c_info: st.markdown(f"**{w['username']}** (分數: {int(w['wk_score'])})\n👉 **獲得: ${int(share)}**")
+                with c2:
+                    st.markdown("### ⚡ 罰款區 (<3次)")
+                    with st.container(border=True):
+                        if not lazy_ppl.empty:
+                            st.error(f"共 ${penalty_pool} 注入獎金池。")
+                            for i, l in lazy_ppl.iterrows(): st.markdown(f"❌ **{l['username']}** (次數: {int(l['wk_count'])}) - 罰 $100")
+                        else: st.success("🎉 全員達標！")
+            st.subheader("📊 本週戰況表")
+            with st.container(border=True):
+                cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "wk_score": st.column_config.NumberColumn("本週分數"), "wk_count": st.column_config.ProgressColumn("次數 (目標3次)", min_value=0, max_value=5, format="%d")}
+                st.dataframe(df[['avatar', 'username', 'wk_score', 'wk_count']].sort_values(by='wk_score', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
     elif menu == "🏆 年度挑戰":
         st.markdown("## 🏆 2026 年度挑戰")
         q1_df = get_q1_data()
         st.markdown("### 🔥 Q1 88000 Challenge")
-        with st.container(border=True):
-            for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
-                with st.container():
-                    c_i, c_b = st.columns([1, 4])
-                    with c_i: st.image(r['avatar'], width=50)
-                    with c_b: st.write(f"**{r['username']}** (${r['q1_total']:,})"); st.progress(min(1.0, r['q1_total']/88000))
+        if not q1_df.empty:
+            with st.container(border=True):
+                for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
+                    with st.container():
+                        c_i, c_b = st.columns([1, 4])
+                        with c_i: st.image(r['avatar'], width=50)
+                        with c_b: st.write(f"**{r['username']}** (${r['q1_total']:,})"); st.progress(min(1.0, r['q1_total']/88000))
         st.divider()
         c1, c2 = st.columns(2)
         with c1: st.markdown('<div class="reward-card"><div class="reward-title">🚀 1st MDRT</div><div class="reward-prize">$20,000</div></div>', unsafe_allow_html=True)
@@ -378,17 +417,19 @@ else:
         st.header("📅 每月業績")
         m = st.selectbox("月份", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(m)
-        if df['fyc'].sum() > 0:
+        if not df.empty and df['fyc'].sum() > 0:
             top = df.sort_values(by='fyc', ascending=False).iloc[0]
             if top['fyc'] >= 20000: st.markdown(f"<div style='background:#f7ef8a;padding:20px;border-radius:10px;text-align:center;'><h3>🍽️ 本月食飯: {top['username']} (${top['fyc']:,})</h3></div><br>", unsafe_allow_html=True)
-        cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}
-        st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
+        if not df.empty:
+            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}
+            st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
     elif menu == "🤝 招募龍虎榜":
         st.header("🤝 招募龍虎榜")
         df = get_data("Yearly")
-        cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}
-        st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
+        if not df.empty:
+            cfg = {"avatar": st.column_config.ImageColumn("頭像", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}
+            st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config=cfg, use_container_width=True, hide_index=True)
 
     elif menu == "📝 活動打卡":
         st.header("📝 活動打卡")
@@ -398,7 +439,6 @@ else:
                 d = st.date_input("日期")
                 t = st.selectbox("種類", ACTIVITY_TYPES)
                 
-                # 智能切換 Template
                 if "招募" in t:
                     default_note = TEMPLATE_RECRUIT
                 elif "新人" in t:
