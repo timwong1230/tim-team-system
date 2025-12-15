@@ -38,7 +38,6 @@ def get_sheet(sheet_name):
                 worksheet = sh.worksheet(sheet_name)
                 return worksheet
             except WorksheetNotFound:
-                # 只有真係搵唔到先至 Create，避免 [400] Error
                 worksheet = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
                 if sheet_name == "users":
                     worksheet.append_row(["username", "password", "role", "team", "recruit", "avatar"])
@@ -48,13 +47,11 @@ def get_sheet(sheet_name):
                     worksheet.append_row(["id", "username", "date", "type", "points", "note"])
                 return worksheet
         except Exception as e:
-            # 這裡捕獲 Quota Error，避免 App 崩潰
             st.warning(f"⚠️ 系統繁忙 (Google API 限流)，請稍等 1 分鐘再試。")
             return None
     return None
 
 # --- 3. 數據庫操作 (加入 Caching) ---
-# TTL=60秒，避免頻繁讀取 Google Sheets 導致 Quota Exceeded
 @st.cache_data(ttl=60)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
@@ -63,7 +60,7 @@ def read_data(sheet_name):
             data = ws.get_all_records()
             return pd.DataFrame(data)
         except Exception:
-            return pd.DataFrame() # Return empty if read fails
+            return pd.DataFrame()
     return pd.DataFrame()
 
 def clear_cache():
@@ -102,28 +99,34 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
             if cell:
                 ws.delete_rows(cell.row)
         
-        # 寫入成功後，清除 Cache，讓使用者即時看到更新
         clear_cache()
         
     except Exception as e:
         st.error(f"寫入失敗: {e}")
 
+# --- V33.0 優化初始化邏輯 (防重覆) ---
 def init_db_gs():
-    # 使用 Cache 讀取，避免每次檢查都 Call API
-    df = read_data("users")
-    if df.empty:
-        # 如果 Cache 是空的，嘗試直接讀一次確認 (Double Check)
-        ws = get_sheet("users")
-        if ws and not ws.get_all_values():
-            users = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
-                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
-            for u in users:
+    ws = get_sheet("users")
+    if ws:
+        # 讀取現有所有 Username (第一欄)
+        try:
+            existing_users = ws.col_values(1) # 這是 List
+        except:
+            existing_users = []
+
+        default_users = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
+                         ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
+        
+        for u in default_users:
+            # 只有當個名 "不在" 表入面先加
+            if u[0] not in existing_users:
                 url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
                 user_data = {"username": u[0], "password": u[1], "role": u[2], "team": "Tim Team", "recruit": 0, "avatar": url}
-                headers = ws.row_values(1)
-                row = [user_data.get(h, "") for h in headers]
+                # 簡單 Append
+                row = [user_data.get("username"), user_data.get("password"), user_data.get("role"), 
+                       user_data.get("team"), user_data.get("recruit"), user_data.get("avatar")]
                 ws.append_row(row)
-            clear_cache()
+                clear_cache()
 
 init_db_gs()
 
@@ -131,7 +134,6 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
-    # Convert numbers to string for comparison
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
     if not user.empty: return user.values.tolist()
@@ -253,7 +255,7 @@ def get_weekly_data():
     df = pd.merge(users, stats, on='username', how='left').fillna(0)
     return df, start_week, today
 
-# --- Templates & Constants (V31) ---
+# --- Templates & Constants ---
 TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
 TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
 TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
