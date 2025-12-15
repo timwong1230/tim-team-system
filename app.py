@@ -18,7 +18,6 @@ SCOPES = [
 # --- 2. 連接 Google Sheets (核心引擎) ---
 @st.cache_resource
 def get_gs_client():
-    # 從 Secrets 讀取 JSON 內容
     try:
         json_str = st.secrets["service_account"]["key_content"]
         key_dict = json.loads(json_str)
@@ -33,14 +32,11 @@ def get_sheet(sheet_name):
     client = get_gs_client()
     if client:
         try:
-            # 開啟你的 Google Sheet (確保名稱完全一致)
             sh = client.open("tim_team_db")
-            # 如果 Tab 不存在，嘗試建立 (第一次用可能需要手動開 Tab)
             try:
                 worksheet = sh.worksheet(sheet_name)
             except:
                 worksheet = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
-                # 初始化標題
                 if sheet_name == "users":
                     worksheet.append_row(["username", "password", "role", "team", "recruit", "avatar"])
                 elif sheet_name == "monthly_fyc":
@@ -49,12 +45,11 @@ def get_sheet(sheet_name):
                     worksheet.append_row(["id", "username", "date", "type", "points", "note"])
             return worksheet
         except Exception as e:
-            st.error(f"搵唔到 Google Sheet 'tim_team_db'。請確保你已建立並 Share 給機械人。錯誤: {e}")
+            st.error(f"搵唔到 Google Sheet 'tim_team_db'。錯誤: {e}")
             return None
     return None
 
-# --- 3. 數據庫操作 (取代 SQLite) ---
-# 讀取數據 (轉為 DataFrame)
+# --- 3. 數據庫操作 ---
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     if ws:
@@ -62,30 +57,25 @@ def read_data(sheet_name):
         return pd.DataFrame(data)
     return pd.DataFrame()
 
-# 寫入/更新數據
-def run_query_gs(action, sheet_name, data_dict=None, row_id=None, key_col="id"):
+def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     ws = get_sheet(sheet_name)
     if not ws: return
 
     if action == "INSERT":
-        # 自動生成 ID (如果是 activities 或 monthly_fyc)
         if sheet_name in ["activities", "monthly_fyc"]:
             records = ws.get_all_records()
             new_id = 1
             if records:
-                # 找出最大 ID + 1
                 ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
                 if ids: new_id = max(ids) + 1
             data_dict['id'] = new_id
         
-        # 準備一行數據 (根據 Header 順序)
         headers = ws.row_values(1)
         row_to_add = [data_dict.get(h, "") for h in headers]
         ws.append_row(row_to_add)
 
     elif action == "UPDATE":
-        # 尋找要更新的行 (比較慢，但穩陣)
-        cell = ws.find(str(row_id)) # 假設 ID 是唯一的
+        cell = ws.find(str(row_id))
         if cell:
             row_num = cell.row
             headers = ws.row_values(1)
@@ -99,7 +89,6 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None, key_col="id"):
         if cell:
             ws.delete_rows(cell.row)
 
-# 初始化 Default Users (如果 Sheet 係吉既)
 def init_db_gs():
     df = read_data("users")
     if df.empty:
@@ -108,41 +97,29 @@ def init_db_gs():
         ws = get_sheet("users")
         for u in users:
             url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-            user_data = {
-                "username": u[0], "password": u[1], "role": u[2], 
-                "team": "Tim Team", "recruit": 0, "avatar": url
-            }
-            # 手動 Insert 因為 users 表結構不同
+            user_data = {"username": u[0], "password": u[1], "role": u[2], "team": "Tim Team", "recruit": 0, "avatar": url}
             headers = ws.row_values(1)
             row = [user_data.get(h, "") for h in headers]
             ws.append_row(row)
 
 init_db_gs()
 
-# --- 4. Logic Functions (適配 GSheets) ---
+# --- 4. Logic Functions ---
 def login(u, p):
     df = read_data("users")
-    # Pandas 篩選
     user = df[(df['username'] == u) & (df['password'] == str(p))]
-    if not user.empty:
-        # 轉回 List of tuples 格式以兼容舊 UI 邏輯
-        return user.values.tolist() # 這會返回 [username, password, role...] 的列表
+    if not user.empty: return user.values.tolist()
     return []
 
 def update_avt(u, i): 
-    # User 表沒有 ID，用 Username 找
     ws = get_sheet("users")
     cell = ws.find(u)
-    if cell:
-        col = ws.row_values(1).index("avatar") + 1
-        ws.update_cell(cell.row, col, i)
+    if cell: ws.update_cell(cell.row, ws.row_values(1).index("avatar") + 1, i)
 
 def update_pw(u, p):
     ws = get_sheet("users")
     cell = ws.find(u)
-    if cell:
-        col = ws.row_values(1).index("password") + 1
-        ws.update_cell(cell.row, col, p)
+    if cell: ws.update_cell(cell.row, ws.row_values(1).index("password") + 1, p)
 
 def add_act(u, d, t, n):
     pts = 1
@@ -150,7 +127,6 @@ def add_act(u, d, t, n):
     elif "簽單" in t: pts = 5
     elif "報考試" in t: pts = 3
     elif "傾" in t: pts = 2
-    
     data = {"username": u, "date": str(d), "type": t, "points": pts, "note": n}
     run_query_gs("INSERT", "activities", data)
 
@@ -158,22 +134,16 @@ def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
     exist = df[(df['username'] == u) & (df['month'] == m)]
     if not exist.empty:
-        # Update
-        rid = exist.iloc[0]['id']
-        run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=rid)
+        run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=exist.iloc[0]['id'])
     else:
-        # Insert
         run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": m, "amount": a})
 
 def upd_rec(u, a):
     ws = get_sheet("users")
     cell = ws.find(u)
-    if cell:
-        col = ws.row_values(1).index("recruit") + 1
-        ws.update_cell(cell.row, col, a)
+    if cell: ws.update_cell(cell.row, ws.row_values(1).index("recruit") + 1, a)
 
-def del_act(id): 
-    run_query_gs("DELETE", "activities", row_id=id)
+def del_act(id): run_query_gs("DELETE", "activities", row_id=id)
 
 def upd_act(id, d, t, n):
     pts = 1
@@ -181,42 +151,30 @@ def upd_act(id, d, t, n):
     elif "簽單" in t: pts = 5
     elif "報考試" in t: pts = 3
     elif "傾" in t: pts = 2
-    
-    data = {"date": str(d), "type": t, "points": pts, "note": n}
-    run_query_gs("UPDATE", "activities", data, row_id=id)
+    run_query_gs("UPDATE", "activities", {"date": str(d), "type": t, "points": pts, "note": n}, row_id=id)
 
 def get_act_by_id(id):
     df = read_data("activities")
-    res = df[df['id'] == id]
-    return res.values.tolist()
+    return df[df['id'] == id].values.tolist()
 
 def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note"])
-    # 確保 date 是日期格式以便排序
     df['date'] = pd.to_datetime(df['date'])
     return df.sort_values(by='date', ascending=False)
 
 def get_data(month=None):
     users = read_data("users")
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
-    
     fyc_df = read_data("monthly_fyc")
     act_df = read_data("activities")
 
     if month == "Yearly":
-        if not fyc_df.empty:
-            fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
-        else: fyc = pd.DataFrame(columns=['username', 'fyc'])
+        fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'}) if not fyc_df.empty else pd.DataFrame(columns=['username', 'fyc'])
     else:
-        if not fyc_df.empty:
-            fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'})
-        else: fyc = pd.DataFrame(columns=['username', 'fyc'])
+        fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'}) if not fyc_df.empty else pd.DataFrame(columns=['username', 'fyc'])
 
-    if not act_df.empty:
-        act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
-    else: act = pd.DataFrame(columns=['username', 'Total_Score'])
-
+    act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'}) if not act_df.empty else pd.DataFrame(columns=['username', 'Total_Score'])
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     return df
@@ -224,13 +182,11 @@ def get_data(month=None):
 def get_q1_data():
     users = read_data("users")
     users = users[users['role'] == 'Member'][['username', 'avatar']]
-    
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
         q1 = fyc_df[fyc_df['month'].isin(['2026-01', '2026-02', '2026-03'])]
         q1_sum = q1.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'q1_total'})
     else: q1_sum = pd.DataFrame(columns=['username', 'q1_total'])
-    
     return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
 
 def get_user_act(u):
@@ -245,11 +201,10 @@ def proc_img(f):
 def get_weekly_data():
     today = datetime.date.today()
     start_week = today - datetime.timedelta(days=today.weekday())
-    
     users = read_data("users")
     users = users[users['role'] == 'Member'][['username', 'avatar']]
-    
     act_df = read_data("activities")
+    
     if not act_df.empty:
         act_df['date'] = pd.to_datetime(act_df['date']).dt.date
         this_week = act_df[act_df['date'] >= start_week]
@@ -262,9 +217,9 @@ def get_weekly_data():
     df = pd.merge(users, stats, on='username', how='left').fillna(0)
     return df, start_week, today
 
-# Templates & Constants
-TEMPLATE_SALES = "【客戶資料】\nName: \n3Q Check (缺口/預算/決策權): \nFact Find 重點: \n\n【面談內容】\n推介左咩 Plan?: \n客戶反應/抗拒點: \nRecruit 潛質? (高/中/低): \n\n【下一步】\n下次見面日期: \nAction Items: "
-TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去 COP/BOP?: \n\n【下一步】\n下次跟進日期: \nAction Items: "
+# --- Templates & Constants (已更新 V31) ---
+TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
+TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
 TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
 
 ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "新人報考試 (3分)", "簽單 (5分)", "新人出code (8分)"]
@@ -320,7 +275,7 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # --- Pages (Same as before but data fetched from GSheet) ---
+    # --- Pages ---
     if menu == "📊 團隊總覽":
         st.markdown("## 📊 2026 年度總覽")
         df = get_data("Yearly")
@@ -332,46 +287,30 @@ else:
                     tgt = c_a.selectbox("同事", df['username'].tolist(), key="f1")
                     mth = c_b.selectbox("月份", [f"2026-{i:02d}" for i in range(1,13)])
                     amt = c_c.number_input("FYC ($)", step=1000)
-                    if st.button("更新 FYC"):
-                        upd_fyc(tgt, mth, amt)
-                        st.success("已更新！")
-                        st.rerun()
+                    if st.button("更新 FYC"): upd_fyc(tgt, mth, amt); st.success("已更新！"); st.rerun()
                 with t2:
                     c_a, c_b = st.columns(2)
                     tgt_r = c_a.selectbox("同事", df['username'].tolist(), key="r1")
                     rec = c_b.number_input("招募數", step=1)
-                    if st.button("更新人數"):
-                        upd_rec(tgt_r, rec)
-                        st.success("已更新！")
-                        st.rerun()
+                    if st.button("更新人數"): upd_rec(tgt_r, rec); st.success("已更新！"); st.rerun()
                 with t3:
                     st.dataframe(get_all_act(), use_container_width=True, height=200)
                     ce, cd = st.columns(2)
                     with ce:
                         eid = st.number_input("修改 ID", step=1)
                         if eid>0:
-                            curr = get_act_by_id(eid)
-                            if curr:
+                            if get_act_by_id(eid):
                                 with st.expander(f"修改 #{eid}", expanded=True):
                                     nd = st.date_input("日期")
                                     nt = st.selectbox("種類", ACTIVITY_TYPES)
                                     nn = st.text_area("備註")
-                                    if st.button("確認修改"):
-                                        upd_act(eid, nd, nt, nn)
-                                        st.success("已修改")
-                                        st.rerun()
+                                    if st.button("確認修改"): upd_act(eid, nd, nt, nn); st.success("已修改"); st.rerun()
                     with cd:
                         did = st.number_input("刪除 ID", step=1)
-                        if st.button("刪除"):
-                            del_act(did)
-                            st.success("Deleted")
-                            st.rerun()
+                        if st.button("刪除"): del_act(did); st.success("Deleted"); st.rerun()
                 with t4:
-                    st.info("⚠️ 強制重設密碼")
                     pw_u = st.selectbox("選擇同事", df['username'].tolist(), key="pw_u")
-                    if st.button(f"重設 {pw_u} 為 1234"):
-                        update_pw(pw_u, "1234")
-                        st.success("已重設")
+                    if st.button(f"重設 {pw_u} 為 1234"): update_pw(pw_u, "1234"); st.success("已重設")
         c1, c2, c3 = st.columns(3)
         c1.metric("💰 全年 FYC", f"${df['fyc'].sum():,}")
         c2.metric("🎯 總活動", int(df['Total_Score'].sum()))
@@ -458,7 +397,15 @@ else:
             with st.container(border=True):
                 d = st.date_input("日期")
                 t = st.selectbox("種類", ACTIVITY_TYPES)
-                default_note = TEMPLATE_RECRUIT if "招募" in t or "新人" in t else (TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES)
+                
+                # 智能切換 Template
+                if "招募" in t:
+                    default_note = TEMPLATE_RECRUIT
+                elif "新人" in t:
+                    default_note = TEMPLATE_NEWBIE
+                else:
+                    default_note = TEMPLATE_SALES
+
                 n = st.text_area("備註", value=default_note, height=220)
                 if st.button("提交紀錄", type="primary", use_container_width=True):
                     add_act(st.session_state['user'], d, t, n)
