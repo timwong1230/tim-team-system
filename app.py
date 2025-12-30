@@ -10,91 +10,71 @@ from PIL import Image
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound
 
-# --- 1. 系統設定 (MDRT Premium Theme) ---
+# --- 1. 系統設定 (Professional Light Theme) ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (黑金高對比版) ---
+# --- Custom CSS (白金專業版) ---
 st.markdown("""
 <style>
-    /* 1. 全局背景與字體顏色 (強制白色) */
+    /* 1. 全局設定 - 透過 Streamlit 預設白底黑字，但在這裡微調字型 */
     .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
-    }
-    
-    /* 強制所有基本文字、Label、段落變成淺灰色，確保睇得倒 */
-    h1, h2, h3, h4, h5, h6, p, div, span, label, li {
-        color: #FAFAFA !important;
+        background-color: #FFFFFF;
+        color: #000000;
         font-family: 'Helvetica Neue', sans-serif;
     }
-
-    /* 2. 特別指定標題做金色 */
+    
+    /* 2. 標題金色 - 品牌識別 */
     h1, h2, h3 {
-        color: #D4AF37 !important;
+        color: #C5A028 !important; /* 深金色，白底睇得清楚 */
+        font-weight: 700 !important;
     }
 
-    /* 3. 側邊欄 */
+    /* 3. 側邊欄 - 淺灰底 */
     [data-testid="stSidebar"] {
-        background-color: #161B22;
-        border-right: 1px solid #30363D;
-    }
-    /* 側邊欄文字 */
-    [data-testid="stSidebar"] * {
-        color: #E6E6E6 !important;
+        background-color: #F8F9FA;
+        border-right: 1px solid #E9ECEF;
     }
 
-    /* 4. 卡片樣式 (Metrics) */
+    /* 4. 卡片/指標 (Metrics) - 白底加陰影 */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer {
-        background-color: #21262D;
-        border: 1px solid #30363D;
+        background-color: #FFFFFF;
+        border: 1px solid #E0E0E0;
         border-radius: 10px;
         padding: 15px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* 輕微陰影 */
     }
-    /* Metric Label 修正 */
-    div[data-testid="stMetricLabel"] p {
-        color: #8B949E !important; /* 標籤用深灰 */
-    }
-    /* Metric Value 修正 */
-    div[data-testid="stMetricValue"] div {
-        color: #FFFFFF !important; /* 數值用全白 */
+    div[data-testid="stMetric"]:hover {
+        border-color: #C5A028;
+        transform: translateY(-2px);
+        transition: all 0.2s;
     }
 
-    /* 5. 輸入框 (Input Fields) 修正 - 深底白字 */
-    .stTextInput > div > div > input, 
-    .stTextArea > div > div > textarea, 
-    .stDateInput > div > div > input,
-    .stSelectbox > div > div {
-        background-color: #262730 !important;
-        color: #FFFFFF !important;
-        border-color: #4A4A4A !important;
-    }
-    /* 下拉選單文字修正 */
-    .stSelectbox div[data-testid="stMarkdownContainer"] p {
-        color: #FFFFFF !important;
-    }
-
-    /* 6. 按鈕樣式 - 漸變金 (黑字) */
+    /* 5. 按鈕 - 漸變金 (黑字) */
     div.stButton > button {
         background: linear-gradient(135deg, #D4AF37 0%, #C5A028 100%);
-        color: #000000 !important; /* 按鈕字一定要黑先睇到 */
+        color: #FFFFFF !important; 
         font-weight: bold;
         border: none;
         border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(212, 175, 55, 0.3);
     }
     div.stButton > button:hover {
         background: linear-gradient(135deg, #FFD700 0%, #E6C200 100%);
-        color: #000000 !important;
-    }
-    div.stButton > button p {
-        color: #000000 !important; /* 強制按鈕內文字變黑 */
+        box-shadow: 0 4px 8px rgba(212, 175, 55, 0.5);
+        transform: scale(1.01);
     }
 
-    /* 7. 進度條顏色 */
+    /* 6. 進度條顏色 */
     .stProgress > div > div > div > div {
         background-color: #D4AF37;
     }
     
+    /* 7. 表格樣式優化 */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #E0E0E0;
+        border-radius: 5px;
+    }
+
     /* 8. 頭像 */
     img { border-radius: 50%; }
 
@@ -305,9 +285,9 @@ if not st.session_state['logged_in']:
         with st.container():
             st.markdown("<div style='text-align: center;'><h1>🦁 TIM TEAM 2026</h1></div>", unsafe_allow_html=True)
             st.markdown("""
-            <div style='background-color: #21262D; padding: 20px; border-radius: 10px; border: 1px solid #D4AF37; text-align: center; margin-bottom: 20px;'>
-                <h2 style='color: #D4AF37; margin:0;'>MDRT + 2 Recruits</h2>
-                <h3 style='color: #FAFAFA; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
+            <div style='background-color: #FFFFFF; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
+                <h2 style='color: #C5A028; margin:0;'>MDRT + 2 Recruits</h2>
+                <h3 style='color: #4A4A4A; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
             </div>
             """, unsafe_allow_html=True)
             u = st.text_input("Username", placeholder="e.g., Tim")
@@ -324,7 +304,7 @@ else:
         c_avt, c_txt = st.columns([1, 2])
         with c_avt: st.image(st.session_state.get('avatar',''), width=80)
         with c_txt: 
-            st.markdown(f"<h3 style='margin:0; color:#D4AF37;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='margin:0; color:#C5A028;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
             st.caption(f"{st.session_state['role']} | TIM TEAM")
         st.divider()
         menu = st.radio("MAIN MENU", ["📊 Dashboard", "📝 打卡 (Check-in)", "⚖️ 獎罰 (Winner Takes All)", "🏆 挑戰 (Challenges)", "🤝 招募 (Recruit)", "📅 業績 (Monthly)", "👤 設定 (Profile)"])
@@ -375,7 +355,7 @@ else:
             max_score = df['wk_score'].max()
             winners = df[df['wk_score'] == max_score] if max_score > 0 else pd.DataFrame()
             pool = len(df[df['wk_count'] < 3]) * 100
-            st.markdown(f"### 🏆 Prize Pool: <span style='color:#00FF00'>${pool if pool > 0 else 100}</span>", unsafe_allow_html=True)
+            st.markdown(f"### 🏆 Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else 100}</span>", unsafe_allow_html=True)
             if not winners.empty:
                 cols = st.columns(len(winners)); 
                 for idx, row in winners.reset_index().iterrows(): cols[idx].image(row['avatar'], width=60); cols[idx].caption(f"👑 {row['username']}")
