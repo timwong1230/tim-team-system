@@ -16,7 +16,7 @@ st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", 
 # --- Custom CSS (V40.0 核彈級漂白) ---
 st.markdown("""
 <style>
-    /* 1. 強制整個 App 容器變白 */
+    /* 1. 暴力強制整個 App 背景變白 */
     [data-testid="stAppViewContainer"] {
         background-color: #ffffff !important;
     }
@@ -27,40 +27,34 @@ st.markdown("""
         border-right: 1px solid #e9ecef;
     }
     
-    /* 3. 強制頂部 Header 透明 (唔好有黑色一條野) */
+    /* 3. 強制頂部 Header 透明 */
     [data-testid="stHeader"] {
         background-color: rgba(0,0,0,0) !important;
     }
 
-    /* 4. 強制所有文字變黑 (暴力修正) */
+    /* 4. 強制所有文字變黑 (覆蓋 Dark Mode 的白字設定) */
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
         color: #000000 !important;
         font-family: 'Helvetica Neue', sans-serif;
     }
     
-    /* 5. 特別指定標題做金色 (要加 !important 覆蓋上面的黑色設定) */
+    /* 5. 標題維持金色 */
     h1, h2, h3 {
         color: #C5A028 !important; 
         font-weight: 700 !important;
     }
 
-    /* 6. 卡片/指標 (Metrics) - 白底黑字加陰影 */
+    /* 6. 卡片/指標 (Metrics) - 白底黑字 */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer {
         background-color: #ffffff !important;
         border: 1px solid #e0e0e0 !important;
         border-radius: 10px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    /* Metric 數值強制變黑 */
-    div[data-testid="stMetricValue"] {
-        color: #000000 !important;
-    }
-    /* Metric Label 強制變深灰 */
-    div[data-testid="stMetricLabel"] {
-        color: #666666 !important;
-    }
+    div[data-testid="stMetricValue"] { color: #000000 !important; }
+    div[data-testid="stMetricLabel"] { color: #666666 !important; }
 
-    /* 7. 輸入框 (Input Fields) 修正 - 白底黑字 */
+    /* 7. 輸入框修正 (避免白字白底) */
     .stTextInput > div > div > input, 
     .stTextArea > div > div > textarea, 
     .stDateInput > div > div > input,
@@ -69,9 +63,9 @@ st.markdown("""
         color: #000000 !important;
         border: 1px solid #cccccc !important;
     }
-    /* 輸入框內的 Placeholder */
-    ::placeholder {
-        color: #888888 !important;
+    /* 下拉選單內的文字 */
+    .stSelectbox div[data-testid="stMarkdownContainer"] p {
+        color: #000000 !important;
     }
 
     /* 8. 按鈕 - 漸變金 (白字) */
@@ -82,15 +76,14 @@ st.markdown("""
         box-shadow: 0 2px 5px rgba(212, 175, 55, 0.3);
     }
     div.stButton > button p {
-        color: #FFFFFF !important; /* 強制按鈕內文字變白 */
+        color: #FFFFFF !important;
     }
 
-    /* 9. 表格樣式優化 */
+    /* 9. 表格 */
     div[data-testid="stDataFrame"] {
         border: 1px solid #e0e0e0;
     }
     
-    /* 10. 頭像 */
     img { border-radius: 50%; }
 
 </style>
