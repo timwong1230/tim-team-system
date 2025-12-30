@@ -13,43 +13,91 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 (MDRT Premium Theme) ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (黑金尊貴版) ---
+# --- Custom CSS (黑金高對比版) ---
 st.markdown("""
 <style>
-    /* 全局背景 - 深色高級灰 */
-    .stApp { background-color: #0E1117; color: #FAFAFA; }
-    
-    /* 側邊欄 */
-    [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
-    
-    /* 卡片樣式 */
-    div[data-testid="stMetric"], div.css-1r6slb0, .stContainer {
-        background-color: #21262D; border: 1px solid #30363D; border-radius: 10px;
-        padding: 15px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    /* 1. 全局背景與字體顏色 (強制白色) */
+    .stApp {
+        background-color: #0E1117;
+        color: #FAFAFA;
     }
     
-    /* 按鈕樣式 - 漸變金 */
+    /* 強制所有基本文字、Label、段落變成淺灰色，確保睇得倒 */
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li {
+        color: #FAFAFA !important;
+        font-family: 'Helvetica Neue', sans-serif;
+    }
+
+    /* 2. 特別指定標題做金色 */
+    h1, h2, h3 {
+        color: #D4AF37 !important;
+    }
+
+    /* 3. 側邊欄 */
+    [data-testid="stSidebar"] {
+        background-color: #161B22;
+        border-right: 1px solid #30363D;
+    }
+    /* 側邊欄文字 */
+    [data-testid="stSidebar"] * {
+        color: #E6E6E6 !important;
+    }
+
+    /* 4. 卡片樣式 (Metrics) */
+    div[data-testid="stMetric"], div.css-1r6slb0, .stContainer {
+        background-color: #21262D;
+        border: 1px solid #30363D;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    /* Metric Label 修正 */
+    div[data-testid="stMetricLabel"] p {
+        color: #8B949E !important; /* 標籤用深灰 */
+    }
+    /* Metric Value 修正 */
+    div[data-testid="stMetricValue"] div {
+        color: #FFFFFF !important; /* 數值用全白 */
+    }
+
+    /* 5. 輸入框 (Input Fields) 修正 - 深底白字 */
+    .stTextInput > div > div > input, 
+    .stTextArea > div > div > textarea, 
+    .stDateInput > div > div > input,
+    .stSelectbox > div > div {
+        background-color: #262730 !important;
+        color: #FFFFFF !important;
+        border-color: #4A4A4A !important;
+    }
+    /* 下拉選單文字修正 */
+    .stSelectbox div[data-testid="stMarkdownContainer"] p {
+        color: #FFFFFF !important;
+    }
+
+    /* 6. 按鈕樣式 - 漸變金 (黑字) */
     div.stButton > button {
         background: linear-gradient(135deg, #D4AF37 0%, #C5A028 100%);
-        color: #000; font-weight: bold; border: none; border-radius: 8px;
+        color: #000000 !important; /* 按鈕字一定要黑先睇到 */
+        font-weight: bold;
+        border: none;
+        border-radius: 8px;
     }
     div.stButton > button:hover {
-        background: linear-gradient(135deg, #FFD700 0%, #E6C200 100%); color: #000;
+        background: linear-gradient(135deg, #FFD700 0%, #E6C200 100%);
+        color: #000000 !important;
     }
-    
-    /* 標題金色 */
-    h1, h2, h3 { color: #D4AF37 !important; font-family: 'Helvetica Neue', sans-serif; }
-    
-    /* Progress Bar */
-    .stProgress > div > div > div > div { background-color: #D4AF37; }
+    div.stButton > button p {
+        color: #000000 !important; /* 強制按鈕內文字變黑 */
+    }
 
-    /* Input Fields */
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input {
-        background-color: #0E1117; color: #fff; border-color: #30363D;
+    /* 7. 進度條顏色 */
+    .stProgress > div > div > div > div {
+        background-color: #D4AF37;
     }
     
-    /* 頭像圓角 */
+    /* 8. 頭像 */
     img { border-radius: 50%; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -149,16 +197,11 @@ def login(u, p):
 
 def proc_img(f):
     try:
-        # 1. 開啟圖片
         image = Image.open(f)
-        # 2. 轉做 RGB (移除透明底，否則 JPEG 會 Error)
         if image.mode in ("RGBA", "P"): image = image.convert("RGB")
-        # 3. 強制縮細做 100x100 (極致瘦身)
         image = image.resize((100, 100))
-        # 4. 轉做 JPEG (比 PNG 細好多)
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format='JPEG', quality=80)
-        # 5. 轉 Base64
         return f"data:image/jpeg;base64,{base64.b64encode(img_byte_arr.getvalue()).decode()}"
     except Exception as e:
         st.error(f"圖片處理失敗: {e}")
