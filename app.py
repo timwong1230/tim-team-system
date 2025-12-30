@@ -5,6 +5,8 @@ import base64
 import json
 import gspread
 import os
+import io
+from PIL import Image
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound
 
@@ -58,7 +60,7 @@ def get_sheet(sheet_name):
                     worksheet.append_row(["id", "username", "date", "type", "points", "note"])
                 return worksheet
         except Exception as e:
-            st.warning(f"⚠️ 系統繁忙 (Google API 限流)，請稍等 1 分鐘再試。")
+            st.warning(f⚠️ 系統繁忙 (Google API 限流)，請稍等 1 分鐘再試。")
             return None
     return None
 
@@ -224,9 +226,23 @@ def get_user_act(u):
     if df.empty: return pd.DataFrame()
     return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
 
+# --- V37.0 圖片修復功能 (保留此功能以防止 Error 400) ---
 def proc_img(f):
-    try: return f"data:image/png;base64,{base64.b64encode(f.getvalue()).decode()}" if f else None
-    except: return None
+    try:
+        # 1. 開啟圖片
+        image = Image.open(f)
+        # 2. 轉做 RGB (移除透明底)
+        if image.mode in ("RGBA", "P"): image = image.convert("RGB")
+        # 3. 強制縮細做 100x100
+        image = image.resize((100, 100))
+        # 4. 轉做 JPEG
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=80)
+        # 5. 轉 Base64
+        return f"data:image/jpeg;base64,{base64.b64encode(img_byte_arr.getvalue()).decode()}"
+    except Exception as e:
+        st.error(f"圖片處理失敗: {e}")
+        return None
 
 def get_weekly_data():
     today = datetime.date.today()
