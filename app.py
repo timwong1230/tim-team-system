@@ -10,72 +10,87 @@ from PIL import Image
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound
 
-# --- 1. 系統設定 (Professional Light Theme) ---
+# --- 1. 系統設定 (強制白底) ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (白金專業版) ---
+# --- Custom CSS (V40.0 核彈級漂白) ---
 st.markdown("""
 <style>
-    /* 1. 全局設定 - 透過 Streamlit 預設白底黑字，但在這裡微調字型 */
-    .stApp {
-        background-color: #FFFFFF;
-        color: #000000;
+    /* 1. 強制整個 App 容器變白 */
+    [data-testid="stAppViewContainer"] {
+        background-color: #ffffff !important;
+    }
+    
+    /* 2. 強制側邊欄變淺灰 */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa !important;
+        border-right: 1px solid #e9ecef;
+    }
+    
+    /* 3. 強制頂部 Header 透明 (唔好有黑色一條野) */
+    [data-testid="stHeader"] {
+        background-color: rgba(0,0,0,0) !important;
+    }
+
+    /* 4. 強制所有文字變黑 (暴力修正) */
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
+        color: #000000 !important;
         font-family: 'Helvetica Neue', sans-serif;
     }
     
-    /* 2. 標題金色 - 品牌識別 */
+    /* 5. 特別指定標題做金色 (要加 !important 覆蓋上面的黑色設定) */
     h1, h2, h3 {
-        color: #C5A028 !important; /* 深金色，白底睇得清楚 */
+        color: #C5A028 !important; 
         font-weight: 700 !important;
     }
 
-    /* 3. 側邊欄 - 淺灰底 */
-    [data-testid="stSidebar"] {
-        background-color: #F8F9FA;
-        border-right: 1px solid #E9ECEF;
-    }
-
-    /* 4. 卡片/指標 (Metrics) - 白底加陰影 */
+    /* 6. 卡片/指標 (Metrics) - 白底黑字加陰影 */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
+        background-color: #ffffff !important;
+        border: 1px solid #e0e0e0 !important;
         border-radius: 10px;
-        padding: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* 輕微陰影 */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    div[data-testid="stMetric"]:hover {
-        border-color: #C5A028;
-        transform: translateY(-2px);
-        transition: all 0.2s;
+    /* Metric 數值強制變黑 */
+    div[data-testid="stMetricValue"] {
+        color: #000000 !important;
+    }
+    /* Metric Label 強制變深灰 */
+    div[data-testid="stMetricLabel"] {
+        color: #666666 !important;
     }
 
-    /* 5. 按鈕 - 漸變金 (黑字) */
+    /* 7. 輸入框 (Input Fields) 修正 - 白底黑字 */
+    .stTextInput > div > div > input, 
+    .stTextArea > div > div > textarea, 
+    .stDateInput > div > div > input,
+    .stSelectbox > div > div {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #cccccc !important;
+    }
+    /* 輸入框內的 Placeholder */
+    ::placeholder {
+        color: #888888 !important;
+    }
+
+    /* 8. 按鈕 - 漸變金 (白字) */
     div.stButton > button {
-        background: linear-gradient(135deg, #D4AF37 0%, #C5A028 100%);
+        background: linear-gradient(135deg, #D4AF37 0%, #C5A028 100%) !important;
         color: #FFFFFF !important; 
-        font-weight: bold;
         border: none;
-        border-radius: 8px;
         box-shadow: 0 2px 5px rgba(212, 175, 55, 0.3);
     }
-    div.stButton > button:hover {
-        background: linear-gradient(135deg, #FFD700 0%, #E6C200 100%);
-        box-shadow: 0 4px 8px rgba(212, 175, 55, 0.5);
-        transform: scale(1.01);
+    div.stButton > button p {
+        color: #FFFFFF !important; /* 強制按鈕內文字變白 */
     }
 
-    /* 6. 進度條顏色 */
-    .stProgress > div > div > div > div {
-        background-color: #D4AF37;
+    /* 9. 表格樣式優化 */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #e0e0e0;
     }
     
-    /* 7. 表格樣式優化 */
-    div[data-testid="stDataFrame"] {
-        border: 1px solid #E0E0E0;
-        border-radius: 5px;
-    }
-
-    /* 8. 頭像 */
+    /* 10. 頭像 */
     img { border-radius: 50%; }
 
 </style>
@@ -285,9 +300,9 @@ if not st.session_state['logged_in']:
         with st.container():
             st.markdown("<div style='text-align: center;'><h1>🦁 TIM TEAM 2026</h1></div>", unsafe_allow_html=True)
             st.markdown("""
-            <div style='background-color: #FFFFFF; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
-                <h2 style='color: #C5A028; margin:0;'>MDRT + 2 Recruits</h2>
-                <h3 style='color: #4A4A4A; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
+            <div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
+                <h2 style='color: #C5A028 !important; margin:0;'>MDRT + 2 Recruits</h2>
+                <h3 style='color: #4A4A4A !important; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
             </div>
             """, unsafe_allow_html=True)
             u = st.text_input("Username", placeholder="e.g., Tim")
@@ -304,7 +319,7 @@ else:
         c_avt, c_txt = st.columns([1, 2])
         with c_avt: st.image(st.session_state.get('avatar',''), width=80)
         with c_txt: 
-            st.markdown(f"<h3 style='margin:0; color:#C5A028;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='margin:0; color:#C5A028 !important;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
             st.caption(f"{st.session_state['role']} | TIM TEAM")
         st.divider()
         menu = st.radio("MAIN MENU", ["📊 Dashboard", "📝 打卡 (Check-in)", "⚖️ 獎罰 (Winner Takes All)", "🏆 挑戰 (Challenges)", "🤝 招募 (Recruit)", "📅 業績 (Monthly)", "👤 設定 (Profile)"])
