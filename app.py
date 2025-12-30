@@ -19,15 +19,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# --- 2. 連接 Google Sheets (V34.0 雙制式引擎) ---
+# --- 2. 連接 Google Sheets ---
 @st.cache_resource
 def get_gs_client():
     try:
-        # 方法 A: 嘗試讀取 Streamlit Secrets (舊方法)
+        # 方法 A: 嘗試讀取 Streamlit Secrets
         if "service_account" in st.secrets:
             json_str = st.secrets["service_account"]["key_content"]
             key_dict = json.loads(json_str)
-        # 方法 B: 嘗試讀取系統環境變數 (Render 新方法)
+        # 方法 B: 嘗試讀取系統環境變數
         elif "GSPREAD_KEY" in os.environ:
             json_str = os.environ["GSPREAD_KEY"]
             key_dict = json.loads(json_str)
@@ -60,7 +60,8 @@ def get_sheet(sheet_name):
                     worksheet.append_row(["id", "username", "date", "type", "points", "note"])
                 return worksheet
         except Exception as e:
-            st.warning(f⚠️ 系統繁忙 (Google API 限流)，請稍等 1 分鐘再試。")
+            # 修復 SyntaxError: 改用 icon 參數，避免直接使用 Emoji 符號導致亂碼
+            st.warning("系統繁忙 (Google API 限流)，請稍等 1 分鐘再試。", icon="⚠️")
             return None
     return None
 
@@ -142,6 +143,24 @@ def login(u, p):
     user = df[(df['username'] == u) & (df['password'] == str(p))]
     if not user.empty: return user.values.tolist()
     return []
+
+# 這是必須保留的修復：智能縮圖功能 (防止 API Error)
+def proc_img(f):
+    try:
+        # 1. 開啟圖片
+        image = Image.open(f)
+        # 2. 轉做 RGB (移除透明底)
+        if image.mode in ("RGBA", "P"): image = image.convert("RGB")
+        # 3. 強制縮細做 100x100
+        image = image.resize((100, 100))
+        # 4. 轉做 JPEG
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=80)
+        # 5. 轉 Base64
+        return f"data:image/jpeg;base64,{base64.b64encode(img_byte_arr.getvalue()).decode()}"
+    except Exception as e:
+        st.error(f"圖片處理失敗: {e}")
+        return None
 
 def update_avt(u, i): 
     ws = get_sheet("users")
@@ -225,24 +244,6 @@ def get_user_act(u):
     df = read_data("activities")
     if df.empty: return pd.DataFrame()
     return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
-
-# --- V37.0 圖片修復功能 (保留此功能以防止 Error 400) ---
-def proc_img(f):
-    try:
-        # 1. 開啟圖片
-        image = Image.open(f)
-        # 2. 轉做 RGB (移除透明底)
-        if image.mode in ("RGBA", "P"): image = image.convert("RGB")
-        # 3. 強制縮細做 100x100
-        image = image.resize((100, 100))
-        # 4. 轉做 JPEG
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=80)
-        # 5. 轉 Base64
-        return f"data:image/jpeg;base64,{base64.b64encode(img_byte_arr.getvalue()).decode()}"
-    except Exception as e:
-        st.error(f"圖片處理失敗: {e}")
-        return None
 
 def get_weekly_data():
     today = datetime.date.today()
