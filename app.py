@@ -222,27 +222,6 @@ def get_weekly_data():
             stats.columns = ['username', 'wk_score', 'wk_count']
     return pd.merge(users, stats, on='username', how='left').fillna(0), start, today
 
-# V44.0 新增: 獲取今日戰報數據
-def get_daily_ranking():
-    today = datetime.date.today()
-    users = read_data("users")
-    users = users[users['role'] == 'Member'][['username']]
-    act_df = read_data("activities")
-    
-    if not act_df.empty:
-        act_df['date'] = pd.to_datetime(act_df['date']).dt.date
-        today_acts = act_df[act_df['date'] == today]
-        if not today_acts.empty:
-            stats = today_acts.groupby('username')['points'].sum().reset_index()
-            stats.columns = ['username', 'today_points']
-        else:
-            stats = pd.DataFrame(columns=['username', 'today_points'])
-    else:
-        stats = pd.DataFrame(columns=['username', 'today_points'])
-        
-    df = pd.merge(users, stats, on='username', how='left').fillna(0)
-    return df.sort_values(by='today_points', ascending=False)
-
 # --- Templates & Constants ---
 TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
 TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
@@ -260,7 +239,7 @@ if not st.session_state['logged_in']:
             st.markdown("<div style='text-align: center;'><h1>🦁 TIM TEAM 2026</h1></div>", unsafe_allow_html=True)
             st.markdown("""
             <div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
-                <h2 style='color: #C5A028 !important; margin:0;'>MDRT + 2 Recruits</h2>
+                <h2 style='color: #C5A028 !important; margin:0;'>M + 2</h2>
                 <h3 style='color: #4A4A4A !important; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
                 <div style='margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ddd;'>
                     <span style='color: #666; font-size: 0.9em;'>2027 MDRT Requirement:</span><br>
@@ -293,62 +272,69 @@ else:
     if menu == "📊 Dashboard":
         st.markdown(f"## 📊 {st.session_state['user']}, Let's Go MDRT!")
         
-        # V45.0 每週戰報生成器 (Admin 專用)
+        # 每週戰報生成器 (Admin 專用)
         if st.session_state['role'] == 'Leader':
             with st.container(border=True):
                 st.markdown("### 📢 每週戰報生成器 (Admin Only)")
                 if st.button("📝 生成本週結算戰報"):
                     wk_df, start, end = get_weekly_data()
-                    
-                    # 1. 搵 MVP (最高分)
                     max_score = wk_df['wk_score'].max()
                     winners = wk_df[wk_df['wk_score'] == max_score]
-                    
-                    # 2. 搵罰款組 (<3次)
                     losers = wk_df[wk_df['wk_count'] < 3]
                     penalty_total = len(losers) * 100
                     prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
                     
-                    # 3. 生成 PUA 文案
                     report = f"📅 *【TIM TEAM 本週戰報 ({start} ~ {end})】* 🦁\n\n"
-                    
-                    # A. 頒獎台
                     if max_score > 0:
                         report += f"🏆 *本週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
-                        for i, w in winners.iterrows():
-                            report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
-                        if penalty_total > 0:
-                            report += f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n"
-                        else:
-                            report += "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
-                    else:
-                        report += "⚠️ *本週全軍覆沒？* 無人開工？\n\n"
+                        for i, w in winners.iterrows(): report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
+                        report += f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n" if penalty_total > 0 else "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
+                    else: report += "⚠️ *本週全軍覆沒？* 無人開工？\n\n"
 
-                    # B. 罰款區 (公開處刑)
                     if not losers.empty:
                         report += f"💸 *【罰款名單 - 每人 $100】*\n_活動量不足 3 次，請自覺 PayMe 俾 Winner！_\n"
-                        for i, l in losers.iterrows():
-                            report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
-                    else:
-                        report += "✅ *本週無人罰款！Excellent！*\n"
+                        for i, l in losers.iterrows(): report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
+                    else: report += "✅ *本週無人罰款！Excellent！*\n"
 
                     report += "\n📊 *詳細戰況：*\n"
                     for i, row in wk_df.sort_values(by='wk_score', ascending=False).iterrows():
                         report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
-
                     report += "\n🚀 *新一週由零開始，大家加油！*"
                     
                     st.code(report)
                     encoded_text = urllib.parse.quote(report)
                     st.link_button("📤 Send to WhatsApp", f"https://wa.me/?text={encoded_text}")
 
+        # V48.0 修改：Leaderboard 加入實數和百分比
         df = get_data("Yearly")
         c1, c2, c3 = st.columns(3)
         c1.metric("💰 Team FYC", f"${df['fyc'].sum():,.0f}"); c2.metric("👥 Recruits", int(df['recruit'].sum())); c3.metric("🔥 Activities", int(df['Total_Score'].sum()))
         st.markdown("### 🏆 Leaderboard")
-        st.dataframe(df[['avatar', 'username', 'fyc', 'recruit', 'Total_Score']].sort_values(by='fyc', ascending=False),
-                     column_config={"avatar": st.column_config.ImageColumn("Avatar", width="small"), "fyc": st.column_config.ProgressColumn("MDRT", format="$%d", max_value=800000)},
-                     use_container_width=True, hide_index=True)
+        
+        # 計算 MDRT 相關數據
+        mdrt_target = 512800
+        # 1. 實數格式 (e.g. $100,000 / $512,800)
+        df['mdrt_fraction'] = df['fyc'].apply(lambda x: f"${x:,.0f} / ${mdrt_target:,.0f}")
+        # 2. 百分比格式 (e.g. 0.2)
+        df['mdrt_percent'] = df['fyc'] / mdrt_target
+        
+        # 排序後顯示
+        df_sorted = df.sort_values(by='fyc', ascending=False)
+        
+        st.dataframe(
+            df_sorted[['avatar', 'username', 'mdrt_fraction', 'mdrt_percent', 'recruit', 'Total_Score']],
+            column_config={
+                "avatar": st.column_config.ImageColumn("Avatar", width="small"),
+                "username": st.column_config.TextColumn("Name"),
+                "mdrt_fraction": st.column_config.TextColumn("MDRT 進度 (實數)"),
+                "mdrt_percent": st.column_config.ProgressColumn("MDRT Progress (%)", format="%.1f%%", min_value=0, max_value=1),
+                "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
+                "Total_Score": st.column_config.NumberColumn("Activity", format="%d")
+            },
+            use_container_width=True, 
+            hide_index=True
+        )
+
         if st.session_state['role'] == 'Leader':
             with st.expander("⚙️ Admin Tools"):
                 t1, t2, t3 = st.tabs(["FYC", "Recruit", "Delete"])
