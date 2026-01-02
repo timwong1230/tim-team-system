@@ -222,6 +222,27 @@ def get_weekly_data():
             stats.columns = ['username', 'wk_score', 'wk_count']
     return pd.merge(users, stats, on='username', how='left').fillna(0), start, today
 
+# V44.0 新增: 獲取今日戰報數據
+def get_daily_ranking():
+    today = datetime.date.today()
+    users = read_data("users")
+    users = users[users['role'] == 'Member'][['username']]
+    act_df = read_data("activities")
+    
+    if not act_df.empty:
+        act_df['date'] = pd.to_datetime(act_df['date']).dt.date
+        today_acts = act_df[act_df['date'] == today]
+        if not today_acts.empty:
+            stats = today_acts.groupby('username')['points'].sum().reset_index()
+            stats.columns = ['username', 'today_points']
+        else:
+            stats = pd.DataFrame(columns=['username', 'today_points'])
+    else:
+        stats = pd.DataFrame(columns=['username', 'today_points'])
+        
+    df = pd.merge(users, stats, on='username', how='left').fillna(0)
+    return df.sort_values(by='today_points', ascending=False)
+
 # --- Templates & Constants ---
 TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
 TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
@@ -241,6 +262,10 @@ if not st.session_state['logged_in']:
             <div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
                 <h2 style='color: #C5A028 !important; margin:0;'>MDRT + 2 Recruits</h2>
                 <h3 style='color: #4A4A4A !important; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
+                <div style='margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ddd;'>
+                    <span style='color: #666; font-size: 0.9em;'>2027 MDRT Requirement:</span><br>
+                    <strong style='color: #D4AF37; font-size: 1.3em;'>HK$ 512,800</strong>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             u = st.text_input("Username", placeholder="e.g., Tim")
