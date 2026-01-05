@@ -31,6 +31,10 @@ st.markdown("""
     div.stButton > button p { color: #FFFFFF !important; }
     div[data-testid="stDataFrame"] { border: 1px solid #e0e0e0; }
     img { border-radius: 50%; }
+    
+    /* 規則說明框樣式 */
+    .rule-box { background-color: #FFF8E1; border-left: 5px solid #D4AF37; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+    .rule-title { font-weight: bold; color: #D4AF37; font-size: 1.1em; margin-bottom: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -305,34 +309,26 @@ else:
                     encoded_text = urllib.parse.quote(report)
                     st.link_button("📤 Send to WhatsApp", f"https://wa.me/?text={encoded_text}")
 
-        # V48.0 修改：Leaderboard 加入實數和百分比
+        # Leaderboard 加入實數和百分比
         df = get_data("Yearly")
         c1, c2, c3 = st.columns(3)
         c1.metric("💰 Team FYC", f"${df['fyc'].sum():,.0f}"); c2.metric("👥 Recruits", int(df['recruit'].sum())); c3.metric("🔥 Activities", int(df['Total_Score'].sum()))
         st.markdown("### 🏆 Leaderboard")
-        
-        # 計算 MDRT 相關數據
         mdrt_target = 512800
-        # 1. 實數格式 (e.g. $100,000 / $512,800)
         df['mdrt_fraction'] = df['fyc'].apply(lambda x: f"${x:,.0f} / ${mdrt_target:,.0f}")
-        # 2. 百分比格式 (e.g. 0.2)
         df['mdrt_percent'] = df['fyc'] / mdrt_target
-        
-        # 排序後顯示
         df_sorted = df.sort_values(by='fyc', ascending=False)
-        
         st.dataframe(
             df_sorted[['avatar', 'username', 'mdrt_fraction', 'mdrt_percent', 'recruit', 'Total_Score']],
             column_config={
                 "avatar": st.column_config.ImageColumn("Avatar", width="small"),
                 "username": st.column_config.TextColumn("Name"),
                 "mdrt_fraction": st.column_config.TextColumn("MDRT 進度 (實數)"),
-                "mdrt_percent": st.column_config.ProgressColumn("MDRT Progress (%)", format="%.1f%%", min_value=0, max_value=1),
+                "mdrt_percent": st.column_config.ProgressColumn("MDRT %", format="%.1f%%", min_value=0, max_value=1),
                 "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
                 "Total_Score": st.column_config.NumberColumn("Activity", format="%d")
             },
-            use_container_width=True, 
-            hide_index=True
+            use_container_width=True, hide_index=True
         )
 
         if st.session_state['role'] == 'Leader':
@@ -364,7 +360,26 @@ else:
     elif menu == "⚖️ 獎罰 (Winner Takes All)":
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ Winner Takes All ({start} ~ {end})")
-        st.info("規則: 活動量 < 3次 👉 罰款 $100 (注入獎金池) 👉 最高分者獨得!")
+        
+        # V49.0 更新：詳盡規則說明
+        st.markdown("""
+        <div class="rule-box">
+            <div class="rule-title">📜 詳細遊戲規則 (Game Rules)：</div>
+            <ul>
+                <li><strong>結算時間：</strong> 逢星期日晚 23:59 系統自動結算。</li>
+                <li><strong>罰款準則：</strong> 每週活動量 (Count) <strong>少於 3 次</strong> 者，需罰款 <strong>$100</strong>。</li>
+                <li><strong>獎金歸屬：</strong> 所有罰款注入獎金池，由 <strong>最高分 (Score)</strong> 者獨得。</li>
+                <li><strong>特殊情況：</strong>
+                    <ul>
+                        <li>若多人同為最高分，獎金平分。</li>
+                        <li>若全隊達標 (無人罰款)，<strong>Tim 自掏 $100</strong> 作為獎勵 (最高分者得)。</li>
+                        <li>若最高分者為 0 分，獎金累積至下週 (Rollover)。</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
         if not df.empty:
             max_score = df['wk_score'].max()
             winners = df[df['wk_score'] == max_score] if max_score > 0 else pd.DataFrame()
@@ -378,10 +393,37 @@ else:
                          use_container_width=True, hide_index=True)
 
     elif menu == "🏆 挑戰 (Challenges)":
-        st.markdown("## 🏆 Q1 Challenge"); q1 = get_q1_data()
-        if not q1.empty: st.dataframe(q1.sort_values(by='q1_total', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "q1_total": st.column_config.ProgressColumn("Target $88k", format="$%d", max_value=88000)}, use_container_width=True, hide_index=True)
-        st.divider(); c1, c2, c3, c4 = st.columns(4)
-        c1.info("🚀 1st MDRT\n$20,000"); c2.info("👑 Top FYC\n$10,000"); c3.info("✈️ Recruit\nTicket"); c4.info("🍽️ Star\nDinner")
+        st.markdown("## 🏆 2026 年度挑戰")
+        q1_df = get_q1_data()
+        
+        # V49.0 更新：詳盡挑戰規則
+        st.markdown("""
+        <div class="rule-box">
+            <div class="rule-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div>
+            <ul>
+                <li><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。</li>
+                <li><strong>意義：</strong> 這是通往 MDRT 的第一張入場券，必須拿下！</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if not q1_df.empty:
+            st.dataframe(q1_df.sort_values(by='q1_total', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "q1_total": st.column_config.ProgressColumn("Target $88k", format="$%d", max_value=88000)}, use_container_width=True, hide_index=True)
+        
+        st.divider()
+        st.markdown("### 🎁 年度獎賞計劃")
+        
+        c1, c2 = st.columns(2)
+        with c1: 
+            st.markdown('<div class="reward-card"><div class="reward-title">🚀 1st MDRT</div><div class="reward-prize">$20,000 Cash</div><p>首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
+        with c2: 
+            st.markdown('<div class="reward-card"><div class="reward-title">👑 Top FYC 冠軍</div><div class="reward-prize">$10,000 Cash</div><p>全年業績最高者 (需 Min. MDRT)</p></div>', unsafe_allow_html=True)
+        
+        c3, c4 = st.columns(2)
+        with c3: 
+            st.markdown('<div class="reward-card"><div class="reward-title">✈️ 招募冠軍</div><div class="reward-prize">雙人來回機票</div><p>全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
+        with c4: 
+            st.markdown('<div class="reward-card"><div class="reward-title">🍽️ Monthly Star</div><div class="reward-prize">Tim 請食飯</div><p>單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
     elif menu == "🤝 招募 (Recruit)":
         st.markdown("## 🤝 Recruit 龍虎榜"); df = get_data("Yearly")
