@@ -14,27 +14,69 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V40.0 強制白底版) ---
+# --- Custom CSS (V50.0 黃金尊貴版) ---
 st.markdown("""
 <style>
+    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #ffffff !important; }
     [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
-    h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown { color: #000000 !important; font-family: 'Helvetica Neue', sans-serif; }
-    h1, h2, h3 { color: #C5A028 !important; font-weight: 700 !important; }
-    div[data-testid="stMetric"], div.css-1r6slb0, .stContainer { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    div[data-testid="stMetricValue"] { color: #000000 !important; }
-    div[data-testid="stMetricLabel"] { color: #666666 !important; }
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #ffffff !important; color: #000000 !important; border: 1px solid #cccccc !important; }
-    .stSelectbox div[data-testid="stMarkdownContainer"] p { color: #000000 !important; }
-    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #C5A028 100%) !important; color: #FFFFFF !important; border: none; box-shadow: 0 2px 5px rgba(212, 175, 55, 0.3); }
+    h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
+    h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
+
+    /* 元件樣式優化 */
+    div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
+    div[data-testid="stMetric"]:hover, .stContainer:hover { box-shadow: 0 6px 15px rgba(197, 160, 40, 0.15); }
+    div[data-testid="stMetricValue"] { color: #2c3e50 !important; font-weight: 700; }
+    div[data-testid="stMetricLabel"] { color: #7f8c8d !important; }
+
+    /* 輸入框與按鈕 */
+    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; color: #2c3e50 !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
+    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); transition: transform 0.1s; }
+    div.stButton > button:active { transform: scale(0.98); }
     div.stButton > button p { color: #FFFFFF !important; }
-    div[data-testid="stDataFrame"] { border: 1px solid #e0e0e0; }
-    img { border-radius: 50%; }
     
-    /* 規則說明框樣式 */
-    .rule-box { background-color: #FFF8E1; border-left: 5px solid #D4AF37; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-    .rule-title { font-weight: bold; color: #D4AF37; font-size: 1.1em; margin-bottom: 5px; }
+    /* 表格與圖片 */
+    div[data-testid="stDataFrame"] { border: none; }
+    div[data-testid="stDataFrame"] div[data-testid="stVerticalBlock"] { border-radius: 12px; overflow: hidden; border: 1px solid #eee; }
+    img { border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+
+    /* V50 新增：挑戰頁專用樣式 */
+    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; }
+    .challenge-title { font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px; display: flex; align-items: center; }
+    .challenge-rules { color: #555; line-height: 1.6; }
+    
+    /* Q1 選手卡片 */
+    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; }
+    .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
+    .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; }
+    .q1-info-box { flex: 1; }
+    .q1-name { font-size: 1.2em; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
+    .q1-amount { font-size: 1.1em; color: #D4AF37; font-weight: 700; }
+    .q1-progress-container { height: 12px; background-color: #e9ecef; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+    .q1-progress-bar { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 6px; transition: width 0.5s ease-in-out; }
+    .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
+
+    /* 年度獎賞金屬卡 */
+    .reward-card-premium {
+        background: linear-gradient(145deg, #ffffff, #f0f0f0);
+        border: 1px solid #d4af3766;
+        border-radius: 16px;
+        padding: 25px 20px;
+        text-align: center;
+        box-shadow: 5px 5px 15px rgba(212, 175, 55, 0.15), -5px -5px 15px rgba(255, 255, 255, 0.8);
+        transition: all 0.3s ease;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
+    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 8px 8px 20px rgba(212, 175, 55, 0.25), -8px -8px 20px rgba(255, 255, 255, 0.9); border-color: #D4AF37; }
+    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; }
+    .reward-title-p { color: #D4AF37; font-size: 1.1em; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
+    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -360,12 +402,10 @@ else:
     elif menu == "⚖️ 獎罰 (Winner Takes All)":
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ Winner Takes All ({start} ~ {end})")
-        
-        # V49.0 更新：詳盡規則說明
         st.markdown("""
-        <div class="rule-box">
-            <div class="rule-title">📜 詳細遊戲規則 (Game Rules)：</div>
-            <ul>
+        <div class="challenge-header-box">
+            <div class="challenge-title">📜 詳細遊戲規則 (Game Rules)：</div>
+            <ul class="challenge-rules">
                 <li><strong>結算時間：</strong> 逢星期日晚 23:59 系統自動結算。</li>
                 <li><strong>罰款準則：</strong> 每週活動量 (Count) <strong>少於 3 次</strong> 者，需罰款 <strong>$100</strong>。</li>
                 <li><strong>獎金歸屬：</strong> 所有罰款注入獎金池，由 <strong>最高分 (Score)</strong> 者獨得。</li>
@@ -395,39 +435,45 @@ else:
     elif menu == "🏆 挑戰 (Challenges)":
         st.markdown("## 🏆 2026 年度挑戰")
         q1_df = get_q1_data()
+        q1_target = 88000
         
-        # V49.0 更新：詳盡挑戰規則
         st.markdown("""
-        <div class="rule-box">
-            <div class="rule-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div>
-            <ul>
-                <li><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。</li>
-                <li><strong>意義：</strong> 這是通往 MDRT 的第一張入場券，必須拿下！</li>
-            </ul>
+        <div class="challenge-header-box">
+            <div class="challenge-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div>
+            <p class="challenge-rules"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。<br>這是通往 MDRT 的第一張入場券，必須拿下！</p>
         </div>
         """, unsafe_allow_html=True)
         
         if not q1_df.empty:
-            st.dataframe(q1_df.sort_values(by='q1_total', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "q1_total": st.column_config.ProgressColumn("Target $88k", format="$%d", max_value=88000)}, use_container_width=True, hide_index=True)
+            for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
+                progress = min(r['q1_total'] / q1_target, 1.0)
+                st.markdown(f"""
+                <div class="q1-player-card">
+                    <div class="q1-avatar-box"><img src="{r['avatar']}"></div>
+                    <div class="q1-info-box">
+                        <div class="q1-name">{r['username']}</div>
+                        <div class="q1-amount">${r['q1_total']:,.0f}</div>
+                        <div class="q1-progress-container">
+                            <div class="q1-progress-bar" style="width: {progress*100}%;"></div>
+                        </div>
+                        <div class="q1-target-label">Target: $88,000 ({progress*100:.1f}%)</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         
         st.divider()
         st.markdown("### 🎁 年度獎賞計劃")
-        
         c1, c2 = st.columns(2)
-        with c1: 
-            st.markdown('<div class="reward-card"><div class="reward-title">🚀 1st MDRT</div><div class="reward-prize">$20,000 Cash</div><p>首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
-        with c2: 
-            st.markdown('<div class="reward-card"><div class="reward-title">👑 Top FYC 冠軍</div><div class="reward-prize">$10,000 Cash</div><p>全年業績最高者 (需 Min. MDRT)</p></div>', unsafe_allow_html=True)
-        
+        with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
+        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. MDRT)</p></div>', unsafe_allow_html=True)
+        st.write("")
         c3, c4 = st.columns(2)
-        with c3: 
-            st.markdown('<div class="reward-card"><div class="reward-title">✈️ 招募冠軍</div><div class="reward-prize">雙人來回機票</div><p>全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
-        with c4: 
-            st.markdown('<div class="reward-card"><div class="reward-title">🍽️ Monthly Star</div><div class="reward-prize">Tim 請食飯</div><p>單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
+        with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
+        with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
     elif menu == "🤝 招募 (Recruit)":
         st.markdown("## 🤝 Recruit 龍虎榜"); df = get_data("Yearly")
-        if not df.empty: st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small")}, use_container_width=True, hide_index=True)
+        if not df.empty: st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}, use_container_width=True, hide_index=True)
 
     elif menu == "📅 業績 (Monthly)":
         st.markdown("## 📅 Monthly FYC"); m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); df = get_data(m)
