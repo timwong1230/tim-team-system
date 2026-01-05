@@ -41,7 +41,7 @@ st.markdown("""
     div[data-testid="stDataFrame"] div[data-testid="stVerticalBlock"] { border-radius: 12px; overflow: hidden; border: 1px solid #eee; }
     img { border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 
-    /* V50 新增：挑戰頁專用樣式 */
+    /* 挑戰頁專用樣式 */
     .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; }
     .challenge-title { font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px; display: flex; align-items: center; }
     .challenge-rules { color: #555; line-height: 1.6; }
@@ -465,7 +465,8 @@ else:
         st.markdown("### 🎁 年度獎賞計劃")
         c1, c2 = st.columns(2)
         with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
-        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. MDRT)</p></div>', unsafe_allow_html=True)
+        # V51.0 修改處: 門檻改為 180,000 FYC
+        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>', unsafe_allow_html=True)
         st.write("")
         c3, c4 = st.columns(2)
         with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
