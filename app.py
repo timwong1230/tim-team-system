@@ -366,12 +366,74 @@ else:
     elif menu == "📝 打卡 (Check-in)":
         st.markdown("## 📝 New Activity")
         c1, c2 = st.columns([1.2, 1])
+        
+        # --- 左邊：輸入區 (保持不變) ---
         with c1:
             with st.container():
                 d = st.date_input("日期", value=datetime.date.today()); t = st.selectbox("活動種類", ACTIVITY_TYPES)
                 note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
                 n = st.text_area("備註", value=note_val, height=200)
                 if st.button("✅ Submit", use_container_width=True): add_act(st.session_state['user'], d, t, n); st.toast("Saved!", icon="🦁"); st.rerun()
+        
+        # --- 右邊：History 區域 (修改了這裡：全團隊可見) ---
+        with c2:
+            st.markdown("### 📜 Team Activities (Live)")
+            
+            # 獲取所有人的紀錄
+            all_acts = get_all_act()
+            
+            # 如果是 Leader (Admin)，顯示 ID 方便修改
+            if st.session_state['role'] == 'Leader':
+                st.info("👋 Admin 模式：你可修改任何紀錄")
+                
+                # Admin 看的表格 (包含 ID)
+                st.dataframe(all_acts, use_container_width=True, height=400, hide_index=True)
+                
+                # Admin 修改工具
+                st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
+                st.markdown("#### 🛠 修改/刪除紀錄")
+                target_id = st.number_input("輸入 ID (見上表第一列)", min_value=0, step=1)
+                
+                if target_id > 0:
+                    record = get_act_by_id(target_id)
+                    if record:
+                        r = record[0] 
+                        st.write(f"正在修改: **{r[1]}** 於 {r[2]} 的紀錄")
+                        with st.form("admin_edit_form"):
+                            new_date = st.date_input("新日期", value=pd.to_datetime(r[2]))
+                            new_type = st.selectbox("新活動種類", ACTIVITY_TYPES, index=ACTIVITY_TYPES.index(r[3]) if r[3] in ACTIVITY_TYPES else 0)
+                            new_note = st.text_area("新備註", value=r[5])
+                            c_update, c_delete = st.columns(2)
+                            with c_update:
+                                if st.form_submit_button("✅ 更新"): upd_act(target_id, new_date, new_type, new_note); st.toast("Updated!"); st.rerun()
+                            with c_delete:
+                                if st.form_submit_button("🗑 刪除", type="primary"): del_act(target_id); st.toast("Deleted!"); st.rerun()
+                    else:
+                        st.warning("找不到此 ID")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # 如果是普通 Member，看全團隊紀錄 (但隱藏 ID，唯讀)
+            else:
+                st.caption(f"👀 睇下其他同事做緊咩 (顯示最近 {len(all_acts)} 條紀錄)")
+                
+                # 整理表格：隱藏 ID，將 Username 放第一列，讓同事知道是誰做的
+                if not all_acts.empty:
+                    display_df = all_acts[['date', 'username', 'type', 'points', 'note']]
+                    st.dataframe(
+                        display_df, 
+                        use_container_width=True, 
+                        height=500, 
+                        hide_index=True,
+                        column_config={
+                            "date": st.column_config.TextColumn("日期", width="small"),
+                            "username": st.column_config.TextColumn("同事", width="small"),
+                            "type": st.column_config.TextColumn("活動", width="medium"),
+                            "points": st.column_config.NumberColumn("分", format="%d"),
+                            "note": st.column_config.TextColumn("內容細節", width="large"),
+                        }
+                    )
+                else:
+                    st.info("暫時未有活動紀錄，快啲搶頭香！")
         
         # --- History 區域 (修改了這裡) ---
         with c2:
@@ -540,3 +602,4 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
+
