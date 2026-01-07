@@ -499,4 +499,7 @@ else:
 
     elif menu == "📅 業績 (Monthly)":
         st.markdown("## 📅 Monthly FYC"); m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); df = get_data(m)
-        if not df.empty and df['fyc
+        if not df.empty and 'FYC' in df.columns:
+# 或者如果是要判斷數值：
+# if not df.empty and df['FYC'].sum() > 0:
+
