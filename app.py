@@ -498,27 +498,49 @@ else:
         if not df.empty: st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}, use_container_width=True, hide_index=True)
 
     elif menu == "📅 業績 (Monthly)":
-        st.markdown("## 📅 Monthly FYC"); m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); df = get_data(# --- 這裡通常是 Login 的 Code ---
-# ...
-if authentication_status:   # <-- 關鍵：只有登入成功後，才執行下面的野
-    
-    # 1. 這裡會有載入數據的 Code (一定要先發生！)
-    # 這裡應該有一行類似： df = load_data() 或 conn.read() 
-    # 總之一定要先見到 "df =" 這一行
-    
-    # -------------------------------------------------------
-    # 2. 將你那段 Code 放要在「df = ...」這行之後
-    # -------------------------------------------------------
-    if not df.empty and 'FYC' in df.columns:     # <-- 你的 Code 放在這裡
-        total_fyc = df['FYC'].sum()
-        st.metric(label="本月 FYC", value=f"${total_fyc:,.0f}")
-    else:
-        st.info("暫無 FYC 資料")
-    
-    # -------------------------------------------------------
+        st.markdown("## 📅 Monthly FYC")
+        m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
+        
+        # 這裡是你之前斷掉的地方，已經修復：
+        df = get_data(month=m)
+        
+        if not df.empty:
+            st.dataframe(
+                df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
+                column_config={
+                    "avatar": st.column_config.ImageColumn("", width="small"),
+                    "fyc": st.column_config.NumberColumn("FYC", format="$%d")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("本月暫無數據")
 
-elif authentication_status == False:
-    st.error('Username/password is incorrect')
-
-
-
+    elif menu == "👤 設定 (Profile)":
+        st.markdown("## 👤 User Profile")
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.image(st.session_state.get('avatar'), width=150)
+        with col2:
+            st.markdown(f"### {st.session_state['user']}")
+            st.markdown(f"**Role:** {st.session_state['role']}")
+            
+            # 修改密碼
+            with st.expander("🔐 Change Password"):
+                new_pw = st.text_input("New Password", type="password")
+                if st.button("Update Password"):
+                    update_pw(st.session_state['user'], new_pw)
+                    st.toast("Password Updated!", icon="✅")
+            
+            # 上載頭像
+            with st.expander("🖼️ Change Avatar"):
+                uploaded_file = st.file_uploader("Upload Image", type=['jpg', 'png', 'jpeg'])
+                if uploaded_file is not None:
+                    if st.button("Upload"):
+                        img_str = proc_img(uploaded_file)
+                        if img_str:
+                            update_avt(st.session_state['user'], img_str)
+                            st.session_state['avatar'] = img_str
+                            st.toast("Avatar Updated!", icon="✅")
+                            st.rerun()
