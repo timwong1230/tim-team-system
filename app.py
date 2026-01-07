@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.0 黃金尊貴版) ---
+# --- Custom CSS (V50.1 Admin升級版) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -41,41 +41,8 @@ st.markdown("""
     div[data-testid="stDataFrame"] div[data-testid="stVerticalBlock"] { border-radius: 12px; overflow: hidden; border: 1px solid #eee; }
     img { border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 
-    /* 挑戰頁專用樣式 */
-    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; }
-    .challenge-title { font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px; display: flex; align-items: center; }
-    .challenge-rules { color: #555; line-height: 1.6; }
-    
-    /* Q1 選手卡片 */
-    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; }
-    .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
-    .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; }
-    .q1-info-box { flex: 1; }
-    .q1-name { font-size: 1.2em; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
-    .q1-amount { font-size: 1.1em; color: #D4AF37; font-weight: 700; }
-    .q1-progress-container { height: 12px; background-color: #e9ecef; border-radius: 6px; overflow: hidden; margin-top: 8px; }
-    .q1-progress-bar { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 6px; transition: width 0.5s ease-in-out; }
-    .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
-
-    /* 年度獎賞金屬卡 */
-    .reward-card-premium {
-        background: linear-gradient(145deg, #ffffff, #f0f0f0);
-        border: 1px solid #d4af3766;
-        border-radius: 16px;
-        padding: 25px 20px;
-        text-align: center;
-        box-shadow: 5px 5px 15px rgba(212, 175, 55, 0.15), -5px -5px 15px rgba(255, 255, 255, 0.8);
-        transition: all 0.3s ease;
-        height: 100%;
-        position: relative;
-        overflow: hidden;
-    }
-    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
-    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 8px 8px 20px rgba(212, 175, 55, 0.25), -8px -8px 20px rgba(255, 255, 255, 0.9); border-color: #D4AF37; }
-    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; }
-    .reward-title-p { color: #D4AF37; font-size: 1.1em; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
-    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
+    /* Admin 修改區專用 */
+    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -114,7 +81,7 @@ def get_sheet(sheet_name):
     return None
 
 # --- 3. 數據庫操作 (Caching) ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5) # 縮短緩存時間，確保 Admin 修改後即時看到
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     if ws:
@@ -219,16 +186,21 @@ def upd_act(id, d, t, n):
 
 def get_act_by_id(id): return read_data("activities")[read_data("activities")['id'] == id].values.tolist()
 
-# 恢復 "獲取所有活動" 功能供 Admin 使用
+# 獲取所有活動 (包含 ID 以便修改)
 def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note"])
     df['date'] = pd.to_datetime(df['date'])
+    # 將 ID 放在第一列方便查看
+    cols = ['id', 'username', 'date', 'type', 'points', 'note']
+    df = df[cols]
     return df.sort_values(by='date', ascending=False)
 
 def get_user_act(u):
     df = read_data("activities")
-    return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']] if not df.empty else pd.DataFrame()
+    if df.empty: return pd.DataFrame()
+    # 一般同事不需要看 ID
+    return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
 
 def get_data(month=None):
     users = read_data("users")
@@ -381,33 +353,15 @@ else:
         )
 
         if st.session_state['role'] == 'Leader':
-            with st.expander("⚙️ Admin Tools"):
-                t1, t2 = st.tabs(["💰 業績/招募", "📝 管理活動"])
-                with t1:
-                    c_a, c_b, c_c = st.columns(3)
-                    tgt = c_a.selectbox("User", df['username'].tolist()); mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); amt = c_c.number_input("Amount", step=1000)
-                    if st.button("Save FYC"): upd_fyc(tgt, mth, amt); st.toast("Saved!", icon="✅"); st.rerun()
-                    
-                    st.divider()
-                    c_d, c_e = st.columns(2)
-                    tgt_r = c_d.selectbox("User", df['username'].tolist(), key="r1"); rec = c_e.number_input("Recruits", step=1)
-                    if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
+            with st.expander("⚙️ 業績/招募管理 (Admin Only)"):
+                c_a, c_b, c_c = st.columns(3)
+                tgt = c_a.selectbox("User", df['username'].tolist()); mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); amt = c_c.number_input("Amount", step=1000)
+                if st.button("Save FYC"): upd_fyc(tgt, mth, amt); st.toast("Saved!", icon="✅"); st.rerun()
                 
-                with t2:
-                    st.dataframe(get_all_act(), use_container_width=True, height=200)
-                    c_f, c_g = st.columns(2)
-                    with c_f:
-                        eid = st.number_input("Edit ID", step=1)
-                        if eid > 0:
-                            if get_act_by_id(eid):
-                                with st.form("edit_form"):
-                                    nd = st.date_input("Date")
-                                    nt = st.selectbox("Type", ACTIVITY_TYPES)
-                                    nn = st.text_area("Note")
-                                    if st.form_submit_button("Update"): upd_act(eid, nd, nt, nn); st.toast("Updated!"); st.rerun()
-                    with c_g:
-                        did = st.number_input("Delete ID", step=1)
-                        if st.button("Delete"): del_act(did); st.toast("Deleted"); st.rerun()
+                st.divider()
+                c_d, c_e = st.columns(2)
+                tgt_r = c_d.selectbox("User", df['username'].tolist(), key="r1"); rec = c_e.number_input("Recruits", step=1)
+                if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
 
     elif menu == "📝 打卡 (Check-in)":
         st.markdown("## 📝 New Activity")
@@ -418,8 +372,51 @@ else:
                 note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
                 n = st.text_area("備註", value=note_val, height=200)
                 if st.button("✅ Submit", use_container_width=True): add_act(st.session_state['user'], d, t, n); st.toast("Saved!", icon="🦁"); st.rerun()
+        
+        # --- History 區域 (修改了這裡) ---
         with c2:
-            st.markdown("### 📜 History"); st.dataframe(get_user_act(st.session_state['user']).head(10), use_container_width=True, hide_index=True)
+            st.markdown("### 📜 History")
+            
+            # 如果是 Leader (Admin)，顯示所有資料 + 修改介面
+            if st.session_state['role'] == 'Leader':
+                st.info("👋 Admin 模式：可查看及修改所有人的紀錄")
+                all_acts = get_all_act()
+                st.dataframe(all_acts, use_container_width=True, height=400)
+                
+                st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
+                st.markdown("#### 🛠 修改/刪除紀錄")
+                target_id = st.number_input("請輸入要修改的 ID (見左表第一列)", min_value=0, step=1)
+                
+                if target_id > 0:
+                    # 嘗試讀取該 ID 的舊資料
+                    record = get_act_by_id(target_id) # 這會返回 list
+                    if record:
+                        # record 格式可能為 [[id, user, date, type, pts, note]]
+                        r = record[0] 
+                        st.write(f"正在修改: **{r[1]}** 於 {r[2]} 的紀錄")
+                        
+                        with st.form("admin_edit_form"):
+                            # 預設值
+                            new_date = st.date_input("新日期", value=pd.to_datetime(r[2]))
+                            new_type = st.selectbox("新活動種類", ACTIVITY_TYPES, index=ACTIVITY_TYPES.index(r[3]) if r[3] in ACTIVITY_TYPES else 0)
+                            new_note = st.text_area("新備註", value=r[5])
+                            
+                            c_update, c_delete = st.columns(2)
+                            with c_update:
+                                if st.form_submit_button("✅ 更新紀錄"):
+                                    upd_act(target_id, new_date, new_type, new_note)
+                                    st.toast("Updated Successfully!"); st.rerun()
+                            with c_delete:
+                                if st.form_submit_button("🗑 刪除此紀錄", type="primary"):
+                                    del_act(target_id)
+                                    st.toast("Deleted Successfully!"); st.rerun()
+                    else:
+                        st.warning("找不到此 ID，請檢查列表。")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # 如果是普通 Member，只顯示自己的，不能改
+            else:
+                st.dataframe(get_user_act(st.session_state['user']).head(10), use_container_width=True, hide_index=True)
 
     elif menu == "⚖️ 獎罰 (Winner Takes All)":
         df, start, end = get_weekly_data()
@@ -501,7 +498,6 @@ else:
         st.markdown("## 📅 Monthly FYC")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         
-        # 這裡是你之前斷掉的地方，已經修復：
         df = get_data(month=m)
         
         if not df.empty:
