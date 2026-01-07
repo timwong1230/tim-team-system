@@ -375,19 +375,28 @@ else:
                 n = st.text_area("備註", value=note_val, height=200)
                 if st.button("✅ Submit", use_container_width=True): add_act(st.session_state['user'], d, t, n); st.toast("Saved!", icon="🦁"); st.rerun()
         
-        # --- 右邊：History 區域 (修改了這裡：全團隊可見) ---
+        # --- 右邊：History 區域 (已修正日期亂碼問題) ---
         with c2:
             st.markdown("### 📜 Team Activities (Live)")
             
-            # 獲取所有人的紀錄
+            # 1. 獲取原始數據
             all_acts = get_all_act()
             
-            # 如果是 Leader (Admin)，顯示 ID 方便修改
+            # 2. 【關鍵修正】將日期格式化做 "YYYY-MM-DD" 字串，解決顯示數字問題
+            if not all_acts.empty:
+                show_df = all_acts.copy()
+                # 這裡強制轉換格式，保證顯示出來是 2026-01-07
+                show_df['date'] = show_df['date'].dt.strftime('%Y-%m-%d')
+            else:
+                show_df = all_acts
+
+            # 3. 顯示邏輯
+            # 如果是 Leader (Admin) - 顯示包含 ID 的表格以便修改
             if st.session_state['role'] == 'Leader':
                 st.info("👋 Admin 模式：你可修改任何紀錄")
                 
-                # Admin 看的表格 (包含 ID)
-                st.dataframe(all_acts, use_container_width=True, height=400, hide_index=True)
+                # 顯示表格 (用已修正日期的 show_df)
+                st.dataframe(show_df, use_container_width=True, height=400, hide_index=True)
                 
                 # Admin 修改工具
                 st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
@@ -412,13 +421,13 @@ else:
                         st.warning("找不到此 ID")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # 如果是普通 Member，看全團隊紀錄 (但隱藏 ID，唯讀)
+            # 如果是普通 Member - 顯示簡潔版表格
             else:
-                st.caption(f"👀 睇下其他同事做緊咩 (顯示最近 {len(all_acts)} 條紀錄)")
+                st.caption(f"👀 睇下其他同事做緊咩 (顯示最近 {len(show_df)} 條紀錄)")
                 
-                # 整理表格：隱藏 ID，將 Username 放第一列，讓同事知道是誰做的
-                if not all_acts.empty:
-                    display_df = all_acts[['date', 'username', 'type', 'points', 'note']]
+                if not show_df.empty:
+                    # 只選取需要顯示的欄位 (隱藏 ID)
+                    display_df = show_df[['date', 'username', 'type', 'points', 'note']]
                     st.dataframe(
                         display_df, 
                         use_container_width=True, 
@@ -602,4 +611,5 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
+
 
