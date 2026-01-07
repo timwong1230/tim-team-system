@@ -219,6 +219,13 @@ def upd_act(id, d, t, n):
 
 def get_act_by_id(id): return read_data("activities")[read_data("activities")['id'] == id].values.tolist()
 
+# 恢復 "獲取所有活動" 功能供 Admin 使用
+def get_all_act():
+    df = read_data("activities")
+    if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note"])
+    df['date'] = pd.to_datetime(df['date'])
+    return df.sort_values(by='date', ascending=False)
+
 def get_user_act(u):
     df = read_data("activities")
     return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']] if not df.empty else pd.DataFrame()
@@ -351,7 +358,7 @@ else:
                     encoded_text = urllib.parse.quote(report)
                     st.link_button("📤 Send to WhatsApp", f"https://wa.me/?text={encoded_text}")
 
-        # Leaderboard 加入實數和百分比
+        # Leaderboard
         df = get_data("Yearly")
         c1, c2, c3 = st.columns(3)
         c1.metric("💰 Team FYC", f"${df['fyc'].sum():,.0f}"); c2.metric("👥 Recruits", int(df['recruit'].sum())); c3.metric("🔥 Activities", int(df['Total_Score'].sum()))
@@ -375,17 +382,32 @@ else:
 
         if st.session_state['role'] == 'Leader':
             with st.expander("⚙️ Admin Tools"):
-                t1, t2, t3 = st.tabs(["FYC", "Recruit", "Delete"])
+                t1, t2 = st.tabs(["💰 業績/招募", "📝 管理活動"])
                 with t1:
                     c_a, c_b, c_c = st.columns(3)
                     tgt = c_a.selectbox("User", df['username'].tolist()); mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); amt = c_c.number_input("Amount", step=1000)
                     if st.button("Save FYC"): upd_fyc(tgt, mth, amt); st.toast("Saved!", icon="✅"); st.rerun()
-                with t2:
-                    tgt_r = st.selectbox("User", df['username'].tolist(), key="r1"); rec = st.number_input("Recruits", step=1)
+                    
+                    st.divider()
+                    c_d, c_e = st.columns(2)
+                    tgt_r = c_d.selectbox("User", df['username'].tolist(), key="r1"); rec = c_e.number_input("Recruits", step=1)
                     if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
-                with t3:
-                    did = st.number_input("Delete ID", step=1)
-                    if st.button("Delete"): del_act(did); st.toast("Deleted", icon="🗑️"); st.rerun()
+                
+                with t2:
+                    st.dataframe(get_all_act(), use_container_width=True, height=200)
+                    c_f, c_g = st.columns(2)
+                    with c_f:
+                        eid = st.number_input("Edit ID", step=1)
+                        if eid > 0:
+                            if get_act_by_id(eid):
+                                with st.form("edit_form"):
+                                    nd = st.date_input("Date")
+                                    nt = st.selectbox("Type", ACTIVITY_TYPES)
+                                    nn = st.text_area("Note")
+                                    if st.form_submit_button("Update"): upd_act(eid, nd, nt, nn); st.toast("Updated!"); st.rerun()
+                    with c_g:
+                        did = st.number_input("Delete ID", step=1)
+                        if st.button("Delete"): del_act(did); st.toast("Deleted"); st.rerun()
 
     elif menu == "📝 打卡 (Check-in)":
         st.markdown("## 📝 New Activity")
@@ -465,7 +487,6 @@ else:
         st.markdown("### 🎁 年度獎賞計劃")
         c1, c2 = st.columns(2)
         with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
-        # V51.0 修改處: 門檻改為 180,000 FYC
         with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>', unsafe_allow_html=True)
         st.write("")
         c3, c4 = st.columns(2)
@@ -478,21 +499,4 @@ else:
 
     elif menu == "📅 業績 (Monthly)":
         st.markdown("## 📅 Monthly FYC"); m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); df = get_data(m)
-        if not df.empty and df['fyc'].sum() > 0: st.success(f"🎉 Top Sales: **{df.sort_values(by='fyc', ascending=False).iloc[0]['username']}**")
-        if not df.empty: st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "fyc": st.column_config.ProgressColumn("FYC", format="$%d", max_value=100000)}, use_container_width=True, hide_index=True)
-
-    elif menu == "👤 設定 (Profile)":
-        st.markdown("## 👤 Profile"); t1, t2 = st.tabs(["Avatar", "Password"])
-        with t1:
-            c1, c2 = st.columns([1, 3]); c1.image(st.session_state.get('avatar', ''), width=100)
-            f = c2.file_uploader("New Avatar", type=['jpg', 'png'])
-            if f and c2.button("Update"): 
-                c = proc_img(f)
-                if c: update_avt(st.session_state['user'], c); st.session_state['avatar'] = c; st.toast("Updated!", icon="📸"); st.rerun()
-        with t2:
-            op = st.text_input("Old PW", type="password"); np = st.text_input("New PW", type="password"); cp = st.text_input("Confirm", type="password")
-            if st.button("Change PW"):
-                if login(st.session_state['user'], op): 
-                    if np==cp and np: update_pw(st.session_state['user'], np); st.toast("Changed!", icon="🔐"); st.rerun()
-                    else: st.error("Mismatch")
-                else: st.error("Wrong PW")
+        if not df.empty and df['fyc
