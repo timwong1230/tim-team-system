@@ -118,19 +118,47 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except: st.error("操作失敗，請重試")
 
-# 初始化
+# 初始化 (V50.3 自我修復版)
 def init_db_gs():
+    # 1. 檢查 Users 分頁
     ws = get_sheet("users")
     if ws:
         try: existing = ws.col_values(1)
         except: existing = []
+        # 預設用戶名單
         defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
+        
+        # 如果是全空的新表，先加標題
+        if not existing:
+            ws.append_row(["username", "password", "role", "team", "recruit", "avatar"])
+            existing = ["username"]
+
         for u in defaults:
             if u[0] not in existing:
                 url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
                 ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url])
                 clear_cache()
+
+    # 2. 檢查 Monthly FYC 分頁 (修復 KeyError 關鍵)
+    ws_fyc = get_sheet("monthly_fyc")
+    if ws_fyc:
+        try: vals = ws_fyc.row_values(1)
+        except: vals = []
+        if not vals: 
+            ws_fyc.append_row(["id", "username", "month", "amount"])
+            print("已自動修復 monthly_fyc 標題")
+
+    # 3. 檢查 Activities 分頁
+    ws_act = get_sheet("activities")
+    if ws_act:
+        try: vals = ws_act.row_values(1)
+        except: vals = []
+        if not vals: 
+            ws_act.append_row(["id", "username", "date", "type", "points", "note"])
+            print("已自動修復 activities 標題")
+
+# 執行初始化
 init_db_gs()
 
 # --- 4. Logic Functions ---
@@ -611,5 +639,6 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
+
 
 
