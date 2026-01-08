@@ -80,13 +80,28 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# --- 3. 數據庫操作 (Caching) ---
-@st.cache_data(ttl=5) # 縮短緩存時間，確保 Admin 修改後即時看到
+# --- 3. 數據庫操作 (已修復空表標題消失問題) ---
+@st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     if ws:
-        try: return pd.DataFrame(ws.get_all_records())
-        except: return pd.DataFrame()
+        try:
+            # 1. 先嘗試讀取所有紀錄
+            data = ws.get_all_records()
+            df = pd.DataFrame(data)
+            
+            # 2. 【關鍵修復】如果讀出來是空的 (代表只有 Header 無內容)，手動補回 Header
+            if df.empty:
+                # 獲取第一行作為標題
+                headers = ws.row_values(1)
+                # 如果連標題都無，就真係空的；如果有標題，就建立一個有欄位但無內容的 DataFrame
+                if headers:
+                    df = pd.DataFrame(columns=headers)
+            
+            return df
+        except Exception as e:
+            # st.error(f"讀取 {sheet_name} 失敗: {e}") # Debug 用
+            return pd.DataFrame()
     return pd.DataFrame()
 
 def clear_cache(): st.cache_data.clear()
@@ -639,6 +654,7 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
+
 
 
 
