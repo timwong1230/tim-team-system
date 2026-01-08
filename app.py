@@ -80,29 +80,43 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# --- 3. 數據庫操作 (已修復空表標題消失問題) ---
+# --- 3. 數據庫操作 (防彈版：強制定義欄位) ---
 @st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
+    
+    # 在這裡「寫死」每個表必須有的欄位 (Schema)
+    # 這樣就算 Google Sheet 讀錯，程式都有底，不會崩潰
+    schemas = {
+        "users": ["username", "password", "role", "team", "recruit", "avatar"],
+        "monthly_fyc": ["id", "username", "month", "amount"],
+        "activities": ["id", "username", "date", "type", "points", "note"]
+    }
+    
+    # 獲取該表應有的欄位
+    expected_cols = schemas.get(sheet_name, [])
+
     if ws:
         try:
-            # 1. 先嘗試讀取所有紀錄
+            # 嘗試讀取數據
             data = ws.get_all_records()
             df = pd.DataFrame(data)
             
-            # 2. 【關鍵修復】如果讀出來是空的 (代表只有 Header 無內容)，手動補回 Header
-            if df.empty:
-                # 獲取第一行作為標題
-                headers = ws.row_values(1)
-                # 如果連標題都無，就真係空的；如果有標題，就建立一個有欄位但無內容的 DataFrame
-                if headers:
-                    df = pd.DataFrame(columns=headers)
-            
+            # 【關鍵修正】檢查機制
+            # 1. 如果 df 是空的 (Empty)
+            # 2. 或者 df 缺少了我們需要的關鍵欄位 (Missing Columns)
+            # 就強制建立一個只有標題的空表
+            if df.empty or not set(expected_cols).issubset(df.columns):
+                # print(f"修復空表: {sheet_name}") # Debug用
+                df = pd.DataFrame(columns=expected_cols)
+                
             return df
         except Exception as e:
-            # st.error(f"讀取 {sheet_name} 失敗: {e}") # Debug 用
-            return pd.DataFrame()
-    return pd.DataFrame()
+            # st.error(f"Error reading {sheet_name}: {e}")
+            pass
+            
+    # 萬一連 Google Sheet 都連唔到，直接比個「吉表」佢，保證系統唔會 Crash
+    return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
 
@@ -654,6 +668,7 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
+
 
 
 
