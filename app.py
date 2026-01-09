@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.4 黃金尊貴回歸版) ---
+# --- Custom CSS (V50.5 終極介面版) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -24,46 +24,64 @@ st.markdown("""
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
 
-    /* 元件樣式優化 */
+    /* ============================================= */
+    /* 🚀 Sidebar Menu 專用美化 (長Bar + 大字)       */
+    /* ============================================= */
+    
+    /* 1. 隱藏原本的圓點 (Radio Button) */
+    div[role="radiogroup"] > label > div:first-child { display: none !important; }
+
+    /* 2. 將選項變成「長 Bar 卡片」 */
+    div[role="radiogroup"] label {
+        background-color: #ffffff !important;
+        padding: 12px 15px !important;
+        margin-bottom: 8px !important;
+        border-radius: 10px !important;
+        border: 1px solid #e9ecef !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important;
+        transition: all 0.3s ease !important;
+        width: 100% !important;
+    }
+
+    /* 3. Mouse 指住時的效果 (Hover) */
+    div[role="radiogroup"] label:hover {
+        border-color: #D4AF37 !important;
+        background-color: #FFF8E1 !important;
+        transform: translateX(5px);
+        box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
+    }
+
+    /* 4. Menu 字體設定 (大字 + 粗體) */
+    div[role="radiogroup"] label p {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #2c3e50 !important;
+        margin: 0 !important;
+        line-height: 1.5 !important;
+    }
+
+    /* ============================================= */
+    /* 其他元件樣式                                  */
+    /* ============================================= */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     div[data-testid="stMetric"]:hover, .stContainer:hover { box-shadow: 0 6px 15px rgba(197, 160, 40, 0.15); }
     
-    /* 輸入框與按鈕 */
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; color: #2c3e50 !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); transition: transform 0.1s; }
     div.stButton > button:active { transform: scale(0.98); }
     div.stButton > button p { color: #FFFFFF !important; }
     
-    /* 表格與圖片 */
     div[data-testid="stDataFrame"] { border: none; }
     img { border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 
-    /* --------------------------------------------------- */
-    /* 🔥 挑戰頁專用樣式 (這就是你要找回來的框框！) */
-    /* --------------------------------------------------- */
-    .challenge-header-box { 
-        background: linear-gradient(to right, #FFF8E1, #FFFFFF); 
-        border-left: 5px solid #D4AF37; 
-        padding: 20px; 
-        margin-bottom: 25px; 
-        border-radius: 10px; 
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
+    /* Admin 修改區專用 */
+    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
+
+    /* 挑戰頁專用樣式 */
+    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
     .challenge-title { font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px; display: flex; align-items: center; }
     .challenge-rules { color: #555; line-height: 1.6; margin-bottom: 0; }
-    
-    /* Q1 選手卡片 */
-    .q1-player-card { 
-        background: #fff; 
-        border-radius: 15px; 
-        padding: 15px; 
-        margin-bottom: 15px; 
-        box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
-        border: 1px solid #f0f0f0; 
-        display: flex; 
-        align-items: center; 
-        transition: transform 0.2s;
-    }
+    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; transition: transform 0.2s; }
     .q1-player-card:hover { transform: scale(1.02); box-shadow: 0 6px 15px rgba(212, 175, 55, 0.15); }
     .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
     .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; border-radius: 50%; }
@@ -75,18 +93,7 @@ st.markdown("""
     .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
 
     /* 年度獎賞金屬卡 */
-    .reward-card-premium {
-        background: linear-gradient(145deg, #ffffff, #f0f0f0);
-        border: 1px solid #d4af3766;
-        border-radius: 16px;
-        padding: 25px 20px;
-        text-align: center;
-        box-shadow: 5px 5px 15px rgba(212, 175, 55, 0.15), -5px -5px 15px rgba(255, 255, 255, 0.8);
-        transition: all 0.3s ease;
-        height: 100%;
-        position: relative;
-        overflow: hidden;
-    }
+    .reward-card-premium { background: linear-gradient(145deg, #ffffff, #f0f0f0); border: 1px solid #d4af3766; border-radius: 16px; padding: 25px 20px; text-align: center; box-shadow: 5px 5px 15px rgba(212, 175, 55, 0.15), -5px -5px 15px rgba(255, 255, 255, 0.8); transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; }
     .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
     .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 8px 8px 20px rgba(212, 175, 55, 0.25), -8px -8px 20px rgba(255, 255, 255, 0.9); border-color: #D4AF37; }
     .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; }
@@ -123,49 +130,35 @@ def get_sheet(sheet_name):
             try: return sh.worksheet(sheet_name)
             except WorksheetNotFound:
                 ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
-                if sheet_name == "users": ws.append_row(["username", "password", "role", "team", "recruit", "avatar"])
-                elif sheet_name == "monthly_fyc": ws.append_row(["id", "username", "month", "amount"])
-                elif sheet_name == "activities": ws.append_row(["id", "username", "date", "type", "points", "note"])
+                # 新建表時，交給 init_db_gs 自動補標題，這裡只負責建表
                 return ws
         except: return None
     return None
 
-# --- 3. 數據庫操作 (防彈版：強制定義欄位) ---
+# --- 3. 數據庫操作 (防彈版：強制定義欄位，解決 KeyError) ---
 @st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     
-    # 在這裡「寫死」每個表必須有的欄位 (Schema)
-    # 這樣就算 Google Sheet 讀錯，程式都有底，不會崩潰
+    # 強制 Schema，確保空表也不會報錯
     schemas = {
         "users": ["username", "password", "role", "team", "recruit", "avatar"],
         "monthly_fyc": ["id", "username", "month", "amount"],
         "activities": ["id", "username", "date", "type", "points", "note"]
     }
-    
-    # 獲取該表應有的欄位
     expected_cols = schemas.get(sheet_name, [])
 
     if ws:
         try:
-            # 嘗試讀取數據
             data = ws.get_all_records()
             df = pd.DataFrame(data)
-            
-            # 【關鍵修正】檢查機制
-            # 1. 如果 df 是空的 (Empty)
-            # 2. 或者 df 缺少了我們需要的關鍵欄位 (Missing Columns)
-            # 就強制建立一個只有標題的空表
+            # 如果是空表或缺欄位，強制重建
             if df.empty or not set(expected_cols).issubset(df.columns):
-                # print(f"修復空表: {sheet_name}") # Debug用
                 df = pd.DataFrame(columns=expected_cols)
-                
             return df
-        except Exception as e:
-            # st.error(f"Error reading {sheet_name}: {e}")
+        except Exception:
             pass
             
-    # 萬一連 Google Sheet 都連唔到，直接比個「吉表」佢，保證系統唔會 Crash
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
@@ -183,6 +176,16 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                     if ids: new_id = max(ids) + 1
                 data_dict['id'] = new_id
             headers = ws.row_values(1)
+            # 確保 header 存在
+            if not headers: 
+                # 緊急修復：如果寫入時發現沒 Header，先補 Header
+                schemas = {
+                    "monthly_fyc": ["id", "username", "month", "amount"],
+                    "activities": ["id", "username", "date", "type", "points", "note"]
+                }
+                headers = schemas.get(sheet_name, [])
+                if headers: ws.append_row(headers)
+            
             row_to_add = [data_dict.get(h, "") for h in headers]
             ws.append_row(row_to_add)
         elif action == "UPDATE":
@@ -197,47 +200,36 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except: st.error("操作失敗，請重試")
 
-# 初始化 (V50.3 自我修復版)
+# 初始化 (自動補標題)
 def init_db_gs():
-    # 1. 檢查 Users 分頁
+    # 1. Users
     ws = get_sheet("users")
     if ws:
         try: existing = ws.col_values(1)
         except: existing = []
-        # 預設用戶名單
+        if not existing: ws.append_row(["username", "password", "role", "team", "recruit", "avatar"]); existing = ["username"]
         defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
-        
-        # 如果是全空的新表，先加標題
-        if not existing:
-            ws.append_row(["username", "password", "role", "team", "recruit", "avatar"])
-            existing = ["username"]
-
         for u in defaults:
             if u[0] not in existing:
                 url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
                 ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url])
                 clear_cache()
 
-    # 2. 檢查 Monthly FYC 分頁 (修復 KeyError 關鍵)
+    # 2. Monthly FYC
     ws_fyc = get_sheet("monthly_fyc")
     if ws_fyc:
         try: vals = ws_fyc.row_values(1)
         except: vals = []
-        if not vals: 
-            ws_fyc.append_row(["id", "username", "month", "amount"])
-            print("已自動修復 monthly_fyc 標題")
+        if not vals: ws_fyc.append_row(["id", "username", "month", "amount"])
 
-    # 3. 檢查 Activities 分頁
+    # 3. Activities
     ws_act = get_sheet("activities")
     if ws_act:
         try: vals = ws_act.row_values(1)
         except: vals = []
-        if not vals: 
-            ws_act.append_row(["id", "username", "date", "type", "points", "note"])
-            print("已自動修復 activities 標題")
+        if not vals: ws_act.append_row(["id", "username", "date", "type", "points", "note"])
 
-# 執行初始化
 init_db_gs()
 
 # --- 4. Logic Functions ---
@@ -293,20 +285,16 @@ def upd_act(id, d, t, n):
 
 def get_act_by_id(id): return read_data("activities")[read_data("activities")['id'] == id].values.tolist()
 
-# 獲取所有活動 (包含 ID 以便修改)
 def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note"])
-    df['date'] = pd.to_datetime(df['date'])
-    # 將 ID 放在第一列方便查看
-    cols = ['id', 'username', 'date', 'type', 'points', 'note']
-    df = df[cols]
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    # 這裡保留 ID 給 Admin 用，顯示時再處理
     return df.sort_values(by='date', ascending=False)
 
 def get_user_act(u):
     df = read_data("activities")
     if df.empty: return pd.DataFrame()
-    # 一般同事不需要看 ID
     return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
 
 def get_data(month=None):
@@ -347,7 +335,7 @@ def get_weekly_data():
     
     stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
     if not act_df.empty:
-        act_df['date'] = pd.to_datetime(act_df['date']).dt.date
+        act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
         this_week = act_df[act_df['date'] >= start]
         if not this_week.empty:
             stats = this_week.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
@@ -396,15 +384,32 @@ else:
             st.markdown(f"<h3 style='margin:0; color:#C5A028 !important;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
             st.caption(f"{st.session_state['role']} | TIM TEAM")
         st.divider()
-        menu = st.radio("MAIN MENU", ["📊 Dashboard", "📝 打卡 (Check-in)", "⚖️ 獎罰 (Winner Takes All)", "🏆 挑戰 (Challenges)", "🤝 招募 (Recruit)", "📅 業績 (Monthly)", "👤 設定 (Profile)"])
+        
+        # 新版 Sidebar Menu (長條 + 大字)
+        menu = st.radio(
+            "MAIN MENU", 
+            [
+                "📊 Dashboard 團隊報表", 
+                "📝 Check-in 打卡", 
+                "⚖️ Challenge 獎罰", 
+                "🏆 Year Goal 年度挑戰", 
+                "🤝 Recruit 招募龍虎榜", 
+                "📅 Monthly 業績表", 
+                "👤 Profile 設定"
+            ],
+            label_visibility="collapsed"
+        )
+        
         st.markdown("<br>"*3, unsafe_allow_html=True)
         if st.button("🔒 Logout", use_container_width=True, type="secondary"):
             st.session_state['logged_in'] = False; st.rerun()
 
-    if menu == "📊 Dashboard":
+    # --- 頁面路由 ---
+    
+    if "Dashboard" in menu:
         st.markdown(f"## 📊 {st.session_state['user']}, Let's Go MDRT!")
         
-        # 每週戰報生成器 (Admin 專用)
+        # 每週戰報生成器 (Admin Only)
         if st.session_state['role'] == 'Leader':
             with st.container(border=True):
                 st.markdown("### 📢 每週戰報生成器 (Admin Only)")
@@ -427,7 +432,7 @@ else:
                         report += f"💸 *【罰款名單 - 每人 $100】*\n_活動量不足 3 次，請自覺 PayMe 俾 Winner！_\n"
                         for i, l in losers.iterrows(): report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
                     else: report += "✅ *本週無人罰款！Excellent！*\n"
-
+                    
                     report += "\n📊 *詳細戰況：*\n"
                     for i, row in wk_df.sort_values(by='wk_score', ascending=False).iterrows():
                         report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
@@ -459,6 +464,7 @@ else:
             use_container_width=True, hide_index=True
         )
 
+        # Admin Tools: 輸入 FYC/Recruit
         if st.session_state['role'] == 'Leader':
             with st.expander("⚙️ 業績/招募管理 (Admin Only)"):
                 c_a, c_b, c_c = st.columns(3)
@@ -470,11 +476,10 @@ else:
                 tgt_r = c_d.selectbox("User", df['username'].tolist(), key="r1"); rec = c_e.number_input("Recruits", step=1)
                 if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
 
-    elif menu == "📝 打卡 (Check-in)":
+    elif "Check-in" in menu:
         st.markdown("## 📝 New Activity")
         c1, c2 = st.columns([1.2, 1])
         
-        # --- 左邊：輸入區 (保持不變) ---
         with c1:
             with st.container():
                 d = st.date_input("日期", value=datetime.date.today()); t = st.selectbox("活動種類", ACTIVITY_TYPES)
@@ -482,30 +487,21 @@ else:
                 n = st.text_area("備註", value=note_val, height=200)
                 if st.button("✅ Submit", use_container_width=True): add_act(st.session_state['user'], d, t, n); st.toast("Saved!", icon="🦁"); st.rerun()
         
-        # --- 右邊：History 區域 (已修正日期亂碼問題) ---
+        # History 區域 (透明化 + Admin修改)
         with c2:
             st.markdown("### 📜 Team Activities (Live)")
-            
-            # 1. 獲取原始數據
             all_acts = get_all_act()
             
-            # 2. 【關鍵修正】將日期格式化做 "YYYY-MM-DD" 字串，解決顯示數字問題
-            if not all_acts.empty:
-                show_df = all_acts.copy()
-                # 這裡強制轉換格式，保證顯示出來是 2026-01-07
-                show_df['date'] = show_df['date'].dt.strftime('%Y-%m-%d')
-            else:
-                show_df = all_acts
+            # 格式化日期，避免 timestamp
+            if not all_acts.empty and 'date' in all_acts.columns:
+                 # 確保是 datetime 格式後再 strftime
+                 all_acts['date'] = pd.to_datetime(all_acts['date']).dt.strftime('%Y-%m-%d')
 
-            # 3. 顯示邏輯
-            # 如果是 Leader (Admin) - 顯示包含 ID 的表格以便修改
+            # Leader: 顯示 ID 供修改
             if st.session_state['role'] == 'Leader':
                 st.info("👋 Admin 模式：你可修改任何紀錄")
+                st.dataframe(all_acts, use_container_width=True, height=400, hide_index=True)
                 
-                # 顯示表格 (用已修正日期的 show_df)
-                st.dataframe(show_df, use_container_width=True, height=400, hide_index=True)
-                
-                # Admin 修改工具
                 st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
                 st.markdown("#### 🛠 修改/刪除紀錄")
                 target_id = st.number_input("輸入 ID (見上表第一列)", min_value=0, step=1)
@@ -528,13 +524,11 @@ else:
                         st.warning("找不到此 ID")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # 如果是普通 Member - 顯示簡潔版表格
+            # Member: 看全隊 (隱藏 ID)
             else:
-                st.caption(f"👀 睇下其他同事做緊咩 (顯示最近 {len(show_df)} 條紀錄)")
-                
-                if not show_df.empty:
-                    # 只選取需要顯示的欄位 (隱藏 ID)
-                    display_df = show_df[['date', 'username', 'type', 'points', 'note']]
+                st.caption(f"👀 睇下其他同事做緊咩 (顯示最近 {len(all_acts)} 條紀錄)")
+                if not all_acts.empty:
+                    display_df = all_acts[['date', 'username', 'type', 'points', 'note']]
                     st.dataframe(
                         display_df, 
                         use_container_width=True, 
@@ -550,53 +544,8 @@ else:
                     )
                 else:
                     st.info("暫時未有活動紀錄，快啲搶頭香！")
-        
-        # --- History 區域 (修改了這裡) ---
-        with c2:
-            st.markdown("### 📜 History")
-            
-            # 如果是 Leader (Admin)，顯示所有資料 + 修改介面
-            if st.session_state['role'] == 'Leader':
-                st.info("👋 Admin 模式：可查看及修改所有人的紀錄")
-                all_acts = get_all_act()
-                st.dataframe(all_acts, use_container_width=True, height=400)
-                
-                st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
-                st.markdown("#### 🛠 修改/刪除紀錄")
-                target_id = st.number_input("請輸入要修改的 ID (見左表第一列)", min_value=0, step=1)
-                
-                if target_id > 0:
-                    # 嘗試讀取該 ID 的舊資料
-                    record = get_act_by_id(target_id) # 這會返回 list
-                    if record:
-                        # record 格式可能為 [[id, user, date, type, pts, note]]
-                        r = record[0] 
-                        st.write(f"正在修改: **{r[1]}** 於 {r[2]} 的紀錄")
-                        
-                        with st.form("admin_edit_form"):
-                            # 預設值
-                            new_date = st.date_input("新日期", value=pd.to_datetime(r[2]))
-                            new_type = st.selectbox("新活動種類", ACTIVITY_TYPES, index=ACTIVITY_TYPES.index(r[3]) if r[3] in ACTIVITY_TYPES else 0)
-                            new_note = st.text_area("新備註", value=r[5])
-                            
-                            c_update, c_delete = st.columns(2)
-                            with c_update:
-                                if st.form_submit_button("✅ 更新紀錄"):
-                                    upd_act(target_id, new_date, new_type, new_note)
-                                    st.toast("Updated Successfully!"); st.rerun()
-                            with c_delete:
-                                if st.form_submit_button("🗑 刪除此紀錄", type="primary"):
-                                    del_act(target_id)
-                                    st.toast("Deleted Successfully!"); st.rerun()
-                    else:
-                        st.warning("找不到此 ID，請檢查列表。")
-                st.markdown("</div>", unsafe_allow_html=True)
 
-            # 如果是普通 Member，只顯示自己的，不能改
-            else:
-                st.dataframe(get_user_act(st.session_state['user']).head(10), use_container_width=True, hide_index=True)
-
-    elif menu == "⚖️ 獎罰 (Winner Takes All)":
+    elif "Challenge" in menu:
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ Winner Takes All ({start} ~ {end})")
         st.markdown("""
@@ -629,12 +578,12 @@ else:
                          column_config={"avatar": st.column_config.ImageColumn("", width="small"), "wk_score": st.column_config.ProgressColumn("Score", format="%d", max_value=max(10, max_score))},
                          use_container_width=True, hide_index=True)
 
-    elif menu == "🏆 挑戰 (Challenges)":
+    elif "Year Goal" in menu:
         st.markdown("## 🏆 2026 年度挑戰")
         q1_df = get_q1_data()
         q1_target = 88000
         
-        # --- 1. Q1 挑戰區 (使用 .challenge-header-box 樣式) ---
+        # Q1 挑戰區 (CSS 美化)
         st.markdown("""
         <div class="challenge-header-box">
             <div class="challenge-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div>
@@ -642,7 +591,6 @@ else:
         </div>
         """, unsafe_allow_html=True)
         
-        # --- 2. 選手進度卡 (使用 .q1-player-card 樣式) ---
         if not q1_df.empty:
             for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
                 progress = min(r['q1_total'] / q1_target, 1.0)
@@ -663,8 +611,6 @@ else:
             st.info("暫無 Q1 業績數據，加油！")
         
         st.divider()
-        
-        # --- 3. 年度獎賞 (使用 .reward-card-premium 金屬卡樣式) ---
         st.markdown("### 🎁 年度獎賞計劃")
         c1, c2 = st.columns(2)
         with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
@@ -674,16 +620,14 @@ else:
         with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
         with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
-    elif menu == "🤝 招募 (Recruit)":
+    elif "Recruit" in menu:
         st.markdown("## 🤝 Recruit 龍虎榜"); df = get_data("Yearly")
         if not df.empty: st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}, use_container_width=True, hide_index=True)
 
-    elif menu == "📅 業績 (Monthly)":
+    elif "Monthly" in menu:
         st.markdown("## 📅 Monthly FYC")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
-        
         df = get_data(month=m)
-        
         if not df.empty:
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
@@ -697,7 +641,7 @@ else:
         else:
             st.info("本月暫無數據")
 
-    elif menu == "👤 設定 (Profile)":
+    elif "Profile" in menu:
         st.markdown("## 👤 User Profile")
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -706,14 +650,12 @@ else:
             st.markdown(f"### {st.session_state['user']}")
             st.markdown(f"**Role:** {st.session_state['role']}")
             
-            # 修改密碼
             with st.expander("🔐 Change Password"):
                 new_pw = st.text_input("New Password", type="password")
                 if st.button("Update Password"):
                     update_pw(st.session_state['user'], new_pw)
                     st.toast("Password Updated!", icon="✅")
             
-            # 上載頭像
             with st.expander("🖼️ Change Avatar"):
                 uploaded_file = st.file_uploader("Upload Image", type=['jpg', 'png', 'jpeg'])
                 if uploaded_file is not None:
@@ -724,11 +666,3 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
-
-
-
-
-
-
-
-
