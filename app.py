@@ -337,21 +337,45 @@ def get_user_act(u):
     if df.empty: return pd.DataFrame()
     return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
 
+# 🔥 修復版 get_data：防止 KeyError 🔥
 def get_data(month=None):
+    # 定義標準回傳結構，防止 KeyError
+    columns = ['username', 'team', 'recruit', 'avatar', 'fyc', 'Total_Score']
+    
     users = read_data("users")
-    if users.empty: return pd.DataFrame()
+    
+    # 如果讀不到用戶，直接回傳空的標準結構
+    if users.empty: 
+        return pd.DataFrame(columns=columns)
+        
+    # 只選 Member
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
+    
+    # 如果沒有 Member，也要回傳標準結構，否則後續 merge 會出錯
+    if users.empty:
+        return pd.DataFrame(columns=columns)
+
+    # 讀取業績數據
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
     
+    # 處理 FYC
     if month == "Yearly":
         fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'}) if not fyc_df.empty else pd.DataFrame(columns=['username', 'fyc'])
     else:
         fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'}) if not fyc_df.empty else pd.DataFrame(columns=['username', 'fyc'])
         
+    # 處理 Activities
     act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'}) if not act_df.empty else pd.DataFrame(columns=['username', 'Total_Score'])
     
+    # 合併數據
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
+    
+    # 再次確認欄位存在 (雙重防呆)
+    for col in ['fyc', 'Total_Score', 'recruit']:
+        if col not in df.columns:
+            df[col] = 0
+            
     return df
 
 def get_q1_data():
