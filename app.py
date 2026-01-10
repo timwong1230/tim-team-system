@@ -1,5 +1,95 @@
 import streamlit as st
 import pandas as pd
+import json
+import os
+from datetime import datetime
+
+# --- 1. 讀寫「上次登入時間」的 Helper Function ---
+STATUS_FILE = 'user_status.json'
+
+def get_last_read_time(username):
+    if not os.path.exists(STATUS_FILE):
+        return datetime.min # 如果從未登入過，回傳最小時間
+    
+    with open(STATUS_FILE, 'r') as f:
+        data = json.load(f)
+        
+    time_str = data.get(username)
+    if time_str:
+        return datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+    return datetime.min
+
+def update_last_read_time(username):
+    data = {}
+    if os.path.exists(STATUS_FILE):
+        with open(STATUS_FILE, 'r') as f:
+            data = json.load(f)
+    
+    # 更新該用戶的時間為現在
+    data[username] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(STATUS_FILE, 'w') as f:
+        json.dump(data, f)
+
+# --- 2. 檢查並顯示彈窗的主邏輯 ---
+# 假設你的活動紀錄在 st.session_state['df'] 或你需要重新讀取 csv
+# 假設 df 有這幾個欄位: 'Timestamp' (datetime格式), 'Agent' (人名), 'Activity' (做了甚麼), 'Summary' (詳情)
+
+def check_and_show_notifications(current_user):
+    # 讀取數據 (這裡模擬讀取你的 Excel/CSV)
+    # df = pd.read_excel('data.xlsx') 
+    # 確保 Timestamp 是 datetime 物件
+    # df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    
+    # 這裡直接用 session_state 裡的 df 做示範
+    if 'df' not in st.session_state:
+        return
+
+    df = st.session_state['df']
+    
+    # 1. 獲取上次讀取時間
+    last_read = get_last_read_time(current_user)
+    
+    # 2. 篩選：時間比上次新 AND 不是自己做的
+    # 注意：這裡假設你的 df['Timestamp'] 是 datetime type
+    new_activities = df[
+        (df['Timestamp'] > last_read) & 
+        (df['Agent'] != current_user)
+    ]
+    
+    # 3. 如果有新動態，就彈窗
+    if not new_activities.empty:
+        show_notification_modal(new_activities, current_user)
+
+# --- 3. 彈窗 UI 設計 (使用 @st.dialog) ---
+# 注意：st.dialog 需要 Streamlit 1.34.0 或以上版本
+
+@st.dialog("🔥 團隊最新戰報 🔥")
+def show_notification_modal(new_activities, current_user):
+    st.markdown(f"### Hi {current_user}，你不在的時候...")
+    
+    # 顯示所有新動態，字體加大
+    for index, row in new_activities.iterrows():
+        # 格式化時間，例如 "14:30"
+        time_str = row['Timestamp'].strftime("%H:%M")
+        
+        # 使用 Markdown 語法放大字體
+        st.markdown(f"""
+        ---
+        ## 👤 **{row['Agent']}**
+        ### 做了：{row['Activity']}
+        **詳情：** {row['Summary']}  *(時間: {time_str})*
+        """)
+    
+    st.markdown("---")
+    
+    # 按鈕邏輯
+    if st.button("收到 / OK", type="primary", use_container_width=True):
+        # 按下後，更新「上次讀取時間」到現在，這樣下次就不會再彈出來
+        update_last_read_time(current_user)
+        st.rerun() # 重新整理頁面，關閉彈窗
+import streamlit as st
+import pandas as pd
 import datetime
 import base64
 import json
@@ -666,3 +756,4 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
+
