@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.5 終極介面版 + 彈窗優化) ---
+# --- Custom CSS (V50.8 UI 優化版) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -630,60 +630,79 @@ else:
                 tgt_r = c_d.selectbox("User", df['username'].tolist(), key="r1"); rec = c_e.number_input("Recruits", step=1)
                 if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
 
+    # --- 🔥 Check-in 頁面大改版 (V50.8) 🔥 ---
     elif "Check-in" in menu:
-        st.markdown("## 📝 New Activity")
-        c1, c2 = st.columns([1.2, 1])
+        st.markdown("## 📝 Activity Center")
         
-        with c1:
-            with st.container():
-                d = st.date_input("日期", value=datetime.date.today()); t = st.selectbox("活動種類", ACTIVITY_TYPES)
+        # 使用 Tabs 分開 "輸入" 同 "查看"，介面更乾淨
+        tab_new, tab_hist = st.tabs(["✍️ 立即打卡 (Check-in)", "👀 團隊動態 (Team Feed)"])
+        
+        with tab_new:
+            # 模仿 "卡片" 設計，集中注意力
+            with st.container(border=True):
+                c_date, c_type = st.columns([1, 1])
+                with c_date: d = st.date_input("📅 日期", value=datetime.date.today())
+                with c_type: t = st.selectbox("📌 活動種類", ACTIVITY_TYPES)
+                
+                # 自動根據種類切換 Template
                 note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
-                n = st.text_area("備註", value=note_val, height=200)
-                if st.button("✅ Submit", use_container_width=True): add_act(st.session_state['user'], d, t, n); st.toast("Saved!", icon="🦁"); st.rerun()
-        
-        # History 區域 (透明化 + Admin修改)
-        with c2:
-            st.markdown("### 📜 Team Activities (Live)")
-            all_acts = get_all_act()
+                n = st.text_area("📝 內容詳情 / 備註", value=note_val, height=180, help="請詳細記錄客戶反應或下一步行動")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                # 按鈕置中且大粒
+                if st.button("🚀 提交打卡 (Submit)", use_container_width=True, type="primary"): 
+                    add_act(st.session_state['user'], d, t, n)
+                    st.toast("提交成功！", icon="✅")
+                    st.rerun()
+
+        with tab_hist:
+            st.markdown("### 📜 團隊最新動態 (Real-time)")
             
-            # 格式化日期，避免 timestamp
+            # 加入篩選功能，增加實用性
+            filter_user = st.multiselect("🔍 篩選同事", options=df['username'].unique() if 'username' in df.columns else [])
+            
+            all_acts = get_all_act()
             if not all_acts.empty and 'date' in all_acts.columns:
                  all_acts['date'] = pd.to_datetime(all_acts['date']).dt.strftime('%Y-%m-%d')
+
+            # 根據篩選結果顯示
+            if filter_user:
+                display_df = all_acts[all_acts['username'].isin(filter_user)]
+            else:
+                display_df = all_acts
 
             # Leader: 顯示 ID 供修改
             if st.session_state['role'] == 'Leader':
                 st.info("👋 Admin 模式：你可修改任何紀錄")
-                st.dataframe(all_acts, use_container_width=True, height=400, hide_index=True)
+                st.dataframe(display_df, use_container_width=True, height=400, hide_index=True)
                 
-                st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
-                st.markdown("#### 🛠 修改/刪除紀錄")
-                target_id = st.number_input("輸入 ID (見上表第一列)", min_value=0, step=1)
-                
-                if target_id > 0:
-                    record = get_act_by_id(target_id)
-                    if record:
-                        r = record[0] 
-                        st.write(f"正在修改: **{r[1]}** 於 {r[2]} 的紀錄")
-                        with st.form("admin_edit_form"):
-                            new_date = st.date_input("新日期", value=pd.to_datetime(r[2]))
-                            new_type = st.selectbox("新活動種類", ACTIVITY_TYPES, index=ACTIVITY_TYPES.index(r[3]) if r[3] in ACTIVITY_TYPES else 0)
-                            new_note = st.text_area("新備註", value=r[5])
-                            c_update, c_delete = st.columns(2)
-                            with c_update:
-                                if st.form_submit_button("✅ 更新"): upd_act(target_id, new_date, new_type, new_note); st.toast("Updated!"); st.rerun()
-                            with c_delete:
-                                if st.form_submit_button("🗑 刪除", type="primary"): del_act(target_id); st.toast("Deleted!"); st.rerun()
-                    else:
-                        st.warning("找不到此 ID")
-                st.markdown("</div>", unsafe_allow_html=True)
+                with st.expander("🛠 修改/刪除紀錄 (Admin Only)"):
+                    st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
+                    target_id = st.number_input("輸入 ID (見上表第一列)", min_value=0, step=1)
+                    
+                    if target_id > 0:
+                        record = get_act_by_id(target_id)
+                        if record:
+                            r = record[0] 
+                            st.write(f"正在修改: **{r[1]}** 於 {r[2]} 的紀錄")
+                            with st.form("admin_edit_form"):
+                                new_date = st.date_input("新日期", value=pd.to_datetime(r[2]))
+                                new_type = st.selectbox("新活動種類", ACTIVITY_TYPES, index=ACTIVITY_TYPES.index(r[3]) if r[3] in ACTIVITY_TYPES else 0)
+                                new_note = st.text_area("新備註", value=r[5])
+                                c_update, c_delete = st.columns(2)
+                                with c_update:
+                                    if st.form_submit_button("✅ 更新"): upd_act(target_id, new_date, new_type, new_note); st.toast("Updated!"); st.rerun()
+                                with c_delete:
+                                    if st.form_submit_button("🗑 刪除", type="primary"): del_act(target_id); st.toast("Deleted!"); st.rerun()
+                        else:
+                            st.warning("找不到此 ID")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
             # Member: 看全隊 (隱藏 ID)
             else:
-                st.caption(f"👀 睇下其他同事做緊咩 (顯示最近 {len(all_acts)} 條紀錄)")
-                if not all_acts.empty:
-                    display_df = all_acts[['date', 'username', 'type', 'points', 'note']]
+                if not display_df.empty:
                     st.dataframe(
-                        display_df, 
+                        display_df[['date', 'username', 'type', 'points', 'note']], 
                         use_container_width=True, 
                         height=500, 
                         hide_index=True,
