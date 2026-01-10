@@ -14,38 +14,22 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.13: 專業表格優化 + 系統修復) ---
+# --- Custom CSS (V50.14: 保持專業表格) ---
 st.markdown("""
 <style>
-    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
-
-    /* Sidebar Menu */
     div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] label {
-        background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important;
-        border-radius: 10px !important; border: 1px solid #e9ecef !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important;
-    }
-    div[role="radiogroup"] label:hover {
-        border-color: #D4AF37 !important; background-color: #FFF8E1 !important;
-        transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
-    }
-
-    /* Standard Components */
+    div[role="radiogroup"] label { background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important; border-radius: 10px !important; border: 1px solid #e9ecef !important; box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important; }
+    div[role="radiogroup"] label:hover { border-color: #D4AF37 !important; background-color: #FFF8E1 !important; transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important; }
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
-
-    /* Admin Box */
     .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
-
-    /* Timeline Card (Check-in 頁專用) */
     .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     .card-signed { border-left-color: #D4AF37 !important; } 
     .card-meeting { border-left-color: #3498db !important; }
@@ -56,14 +40,12 @@ st.markdown("""
     .act-name { font-weight: bold; color: #2c3e50; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
     .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; }
-
 </style>
 """, unsafe_allow_html=True)
 
 # Google Sheets 設定
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
-# --- 2. 連接 Google Sheets ---
 @st.cache_resource
 def get_gs_client():
     try:
@@ -90,7 +72,6 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# --- 3. 數據庫操作 ---
 @st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
@@ -104,7 +85,6 @@ def read_data(sheet_name):
         try:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
-            # 強制補齊欄位 (Fix KeyError)
             if df.empty or not set(expected_cols).issubset(df.columns):
                 for col in expected_cols:
                     if col not in df.columns: df[col] = "" 
@@ -114,24 +94,6 @@ def read_data(sheet_name):
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
-
-def check_schema_updates():
-    client = get_gs_client()
-    if not client: return
-    try:
-        sh = client.open("tim_team_db")
-        try:
-            ws_users = sh.worksheet("users")
-            if "last_read" not in ws_users.row_values(1): ws_users.update_cell(1, len(ws_users.row_values(1)) + 1, "last_read"); clear_cache()
-        except: pass
-        try:
-            ws_act = sh.worksheet("activities")
-            if "timestamp" not in ws_act.row_values(1): ws_act.update_cell(1, len(ws_act.row_values(1)) + 1, "timestamp"); clear_cache()
-        except: pass
-    except: pass
-
-# 🔥 FIX: 移除 Global level 的 check_schema_updates 調用，防止啟動時 API Error
-# check_schema_updates() 
 
 def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     ws = get_sheet(sheet_name)
@@ -145,7 +107,6 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                     ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
                     if ids: new_id = max(ids) + 1
                 data_dict['id'] = new_id
-            
             headers = ws.row_values(1)
             if not headers: 
                 schemas = {
@@ -155,10 +116,8 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                 }
                 headers = schemas.get(sheet_name, [])
                 if headers: ws.append_row(headers)
-            
             row_to_add = [str(data_dict.get(h, "")) for h in headers]
             ws.append_row(row_to_add)
-
         elif action == "UPDATE":
             cell = ws.find(str(row_id))
             if cell:
@@ -171,7 +130,6 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except Exception as e: st.error(f"操作失敗: {e}")
 
-# 🔥 FIX: 加入 Try-Except 防止 API Error 卡死
 def init_db_gs():
     try:
         ws = get_sheet("users")
@@ -204,7 +162,6 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
-    # 🔥 FIX: 登入時去重，防止 Leaderboard 出現多個 Tim
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -234,9 +191,13 @@ def add_act(u, d, t, n):
 
 def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
-    exist = df[(df['username'] == u) & (df['month'] == m)]
+    # 🔥 Fix: 強制將 month 轉為字串並去空白，確保匹配
+    if not df.empty:
+        df['month'] = df['month'].astype(str).str.strip()
+    
+    exist = df[(df['username'] == u) & (df['month'] == str(m))]
     if not exist.empty: run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=exist.iloc[0]['id'])
-    else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": m, "amount": a})
+    else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": str(m), "amount": a})
 
 def upd_rec(u, a):
     ws = get_sheet("users"); cell = ws.find(u)
@@ -261,7 +222,6 @@ def get_data(month=None):
     users = read_data("users")
     if users.empty: return pd.DataFrame(columns=base_columns)
     
-    # 🔥 FIX: 關鍵去重 (Drop Duplicates)
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
     
@@ -269,19 +229,27 @@ def get_data(month=None):
 
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
     
+    # 🔥 Fix: 修正 FYC 匹配邏輯
     if not fyc_df.empty and 'amount' in fyc_df.columns:
-        if month == "Yearly": fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
-        else: fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'})
-    else: fyc = pd.DataFrame(columns=['username', 'fyc'])
+        # 強制轉型，防止 '2026-1' 對不上 '2026-01'
+        fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
+        fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
+        
+        if month == "Yearly": 
+            fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
+        else: 
+            fyc = fyc_df[fyc_df['month'] == str(month)][['username', 'amount']].rename(columns={'amount': 'fyc'})
+    else: 
+        fyc = pd.DataFrame(columns=['username', 'fyc'])
 
     if not act_df.empty and 'points' in act_df.columns:
         act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
-    else: act = pd.DataFrame(columns=['username', 'Total_Score'])
+    else: 
+        act = pd.DataFrame(columns=['username', 'Total_Score'])
     
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     
-    # 🔥 FIX: 強制填充 0，防止 KeyError: 'fyc'
     for col in ['fyc', 'Total_Score', 'recruit']:
         if col not in df.columns: df[col] = 0
     return df
@@ -293,6 +261,10 @@ def get_q1_data():
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
+        # Fix Q1 Filter
+        fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
+        fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
+        
         q1 = fyc_df[fyc_df['month'].isin(['2026-01', '2026-02', '2026-03'])]
         q1_sum = q1.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'q1_total'})
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
@@ -469,7 +441,7 @@ else:
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 FIX: 重新讀取 users 解決 NameError
+            # 🔥 Fix: 重新讀取 Users 防止 NameError
             users_df = read_data("users")
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -529,45 +501,39 @@ else:
             )
         else: st.info("暫無 Q1 業績數據，加油！")
 
-    # --- 🔥 Recruit 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Recruit" in menu:
         st.markdown("## 🤝 Recruit 龍虎榜")
         df = get_data("Yearly")
         if not df.empty:
-            # 🔥 強制轉換格式，防止報錯
             df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
             df['avatar'] = df['avatar'].astype(str)
-            
             st.dataframe(
                 df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
                 column_config={
                     "avatar": st.column_config.ImageColumn("Avatar", width="small"),
                     "username": st.column_config.TextColumn("Agent"),
                     "recruit": st.column_config.ProgressColumn("Recruits (Headcount)", format="%d", min_value=0, max_value=10)
-                },
-                use_container_width=True, hide_index=True
+                }, use_container_width=True, hide_index=True
             )
         else: st.info("暫無招募數據，大家加油！")
 
-    # --- 🔥 Monthly 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Monthly" in menu:
         st.markdown("## 📅 Monthly FYC 龍虎榜")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
-            # 🔥 強制轉換格式，防止報錯
+            # 🔥 Fix: 防止 JSON Error，強制轉型
             df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
             df['avatar'] = df['avatar'].astype(str)
-            
             max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
+            
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
                 column_config={
                     "avatar": st.column_config.ImageColumn("Avatar", width="small"),
                     "username": st.column_config.TextColumn("Agent"),
                     "fyc": st.column_config.ProgressColumn("FYC Achievement", format="$%d", min_value=0, max_value=max_fyc)
-                },
-                use_container_width=True, hide_index=True
+                }, use_container_width=True, hide_index=True
             )
         else: st.info("本月暫無數據")
 
