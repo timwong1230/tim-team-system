@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.13: 專業表格優化 + 系統修復) ---
+# --- Custom CSS (V50.11: 金色框框回歸 + 動態卡片) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -42,20 +42,82 @@ st.markdown("""
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
 
-    /* Admin Box */
-    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
-
-    /* Timeline Card (Check-in 頁專用) */
-    .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    /* ============================================= */
+    /* 🔥 Timeline Card 專用樣式 (Check-in 頁)       */
+    /* ============================================= */
+    .activity-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        border-left: 5px solid #e9ecef;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        transition: transform 0.2s;
+    }
+    .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
     .card-signed { border-left-color: #D4AF37 !important; } 
     .card-meeting { border-left-color: #3498db !important; }
     .card-recruit { border-left-color: #9b59b6 !important; } 
     .card-admin { border-left-color: #95a5a6 !important; }
+
     .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px; }
-    .act-name { font-weight: bold; color: #2c3e50; }
+    .act-user-info { display: flex; align-items: center; gap: 10px; }
+    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0; }
+    .act-name { font-weight: bold; color: #2c3e50; font-size: 1.05em; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
-    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; }
+    .act-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px; }
+    .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
+    .badge-meeting { background-color: #ebf5fb; color: #3498db; border: 1px solid #3498db; }
+    .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
+    .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
+    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
+    .act-points { font-size: 0.8em; color: #bbb; text-align: right; margin-top: 5px; }
+
+    /* ============================================= */
+    /* 🏆 年度挑戰 & Q1 Card (Year Goal 頁)          */
+    /* ============================================= */
+    
+    /* 1. Q1 挑戰卡 */
+    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
+    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; transition: transform 0.2s; }
+    .q1-player-card:hover { transform: scale(1.02); box-shadow: 0 6px 15px rgba(212, 175, 55, 0.15); }
+    .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
+    .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; border-radius: 50%; }
+    .q1-info-box { flex: 1; }
+    .q1-name { font-size: 1.2em; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
+    .q1-amount { font-size: 1.1em; color: #D4AF37; font-weight: 700; }
+    .q1-progress-container { height: 12px; background-color: #e9ecef; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+    .q1-progress-bar { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 6px; }
+    .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
+
+    /* 2. 金色獎賞卡 (修復版) */
+    .reward-card-premium { 
+        background: linear-gradient(145deg, #ffffff, #f9f9f9); 
+        border: 1px solid rgba(212, 175, 55, 0.4); 
+        border-radius: 16px; 
+        padding: 25px 20px; 
+        text-align: center; 
+        box-shadow: 0 10px 20px rgba(0,0,0,0.05), inset 0 0 15px rgba(255,255,255,0.8); 
+        transition: all 0.3s ease; 
+        height: 100%; 
+        position: relative; 
+        overflow: hidden; 
+    }
+    .reward-card-premium::before { 
+        content: ""; 
+        position: absolute; 
+        top: 0; left: 0; width: 100%; height: 6px; 
+        background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); 
+    }
+    .reward-card-premium:hover { 
+        transform: translateY(-5px); 
+        box-shadow: 0 15px 30px rgba(212, 175, 55, 0.2); 
+        border-color: #D4AF37; 
+    }
+    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
+    .reward-title-p { color: #D4AF37; font-size: 1.2em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .reward-prize-p { color: #c0392b; font-size: 1.5em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
+    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -104,7 +166,6 @@ def read_data(sheet_name):
         try:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
-            # 強制補齊欄位 (Fix KeyError)
             if df.empty or not set(expected_cols).issubset(df.columns):
                 for col in expected_cols:
                     if col not in df.columns: df[col] = "" 
@@ -197,7 +258,6 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
-    # 🔥 FIX: 登入時去重，防止 Leaderboard 出現多個 Tim
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -253,28 +313,19 @@ def get_data(month=None):
     base_columns = ['username', 'team', 'recruit', 'avatar', 'fyc', 'Total_Score']
     users = read_data("users")
     if users.empty: return pd.DataFrame(columns=base_columns)
-    
-    # 🔥 FIX: 關鍵去重 (Drop Duplicates)
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
-    
     if users.empty: return pd.DataFrame(columns=base_columns)
-
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
-    
     if not fyc_df.empty and 'amount' in fyc_df.columns:
         if month == "Yearly": fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
         else: fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'})
     else: fyc = pd.DataFrame(columns=['username', 'fyc'])
-
     if not act_df.empty and 'points' in act_df.columns:
         act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
     else: act = pd.DataFrame(columns=['username', 'Total_Score'])
-    
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
-    
-    # 🔥 FIX: 強制填充 0，防止 KeyError: 'fyc'
     for col in ['fyc', 'Total_Score', 'recruit']:
         if col not in df.columns: df[col] = 0
     return df
@@ -346,10 +397,10 @@ ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "新�
 
 # --- UI Helper ---
 def get_activity_style(act_type):
-    if "簽單" in act_type: return "card-signed"
-    if "見面" in act_type or "傾" in act_type: return "card-meeting"
-    if "招募" in act_type or "新人" in act_type: return "card-recruit"
-    return "card-admin"
+    if "簽單" in act_type: return "card-signed", "badge-signed"
+    if "見面" in act_type or "傾" in act_type: return "card-meeting", "badge-meeting"
+    if "招募" in act_type or "新人" in act_type: return "card-recruit", "badge-recruit"
+    return "card-admin", "badge-default"
 
 # --- UI Layout ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -460,33 +511,40 @@ else:
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 FIX: 重新讀取 users，解決 NameError: df not defined
             users_df = read_data("users")
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
             
+            # 獲取活動並加上頭像
             all_acts = get_all_act()
             if not all_acts.empty:
                 users_mini = users_df[['username', 'avatar']].drop_duplicates()
                 all_acts = pd.merge(all_acts, users_mini, on='username', how='left')
                 display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
                 
+                # --- 🔥 渲染 Timeline Card 🔥 ---
                 for idx, row in display_df.iterrows():
                     act_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
                     act_time = pd.to_datetime(row['timestamp']).strftime('%H:%M') if row['timestamp'] else ""
                     avatar_url = row['avatar'] if isinstance(row['avatar'], str) and row['avatar'].startswith('http') else "https://ui-avatars.com/api/?background=random&color=fff&name=" + row['username']
-                    card_class = get_activity_style(row['type'])
+                    card_class, badge_class = get_activity_style(row['type'])
                     
                     st.markdown(f"""
                     <div class="activity-card {card_class}">
                         <div class="act-header">
-                            <div style="display:flex;align-items:center;">
+                            <div class="act-user-info">
                                 <img src="{avatar_url}" class="act-avatar">
-                                <div><div class="act-name">{row['username']}</div><div class="act-time">{act_date} {act_time}</div></div>
+                                <div>
+                                    <div class="act-name">{row['username']}</div>
+                                    <div class="act-time">{act_date} {act_time}</div>
+                                </div>
                             </div>
-                            <div style="font-size:0.8em;font-weight:bold;color:#777;">{row['type']}</div>
+                            <div class="act-badge {badge_class}">{row['type']}</div>
                         </div>
-                        <div class="act-content">{row['note'].replace(chr(10), '<br>')}</div>
+                        <div class="act-content">
+                            {row['note'].replace(chr(10), '<br>')}
+                        </div>
+                        <div class="act-points">ID: {row['id']} • {row['points']} pts</div>
                     </div>
                     """, unsafe_allow_html=True)
             else:
@@ -509,57 +567,30 @@ else:
     elif "Year Goal" in menu:
         st.markdown("## 🏆 2026 年度挑戰")
         q1_df = get_q1_data(); q1_target = 88000
-        st.markdown("""<div style="background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;"><div style="font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px;">🔥 Q1 88000 Challenge (1/1 - 31/3)</div><p style="margin:0;color:#555;"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="challenge-header-box"><div class="challenge-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div><p class="challenge-rules"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。<br>這是通往 MDRT 的第一張入場券，必須拿下！</p></div>""", unsafe_allow_html=True)
         if not q1_df.empty:
-            st.dataframe(
-                q1_df[['avatar', 'username', 'q1_total']].sort_values(by='q1_total', ascending=False),
-                column_config={
-                    "avatar": st.column_config.ImageColumn("", width="small"),
-                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000),
-                }, use_container_width=True, hide_index=True
-            )
+            for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
+                progress = min(r['q1_total'] / q1_target, 1.0)
+                st.markdown(f"""<div class="q1-player-card"><div class="q1-avatar-box"><img src="{r['avatar']}"></div><div class="q1-info-box"><div class="q1-name">{r['username']}</div><div class="q1-amount">${r['q1_total']:,.0f}</div><div class="q1-progress-container"><div class="q1-progress-bar" style="width: {progress*100}%;"></div></div><div class="q1-target-label">Target: $88,000 ({progress*100:.1f}%)</div></div></div>""", unsafe_allow_html=True)
         else: st.info("暫無 Q1 業績數據，加油！")
+        st.divider(); st.markdown("### 🎁 年度獎賞計劃")
+        c1, c2 = st.columns(2)
+        with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
+        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>', unsafe_allow_html=True)
+        st.write(""); c3, c4 = st.columns(2)
+        with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
+        with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
-    # --- 🔥 Recruit 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Recruit" in menu:
-        st.markdown("## 🤝 Recruit 龍虎榜")
-        df = get_data("Yearly")
-        if not df.empty:
-            # 🔥 強制轉換格式，防止報錯
-            df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
-            df['avatar'] = df['avatar'].astype(str)
-            
-            st.dataframe(
-                df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
-                column_config={
-                    "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                    "username": st.column_config.TextColumn("Agent"),
-                    "recruit": st.column_config.ProgressColumn("Recruits (Headcount)", format="%d", min_value=0, max_value=10)
-                },
-                use_container_width=True, hide_index=True
-            )
-        else: st.info("暫無招募數據，大家加油！")
+        st.markdown("## 🤝 Recruit 龍虎榜"); df = get_data("Yearly")
+        if not df.empty: st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}, use_container_width=True, hide_index=True)
 
-    # --- 🔥 Monthly 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Monthly" in menu:
-        st.markdown("## 📅 Monthly FYC 龍虎榜")
+        st.markdown("## 📅 Monthly FYC")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
-            # 🔥 強制轉換格式，防止報錯
-            df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
-            df['avatar'] = df['avatar'].astype(str)
-            
-            max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
-            st.dataframe(
-                df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
-                column_config={
-                    "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                    "username": st.column_config.TextColumn("Agent"),
-                    "fyc": st.column_config.ProgressColumn("FYC Achievement", format="$%d", min_value=0, max_value=max_fyc)
-                },
-                use_container_width=True, hide_index=True
-            )
+            st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}, use_container_width=True, hide_index=True)
         else: st.info("本月暫無數據")
 
     elif "Profile" in menu:
