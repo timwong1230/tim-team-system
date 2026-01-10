@@ -14,11 +14,11 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.10: Timeline Feed UI) ---
+# --- Custom CSS (V50.11: 金色框框回歸 + 動態卡片) ---
 st.markdown("""
 <style>
     /* 全局設定 */
-    [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } /* 背景改淡灰，突出卡片 */
+    [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
@@ -43,41 +43,81 @@ st.markdown("""
     img { border-radius: 50%; }
 
     /* ============================================= */
-    /* 🔥 Timeline Card 專用樣式 (New)               */
+    /* 🔥 Timeline Card 專用樣式 (Check-in 頁)       */
     /* ============================================= */
     .activity-card {
         background-color: #ffffff;
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 12px;
-        border-left: 5px solid #e9ecef; /* Default Border */
+        border-left: 5px solid #e9ecef;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         transition: transform 0.2s;
     }
     .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-    
-    /* 不同類型的顏色條 */
-    .card-signed { border-left-color: #D4AF37 !important; } /* 金色 */
-    .card-meeting { border-left-color: #3498db !important; } /* 藍色 */
-    .card-recruit { border-left-color: #9b59b6 !important; } /* 紫色 */
-    .card-admin { border-left-color: #95a5a6 !important; } /* 灰色 */
+    .card-signed { border-left-color: #D4AF37 !important; } 
+    .card-meeting { border-left-color: #3498db !important; }
+    .card-recruit { border-left-color: #9b59b6 !important; } 
+    .card-admin { border-left-color: #95a5a6 !important; }
 
     .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .act-user-info { display: flex; align-items: center; gap: 10px; }
     .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0; }
     .act-name { font-weight: bold; color: #2c3e50; font-size: 1.05em; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
-    
-    .act-badge {
-        padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px;
-    }
+    .act-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px; }
     .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
     .badge-meeting { background-color: #ebf5fb; color: #3498db; border: 1px solid #3498db; }
     .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
     .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
-
     .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
     .act-points { font-size: 0.8em; color: #bbb; text-align: right; margin-top: 5px; }
+
+    /* ============================================= */
+    /* 🏆 年度挑戰 & Q1 Card (Year Goal 頁)          */
+    /* ============================================= */
+    
+    /* 1. Q1 挑戰卡 */
+    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
+    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; transition: transform 0.2s; }
+    .q1-player-card:hover { transform: scale(1.02); box-shadow: 0 6px 15px rgba(212, 175, 55, 0.15); }
+    .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
+    .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; border-radius: 50%; }
+    .q1-info-box { flex: 1; }
+    .q1-name { font-size: 1.2em; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
+    .q1-amount { font-size: 1.1em; color: #D4AF37; font-weight: 700; }
+    .q1-progress-container { height: 12px; background-color: #e9ecef; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+    .q1-progress-bar { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 6px; }
+    .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
+
+    /* 2. 金色獎賞卡 (修復版) */
+    .reward-card-premium { 
+        background: linear-gradient(145deg, #ffffff, #f9f9f9); 
+        border: 1px solid rgba(212, 175, 55, 0.4); 
+        border-radius: 16px; 
+        padding: 25px 20px; 
+        text-align: center; 
+        box-shadow: 0 10px 20px rgba(0,0,0,0.05), inset 0 0 15px rgba(255,255,255,0.8); 
+        transition: all 0.3s ease; 
+        height: 100%; 
+        position: relative; 
+        overflow: hidden; 
+    }
+    .reward-card-premium::before { 
+        content: ""; 
+        position: absolute; 
+        top: 0; left: 0; width: 100%; height: 6px; 
+        background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); 
+    }
+    .reward-card-premium:hover { 
+        transform: translateY(-5px); 
+        box-shadow: 0 15px 30px rgba(212, 175, 55, 0.2); 
+        border-color: #D4AF37; 
+    }
+    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
+    .reward-title-p { color: #D4AF37; font-size: 1.2em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .reward-prize-p { color: #c0392b; font-size: 1.5em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
+    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -478,15 +518,12 @@ else:
             # 獲取活動並加上頭像
             all_acts = get_all_act()
             if not all_acts.empty:
-                # 合併頭像
                 users_mini = users_df[['username', 'avatar']].drop_duplicates()
                 all_acts = pd.merge(all_acts, users_mini, on='username', how='left')
-                # 篩選
                 display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
                 
                 # --- 🔥 渲染 Timeline Card 🔥 ---
                 for idx, row in display_df.iterrows():
-                    # 處理顯示數據
                     act_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
                     act_time = pd.to_datetime(row['timestamp']).strftime('%H:%M') if row['timestamp'] else ""
                     avatar_url = row['avatar'] if isinstance(row['avatar'], str) and row['avatar'].startswith('http') else "https://ui-avatars.com/api/?background=random&color=fff&name=" + row['username']
