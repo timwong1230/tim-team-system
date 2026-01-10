@@ -9,7 +9,7 @@ import io
 import urllib.parse
 from PIL import Image
 from google.oauth2.service_account import Credentials
-from gspread.exceptions import WorksheetNotFound
+from gspread.exceptions import WorksheetNotFound, APIError
 
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
@@ -130,7 +130,8 @@ def check_schema_updates():
         except: pass
     except: pass
 
-check_schema_updates()
+# 🔥 FIX: 移除 Global level 的 check_schema_updates 調用，防止啟動時 API Error
+# check_schema_updates() 
 
 def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     ws = get_sheet(sheet_name)
@@ -170,26 +171,32 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except Exception as e: st.error(f"操作失敗: {e}")
 
+# 🔥 FIX: 加入 Try-Except 防止 API Error 卡死
 def init_db_gs():
-    ws = get_sheet("users")
-    if ws:
-        try: existing = ws.col_values(1)
-        except: existing = []
-        if not existing: 
-            ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
-            existing = ["username"]
-        defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
-                    ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
-        for u in defaults:
-            if u[0] not in existing:
-                url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-                ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
-                clear_cache()
-    for sn in ["monthly_fyc", "activities"]:
-        ws_tmp = get_sheet(sn)
-        if ws_tmp and not ws_tmp.row_values(1):
-             if sn == "monthly_fyc": ws_tmp.append_row(["id", "username", "month", "amount"])
-             if sn == "activities": ws_tmp.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
+    try:
+        ws = get_sheet("users")
+        if ws:
+            try: existing = ws.col_values(1)
+            except: existing = []
+            if not existing: 
+                ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
+                existing = ["username"]
+            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
+                        ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
+            for u in defaults:
+                if u[0] not in existing:
+                    url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
+                    ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
+                    clear_cache()
+        for sn in ["monthly_fyc", "activities"]:
+            ws_tmp = get_sheet(sn)
+            if ws_tmp:
+                try: 
+                    if not ws_tmp.row_values(1):
+                        if sn == "monthly_fyc": ws_tmp.append_row(["id", "username", "month", "amount"])
+                        if sn == "activities": ws_tmp.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
+                except: pass
+    except: pass
 
 init_db_gs()
 
@@ -310,10 +317,12 @@ def get_weekly_data():
 
 # --- Notification Logic ---
 def update_last_read_time(username):
-    ws = get_sheet("users"); cell = ws.find(username)
-    if cell:
-        headers = ws.row_values(1)
-        if "last_read" in headers: ws.update_cell(cell.row, headers.index("last_read") + 1, str(datetime.datetime.now())); clear_cache()
+    try:
+        ws = get_sheet("users"); cell = ws.find(username)
+        if cell:
+            headers = ws.row_values(1)
+            if "last_read" in headers: ws.update_cell(cell.row, headers.index("last_read") + 1, str(datetime.datetime.now())); clear_cache()
+    except: pass
 
 @st.dialog("🔥 團隊最新戰報 🔥")
 def show_notification_modal(new_activities, current_user):
