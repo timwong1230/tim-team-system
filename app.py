@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.11: 金色框框回歸 + 動態卡片) ---
+# --- Custom CSS (V50.12: 終極美化排行榜) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -43,81 +43,51 @@ st.markdown("""
     img { border-radius: 50%; }
 
     /* ============================================= */
-    /* 🔥 Timeline Card 專用樣式 (Check-in 頁)       */
+    /* 🏆 Leaderboard Row Style (通用排行榜條)       */
     /* ============================================= */
-    .activity-card {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 12px;
-        border-left: 5px solid #e9ecef;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        transition: transform 0.2s;
+    .lb-row {
+        display: flex; align-items: center; background: #fff; padding: 15px; margin-bottom: 10px;
+        border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); transition: transform 0.2s;
+        border: 1px solid #eee;
     }
-    .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-    .card-signed { border-left-color: #D4AF37 !important; } 
-    .card-meeting { border-left-color: #3498db !important; }
-    .card-recruit { border-left-color: #9b59b6 !important; } 
-    .card-admin { border-left-color: #95a5a6 !important; }
-
-    .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .act-user-info { display: flex; align-items: center; gap: 10px; }
-    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0; }
-    .act-name { font-weight: bold; color: #2c3e50; font-size: 1.05em; }
-    .act-time { font-size: 0.85em; color: #95a5a6; }
-    .act-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px; }
-    .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
-    .badge-meeting { background-color: #ebf5fb; color: #3498db; border: 1px solid #3498db; }
-    .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
-    .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
-    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
-    .act-points { font-size: 0.8em; color: #bbb; text-align: right; margin-top: 5px; }
-
-    /* ============================================= */
-    /* 🏆 年度挑戰 & Q1 Card (Year Goal 頁)          */
-    /* ============================================= */
+    .lb-row:hover { transform: scale(1.01); box-shadow: 0 5px 15px rgba(0,0,0,0.08); border-color: #D4AF37; }
     
-    /* 1. Q1 挑戰卡 */
-    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
-    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; transition: transform 0.2s; }
-    .q1-player-card:hover { transform: scale(1.02); box-shadow: 0 6px 15px rgba(212, 175, 55, 0.15); }
-    .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
-    .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; border-radius: 50%; }
-    .q1-info-box { flex: 1; }
-    .q1-name { font-size: 1.2em; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
-    .q1-amount { font-size: 1.1em; color: #D4AF37; font-weight: 700; }
-    .q1-progress-container { height: 12px; background-color: #e9ecef; border-radius: 6px; overflow: hidden; margin-top: 8px; }
-    .q1-progress-bar { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 6px; }
-    .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
+    .lb-rank { width: 40px; font-size: 1.2em; font-weight: 900; color: #bdc3c7; text-align: center; }
+    .lb-rank-1 { color: #D4AF37; font-size: 1.5em; } /* Gold */
+    .lb-rank-2 { color: #95a5a6; font-size: 1.4em; } /* Silver */
+    .lb-rank-3 { color: #cd7f32; font-size: 1.3em; } /* Bronze */
+    
+    .lb-avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; margin: 0 15px; border: 2px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .lb-info { flex: 1; }
+    .lb-name { font-weight: bold; font-size: 1.1em; color: #2c3e50; }
+    .lb-sub { font-size: 0.85em; color: #7f8c8d; }
+    
+    .lb-val-box { text-align: right; min-width: 100px; }
+    .lb-val-main { font-weight: 900; font-size: 1.2em; color: #D4AF37; }
+    .lb-val-sub { font-size: 0.8em; color: #999; }
 
-    /* 2. 金色獎賞卡 (修復版) */
-    .reward-card-premium { 
-        background: linear-gradient(145deg, #ffffff, #f9f9f9); 
-        border: 1px solid rgba(212, 175, 55, 0.4); 
-        border-radius: 16px; 
-        padding: 25px 20px; 
-        text-align: center; 
-        box-shadow: 0 10px 20px rgba(0,0,0,0.05), inset 0 0 15px rgba(255,255,255,0.8); 
-        transition: all 0.3s ease; 
-        height: 100%; 
-        position: relative; 
-        overflow: hidden; 
+    /* FYC Progress Bar within Row */
+    .fyc-bar-bg { width: 100%; height: 6px; background: #f0f0f0; border-radius: 3px; margin-top: 5px; overflow: hidden; }
+    .fyc-bar-fill { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 3px; }
+
+    /* ============================================= */
+    /* 🥇 Podium Card (前三名專用卡)                 */
+    /* ============================================= */
+    .podium-container { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }
+    .podium-card {
+        background: #fff; width: 30%; min-width: 250px; padding: 20px; border-radius: 15px;
+        text-align: center; box-shadow: 0 10px 20px rgba(0,0,0,0.05); position: relative;
+        border-top: 5px solid #eee;
     }
-    .reward-card-premium::before { 
-        content: ""; 
-        position: absolute; 
-        top: 0; left: 0; width: 100%; height: 6px; 
-        background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); 
-    }
-    .reward-card-premium:hover { 
-        transform: translateY(-5px); 
-        box-shadow: 0 15px 30px rgba(212, 175, 55, 0.2); 
-        border-color: #D4AF37; 
-    }
-    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
-    .reward-title-p { color: #D4AF37; font-size: 1.2em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .reward-prize-p { color: #c0392b; font-size: 1.5em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
-    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
+    .podium-1 { border-color: #D4AF37; transform: scale(1.05); z-index: 2; }
+    .podium-2 { border-color: #95a5a6; margin-top: 20px; }
+    .podium-3 { border-color: #cd7f32; margin-top: 20px; }
+    
+    .podium-crown { font-size: 2em; margin-bottom: -10px; display: block; }
+    .podium-avatar { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 10px; border: 3px solid #fff; box-shadow: 0 5px 10px rgba(0,0,0,0.1); }
+    .podium-name { font-weight: 900; font-size: 1.3em; margin-bottom: 5px; color: #2c3e50; }
+    .podium-val { font-size: 1.5em; font-weight: 900; color: #D4AF37; }
+    .podium-label { font-size: 0.9em; color: #999; text-transform: uppercase; letter-spacing: 1px; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -395,12 +365,77 @@ TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不
 TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
 ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "新人報考試 (3分)", "簽單 (5分)", "新人出code (8分)"]
 
-# --- UI Helper ---
+# --- UI Helper: Activity Styles ---
 def get_activity_style(act_type):
     if "簽單" in act_type: return "card-signed", "badge-signed"
     if "見面" in act_type or "傾" in act_type: return "card-meeting", "badge-meeting"
     if "招募" in act_type or "新人" in act_type: return "card-recruit", "badge-recruit"
     return "card-admin", "badge-default"
+
+# --- UI Helper: Render Podium & List ---
+def render_podium(df, value_col, label):
+    # Sort top 3
+    df_sorted = df.sort_values(by=value_col, ascending=False).reset_index(drop=True)
+    if df_sorted.empty: st.info("暫無數據"); return
+
+    top3 = df_sorted.head(3)
+    
+    # 頒獎台 HTML (Podium)
+    cols = st.columns(3)
+    order = [1, 0, 2] # Silver (2nd), Gold (1st), Bronze (3rd)
+    
+    html = '<div class="podium-container">'
+    
+    # 手動構建 HTML
+    for i in order:
+        if i < len(top3):
+            row = top3.iloc[i]
+            rank = i + 1
+            rank_class = f"podium-{rank}"
+            crown = "👑" if rank == 1 else "🥈" if rank == 2 else "🥉"
+            val = int(row[value_col]) if value_col == 'recruit' else f"${row[value_col]:,.0f}"
+            
+            html += f"""
+            <div class="podium-card {rank_class}">
+                <div class="podium-crown">{crown}</div>
+                <img src="{row['avatar']}" class="podium-avatar">
+                <div class="podium-name">{row['username']}</div>
+                <div class="podium-val">{val}</div>
+                <div class="podium-label">{label}</div>
+            </div>
+            """
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+    
+    # 其餘名次 (List View)
+    if len(df_sorted) > 3:
+        st.markdown("### 🏃‍♂️ Chasing Pack")
+        for i in range(3, len(df_sorted)):
+            row = df_sorted.iloc[i]
+            val = int(row[value_col]) if value_col == 'recruit' else f"${row[value_col]:,.0f}"
+            
+            # FYC Bar 計算
+            bar_html = ""
+            if value_col == 'fyc' and row[value_col] > 0:
+                max_val = df_sorted.iloc[0][value_col]
+                pct = (row[value_col] / max_val) * 100
+                bar_html = f'<div class="fyc-bar-bg"><div class="fyc-bar-fill" style="width: {pct}%;"></div></div>'
+
+            st.markdown(f"""
+            <div class="lb-row">
+                <div class="lb-rank">{i+1}</div>
+                <img src="{row['avatar']}" class="lb-avatar">
+                <div class="lb-info">
+                    <div class="lb-name">{row['username']}</div>
+                    {bar_html}
+                </div>
+                <div class="lb-val-box">
+                    <div class="lb-val-main">{val}</div>
+                    <div class="lb-val-sub">{label}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
 
 # --- UI Layout ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -581,16 +616,21 @@ else:
         with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
         with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
+    # --- 🔥 Recruit 頁面大升級 (V50.12) 🔥 ---
     elif "Recruit" in menu:
-        st.markdown("## 🤝 Recruit 龍虎榜"); df = get_data("Yearly")
-        if not df.empty: st.dataframe(df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "recruit": st.column_config.NumberColumn("招募", format="%d")}, use_container_width=True, hide_index=True)
+        st.markdown("## 🤝 Recruit 英雄榜")
+        df = get_data("Yearly")
+        if not df.empty:
+            render_podium(df, 'recruit', "NEW RECRUITS")
+        else: st.info("暫無招募數據，大家加油！")
 
+    # --- 🔥 Monthly 頁面大升級 (V50.12) 🔥 ---
     elif "Monthly" in menu:
-        st.markdown("## 📅 Monthly FYC")
+        st.markdown("## 📅 Monthly FYC 龍虎榜")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
-            st.dataframe(df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False), column_config={"avatar": st.column_config.ImageColumn("", width="small"), "fyc": st.column_config.NumberColumn("FYC", format="$%d")}, use_container_width=True, hide_index=True)
+            render_podium(df, 'fyc', "MONTHLY FYC")
         else: st.info("本月暫無數據")
 
     elif "Profile" in menu:
