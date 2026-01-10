@@ -14,22 +14,38 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.14: 保持專業表格) ---
+# --- Custom CSS (V50.15: UI 微調) ---
 st.markdown("""
 <style>
+    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
+
+    /* Sidebar Menu */
     div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] label { background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important; border-radius: 10px !important; border: 1px solid #e9ecef !important; box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important; }
-    div[role="radiogroup"] label:hover { border-color: #D4AF37 !important; background-color: #FFF8E1 !important; transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important; }
+    div[role="radiogroup"] label {
+        background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important;
+        border-radius: 10px !important; border: 1px solid #e9ecef !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important;
+    }
+    div[role="radiogroup"] label:hover {
+        border-color: #D4AF37 !important; background-color: #FFF8E1 !important;
+        transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
+    }
+
+    /* Standard Components */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
+
+    /* Admin Box */
     .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
+
+    /* Timeline Card (Check-in 頁專用) */
     .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     .card-signed { border-left-color: #D4AF37 !important; } 
     .card-meeting { border-left-color: #3498db !important; }
@@ -40,12 +56,14 @@ st.markdown("""
     .act-name { font-weight: bold; color: #2c3e50; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
     .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; }
+
 </style>
 """, unsafe_allow_html=True)
 
 # Google Sheets 設定
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
+# --- 2. 連接 Google Sheets ---
 @st.cache_resource
 def get_gs_client():
     try:
@@ -72,6 +90,7 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
+# --- 3. 數據庫操作 ---
 @st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
@@ -85,6 +104,7 @@ def read_data(sheet_name):
         try:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
+            # 強制補齊欄位 (Fix KeyError)
             if df.empty or not set(expected_cols).issubset(df.columns):
                 for col in expected_cols:
                     if col not in df.columns: df[col] = "" 
@@ -107,6 +127,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                     ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
                     if ids: new_id = max(ids) + 1
                 data_dict['id'] = new_id
+            
             headers = ws.row_values(1)
             if not headers: 
                 schemas = {
@@ -116,8 +137,10 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                 }
                 headers = schemas.get(sheet_name, [])
                 if headers: ws.append_row(headers)
+            
             row_to_add = [str(data_dict.get(h, "")) for h in headers]
             ws.append_row(row_to_add)
+
         elif action == "UPDATE":
             cell = ws.find(str(row_id))
             if cell:
@@ -191,10 +214,8 @@ def add_act(u, d, t, n):
 
 def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
-    # 🔥 Fix: 強制將 month 轉為字串並去空白，確保匹配
     if not df.empty:
         df['month'] = df['month'].astype(str).str.strip()
-    
     exist = df[(df['username'] == u) & (df['month'] == str(m))]
     if not exist.empty: run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=exist.iloc[0]['id'])
     else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": str(m), "amount": a})
@@ -229,9 +250,7 @@ def get_data(month=None):
 
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
     
-    # 🔥 Fix: 修正 FYC 匹配邏輯
     if not fyc_df.empty and 'amount' in fyc_df.columns:
-        # 強制轉型，防止 '2026-1' 對不上 '2026-01'
         fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
         fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
         
@@ -261,10 +280,8 @@ def get_q1_data():
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
-        # Fix Q1 Filter
         fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
         fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
-        
         q1 = fyc_df[fyc_df['month'].isin(['2026-01', '2026-02', '2026-03'])]
         q1_sum = q1.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'q1_total'})
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
@@ -441,7 +458,6 @@ else:
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 Fix: 重新讀取 Users 防止 NameError
             users_df = read_data("users")
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -495,11 +511,19 @@ else:
             st.dataframe(
                 q1_df[['avatar', 'username', 'q1_total']].sort_values(by='q1_total', ascending=False),
                 column_config={
-                    "avatar": st.column_config.ImageColumn("", width="small"),
-                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000),
+                    "avatar": st.column_config.ImageColumn("Avatar", width="medium"),
+                    "username": st.column_config.TextColumn("Name", width="small"),
+                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000, width="medium"),
                 }, use_container_width=True, hide_index=True
             )
         else: st.info("暫無 Q1 業績數據，加油！")
+        st.divider(); st.markdown("### 🎁 年度獎賞計劃")
+        c1, c2 = st.columns(2)
+        with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
+        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>', unsafe_allow_html=True)
+        st.write(""); c3, c4 = st.columns(2)
+        with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
+        with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
     elif "Recruit" in menu:
         st.markdown("## 🤝 Recruit 龍虎榜")
@@ -522,11 +546,9 @@ else:
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
-            # 🔥 Fix: 防止 JSON Error，強制轉型
             df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
             df['avatar'] = df['avatar'].astype(str)
             max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
-            
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
                 column_config={
