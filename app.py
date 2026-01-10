@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.5 終極介面版) ---
+# --- Custom CSS (V50.5 終極介面版 + 彈窗優化) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -25,13 +25,11 @@ st.markdown("""
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
 
     /* ============================================= */
-    /* 🚀 Sidebar Menu 專用美化 (長Bar + 大字)       */
+    /* 🚀 Sidebar Menu 專用美化 (長Bar + 大字)        */
     /* ============================================= */
     
-    /* 1. 隱藏原本的圓點 (Radio Button) */
     div[role="radiogroup"] > label > div:first-child { display: none !important; }
 
-    /* 2. 將選項變成「長 Bar 卡片」 */
     div[role="radiogroup"] label {
         background-color: #ffffff !important;
         padding: 12px 15px !important;
@@ -43,7 +41,6 @@ st.markdown("""
         width: 100% !important;
     }
 
-    /* 3. Mouse 指住時的效果 (Hover) */
     div[role="radiogroup"] label:hover {
         border-color: #D4AF37 !important;
         background-color: #FFF8E1 !important;
@@ -51,7 +48,6 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
     }
 
-    /* 4. Menu 字體設定 (大字 + 粗體) */
     div[role="radiogroup"] label p {
         font-size: 16px !important;
         font-weight: 600 !important;
@@ -130,21 +126,20 @@ def get_sheet(sheet_name):
             try: return sh.worksheet(sheet_name)
             except WorksheetNotFound:
                 ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
-                # 新建表時，交給 init_db_gs 自動補標題，這裡只負責建表
                 return ws
         except: return None
     return None
 
-# --- 3. 數據庫操作 (防彈版：強制定義欄位，解決 KeyError) ---
+# --- 3. 數據庫操作 (Schema Update included) ---
 @st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     
-    # 強制 Schema，確保空表也不會報錯
+    # 🔥 更新：加入 'last_read' 和 'timestamp'
     schemas = {
-        "users": ["username", "password", "role", "team", "recruit", "avatar"],
+        "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
         "monthly_fyc": ["id", "username", "month", "amount"],
-        "activities": ["id", "username", "date", "type", "points", "note"]
+        "activities": ["id", "username", "date", "type", "points", "note", "timestamp"]
     }
     expected_cols = schemas.get(sheet_name, [])
 
@@ -152,9 +147,15 @@ def read_data(sheet_name):
         try:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
-            # 如果是空表或缺欄位，強制重建
+            
+            # 如果是空表或缺欄位，強制 Schema 對齊
             if df.empty or not set(expected_cols).issubset(df.columns):
-                df = pd.DataFrame(columns=expected_cols)
+                # 簡單的補欄位邏輯 (如果 DataFrame 缺欄位就補 NaN)
+                for col in expected_cols:
+                    if col not in df.columns:
+                        df[col] = "" 
+                df = df[expected_cols] # 重新排序
+            
             return df
         except Exception:
             pass
@@ -162,6 +163,36 @@ def read_data(sheet_name):
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
+
+# 自動修復資料庫結構 (Auto-Migration)
+def check_schema_updates():
+    """檢查並自動在 Google Sheets 新增缺少的欄位 (timestamp, last_read)"""
+    client = get_gs_client()
+    if not client: return
+    try:
+        sh = client.open("tim_team_db")
+        
+        # 1. 檢查 Users 表的 last_read
+        try:
+            ws_users = sh.worksheet("users")
+            headers = ws_users.row_values(1)
+            if "last_read" not in headers:
+                ws_users.update_cell(1, len(headers) + 1, "last_read")
+                clear_cache()
+        except: pass
+
+        # 2. 檢查 Activities 表的 timestamp
+        try:
+            ws_act = sh.worksheet("activities")
+            headers = ws_act.row_values(1)
+            if "timestamp" not in headers:
+                ws_act.update_cell(1, len(headers) + 1, "timestamp")
+                clear_cache()
+        except: pass
+    except: pass
+
+# 執行檢查
+check_schema_updates()
 
 def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     ws = get_sheet(sheet_name)
@@ -175,19 +206,25 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                     ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
                     if ids: new_id = max(ids) + 1
                 data_dict['id'] = new_id
+            
             headers = ws.row_values(1)
-            # 確保 header 存在
+            # 緊急修復：如果寫入時發現沒 Header，先補 Header
             if not headers: 
-                # 緊急修復：如果寫入時發現沒 Header，先補 Header
                 schemas = {
                     "monthly_fyc": ["id", "username", "month", "amount"],
-                    "activities": ["id", "username", "date", "type", "points", "note"]
+                    "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
+                    "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"]
                 }
                 headers = schemas.get(sheet_name, [])
                 if headers: ws.append_row(headers)
             
-            row_to_add = [data_dict.get(h, "") for h in headers]
+            # 確保 data_dict 裡的 key 都存在於 headers，否則補空
+            row_to_add = []
+            for h in headers:
+                row_to_add.append(str(data_dict.get(h, ""))) # 強制轉字串避免錯誤
+            
             ws.append_row(row_to_add)
+
         elif action == "UPDATE":
             cell = ws.find(str(row_id))
             if cell:
@@ -198,37 +235,38 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
             cell = ws.find(str(row_id))
             if cell: ws.delete_rows(cell.row)
         clear_cache()
-    except: st.error("操作失敗，請重試")
+    except Exception as e: 
+        st.error(f"操作失敗: {e}")
 
-# 初始化 (自動補標題)
+# 初始化
 def init_db_gs():
-    # 1. Users
     ws = get_sheet("users")
     if ws:
         try: existing = ws.col_values(1)
         except: existing = []
-        if not existing: ws.append_row(["username", "password", "role", "team", "recruit", "avatar"]); existing = ["username"]
+        if not existing: 
+            ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
+            existing = ["username"]
+        
         defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
         for u in defaults:
             if u[0] not in existing:
                 url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-                ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url])
+                ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
                 clear_cache()
 
-    # 2. Monthly FYC
     ws_fyc = get_sheet("monthly_fyc")
     if ws_fyc:
         try: vals = ws_fyc.row_values(1)
         except: vals = []
         if not vals: ws_fyc.append_row(["id", "username", "month", "amount"])
 
-    # 3. Activities
     ws_act = get_sheet("activities")
     if ws_act:
         try: vals = ws_act.row_values(1)
         except: vals = []
-        if not vals: ws_act.append_row(["id", "username", "date", "type", "points", "note"])
+        if not vals: ws_act.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
 
 init_db_gs()
 
@@ -262,9 +300,12 @@ def update_pw(u, p):
     cell = ws.find(u)
     if cell: ws.update_cell(cell.row, ws.row_values(1).index("password") + 1, p); clear_cache()
 
+# 🔥 更新 Add Activity：加入 timestamp
 def add_act(u, d, t, n):
     pts = 8 if "出code" in t else 5 if "簽單" in t else 3 if "報考試" in t else 2 if "傾" in t else 1
-    run_query_gs("INSERT", "activities", {"username": u, "date": str(d), "type": t, "points": pts, "note": n})
+    # 這裡加入 timestamp
+    now_ts = str(datetime.datetime.now())
+    run_query_gs("INSERT", "activities", {"username": u, "date": str(d), "type": t, "points": pts, "note": n, "timestamp": now_ts})
 
 def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
@@ -287,9 +328,8 @@ def get_act_by_id(id): return read_data("activities")[read_data("activities")['i
 
 def get_all_act():
     df = read_data("activities")
-    if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note"])
+    if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    # 這裡保留 ID 給 Admin 用，顯示時再處理
     return df.sort_values(by='date', ascending=False)
 
 def get_user_act(u):
@@ -342,6 +382,79 @@ def get_weekly_data():
             stats.columns = ['username', 'wk_score', 'wk_count']
     return pd.merge(users, stats, on='username', how='left').fillna(0), start, today
 
+# --- 🔥 新增：Notification Logic ---
+
+def update_last_read_time(username):
+    """更新該用戶的已讀時間為現在"""
+    ws = get_sheet("users")
+    cell = ws.find(username)
+    if cell:
+        # 寫入現在的 timestamp
+        now_ts = str(datetime.datetime.now())
+        # 找到 last_read 欄位
+        headers = ws.row_values(1)
+        if "last_read" in headers:
+            ws.update_cell(cell.row, headers.index("last_read") + 1, now_ts)
+            clear_cache()
+
+@st.dialog("🔥 團隊最新戰報 🔥")
+def show_notification_modal(new_activities, current_user):
+    st.markdown(f"**Hi {current_user}，你不在的時候，團隊發生了以下動態：**")
+    
+    for index, row in new_activities.iterrows():
+        # 顯示格式
+        act_time = pd.to_datetime(row['timestamp']).strftime('%m/%d %H:%M') if row['timestamp'] else row['date']
+        
+        st.info(f"""
+        **👤 {row['username']}** - {row['type']}
+        \n📄 {row['note']}
+        \n🕒 *{act_time}*
+        """)
+    
+    st.markdown("---")
+    
+    if st.button("收到 / OK (我知道了)", type="primary", use_container_width=True):
+        # 按下後，更新時間，關閉彈窗
+        update_last_read_time(current_user)
+        st.rerun()
+
+def check_notifications(current_user):
+    """檢查新動態 (排除自己)"""
+    users_df = read_data("users")
+    act_df = read_data("activities")
+
+    if users_df.empty or act_df.empty:
+        return
+
+    # 1. 獲取上次讀取時間 (last_read)
+    user_record = users_df[users_df['username'] == current_user]
+    if user_record.empty: return
+    
+    last_read_str = str(user_record.iloc[0]['last_read'])
+    
+    # 如果從未讀過，設定一個很久以前的時間
+    try:
+        last_read = pd.to_datetime(last_read_str) if last_read_str and last_read_str != "" else pd.to_datetime("2020-01-01")
+    except:
+        last_read = pd.to_datetime("2020-01-01")
+
+    # 2. 確保 activities 有 timestamp，如果沒有 (舊資料)，就忽略
+    if 'timestamp' not in act_df.columns: return
+    
+    # 轉換格式並篩選
+    act_df['timestamp_dt'] = pd.to_datetime(act_df['timestamp'], errors='coerce')
+    
+    # 篩選條件：時間 > 上次讀取 AND 不是自己做的
+    new_activities = act_df[
+        (act_df['timestamp_dt'] > last_read) & 
+        (act_df['username'] != current_user)
+    ]
+    
+    # 3. 觸發彈窗
+    if not new_activities.empty:
+        show_notification_modal(new_activities, current_user)
+
+
 # --- Templates & Constants ---
 TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
 TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
@@ -376,6 +489,9 @@ if not st.session_state['logged_in']:
                     st.toast(f"Welcome back, {d[0][0]}!", icon="🦁"); st.rerun()
                 else: st.toast("Login Failed", icon="❌")
 else:
+    # --- 🔥 Login 成功後，第一件事：檢查通知！ ---
+    check_notifications(st.session_state['user'])
+
     with st.sidebar:
         st.markdown("<br>", unsafe_allow_html=True)
         c_avt, c_txt = st.columns([1, 2])
@@ -494,7 +610,6 @@ else:
             
             # 格式化日期，避免 timestamp
             if not all_acts.empty and 'date' in all_acts.columns:
-                 # 確保是 datetime 格式後再 strftime
                  all_acts['date'] = pd.to_datetime(all_acts['date']).dt.strftime('%Y-%m-%d')
 
             # Leader: 顯示 ID 供修改
@@ -666,5 +781,3 @@ else:
                             st.session_state['avatar'] = img_str
                             st.toast("Avatar Updated!", icon="✅")
                             st.rerun()
-
-
