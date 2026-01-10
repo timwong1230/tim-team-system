@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.18: 表單優化 + 防重) ---
+# --- Custom CSS (V50.19: 穩定修復版) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -39,14 +39,7 @@ st.markdown("""
     /* Standard Components */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
-    
-    /* Form Submit Button (金色) */
-    button[kind="primary"] { 
-        background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; 
-        color: #FFFFFF !important; border: none; border-radius: 8px; 
-        font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); 
-        width: 100%;
-    }
+    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
 
     /* Admin Box */
@@ -252,8 +245,6 @@ def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    # 🔥 FIX: 根據活動內容去重，防止顯示時重複
-    df = df.drop_duplicates(subset=['username', 'date', 'type', 'note'], keep='first')
     return df.sort_values(by='date', ascending=False)
 
 def get_data(month=None):
@@ -474,23 +465,22 @@ else:
                     n = st.text_area("📝 內容詳情 / 備註", value=note_val, height=180, help="請詳細記錄客戶反應或下一步行動")
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # Submit Button inside Form
                     submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary")
                     if submitted: 
                         add_act(st.session_state['user'], d, t, n)
                         st.toast("提交成功！", icon="✅")
-                        # 這裡不需要 rerun，form_submit_button 自動會 rerun
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 Fix: 重新讀取 Users 防止 NameError
-            users_df = read_data("users")
+            # 🔥 Fix: 確保合併前 User 名單是乾淨唯一的
+            users_df = read_data("users").drop_duplicates(subset=['username'], keep='first')
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
             
             all_acts = get_all_act()
             if not all_acts.empty:
-                users_mini = users_df[['username', 'avatar']].drop_duplicates()
+                users_mini = users_df[['username', 'avatar']]
+                # 🔥 Fix: 安全合併 (Left Join on Unique User List)
                 all_acts = pd.merge(all_acts, users_mini, on='username', how='left')
                 display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
                 
@@ -551,7 +541,6 @@ else:
         with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
         with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
-    # --- 🔥 Recruit 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Recruit" in menu:
         st.markdown("## 🤝 Recruit 龍虎榜")
         df = get_data("Yearly")
@@ -568,7 +557,6 @@ else:
             )
         else: st.info("暫無招募數據，大家加油！")
 
-    # --- 🔥 Monthly 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Monthly" in menu:
         st.markdown("## 📅 Monthly FYC 龍虎榜")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
