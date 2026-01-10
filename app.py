@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.13: 專業表格優化版) ---
+# --- Custom CSS (V50.13: 專業表格優化 + 系統修復) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -197,7 +197,7 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
-    # 🔥 FIX: 登入時去重
+    # 🔥 FIX: 登入時去重，防止 Leaderboard 出現多個 Tim
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -254,7 +254,7 @@ def get_data(month=None):
     users = read_data("users")
     if users.empty: return pd.DataFrame(columns=base_columns)
     
-    # 🔥 FIX: 關鍵去重
+    # 🔥 FIX: 關鍵去重 (Drop Duplicates)
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
     
@@ -274,7 +274,7 @@ def get_data(month=None):
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     
-    # 🔥 FIX: 填充 0 防止 KeyError
+    # 🔥 FIX: 強制填充 0，防止 KeyError: 'fyc'
     for col in ['fyc', 'Total_Score', 'recruit']:
         if col not in df.columns: df[col] = 0
     return df
@@ -460,7 +460,7 @@ else:
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 FIX: 重新讀取 users 解決 NameError
+            # 🔥 FIX: 重新讀取 users，解決 NameError: df not defined
             users_df = read_data("users")
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -520,11 +520,15 @@ else:
             )
         else: st.info("暫無 Q1 業績數據，加油！")
 
-    # --- 🔥 Recruit 頁面 (變回專業表格) 🔥 ---
+    # --- 🔥 Recruit 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Recruit" in menu:
         st.markdown("## 🤝 Recruit 龍虎榜")
         df = get_data("Yearly")
         if not df.empty:
+            # 🔥 強制轉換格式，防止報錯
+            df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
+            df['avatar'] = df['avatar'].astype(str)
+            
             st.dataframe(
                 df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
                 column_config={
@@ -536,12 +540,16 @@ else:
             )
         else: st.info("暫無招募數據，大家加油！")
 
-    # --- 🔥 Monthly 頁面 (變回專業表格) 🔥 ---
+    # --- 🔥 Monthly 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Monthly" in menu:
         st.markdown("## 📅 Monthly FYC 龍虎榜")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
+            # 🔥 強制轉換格式，防止報錯
+            df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
+            df['avatar'] = df['avatar'].astype(str)
+            
             max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
