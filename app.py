@@ -238,7 +238,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     except Exception as e: 
         st.error(f"操作失敗: {e}")
 
-# 初始化
+# 初始化 (這裡加入檢查，防止重複新增)
 def init_db_gs():
     ws = get_sheet("users")
     if ws:
@@ -251,6 +251,7 @@ def init_db_gs():
         defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
         for u in defaults:
+            # 簡單檢查：如果名單裡已經有這個人，就不再新增
             if u[0] not in existing:
                 url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
                 ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
@@ -274,6 +275,8 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
+    # 🔥 FIX: 登入時也去重，以防萬一
+    df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
     return user.values.tolist() if not user.empty else []
@@ -337,7 +340,7 @@ def get_user_act(u):
     if df.empty: return pd.DataFrame()
     return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
 
-# 🔥 修復版 get_data：防止 KeyError 🔥
+# 🔥 修復版 get_data：防止 KeyError + 強制去重 (Drop Duplicates) 🔥
 def get_data(month=None):
     # 定義標準回傳結構，防止 KeyError
     columns = ['username', 'team', 'recruit', 'avatar', 'fyc', 'Total_Score']
@@ -348,6 +351,9 @@ def get_data(month=None):
     if users.empty: 
         return pd.DataFrame(columns=columns)
         
+    # 🔥 關鍵修復：這裡直接去除重複的 Username，保留第一筆
+    users = users.drop_duplicates(subset=['username'], keep='first')
+
     # 只選 Member
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
     
@@ -371,7 +377,7 @@ def get_data(month=None):
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     
-    # 再次確認欄位存在 (雙重防呆)
+    # 🔥 再次確認欄位存在 (雙重防呆，解決 KeyError: 'fyc')
     for col in ['fyc', 'Total_Score', 'recruit']:
         if col not in df.columns:
             df[col] = 0
@@ -381,6 +387,10 @@ def get_data(month=None):
 def get_q1_data():
     users = read_data("users")
     if users.empty: return pd.DataFrame()
+    
+    # 🔥 去重
+    users = users.drop_duplicates(subset=['username'], keep='first')
+    
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
@@ -394,6 +404,10 @@ def get_weekly_data():
     start = today - datetime.timedelta(days=today.weekday())
     users = read_data("users")
     if users.empty: return pd.DataFrame(), start, today
+    
+    # 🔥 去重
+    users = users.drop_duplicates(subset=['username'], keep='first')
+    
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     act_df = read_data("activities")
     
