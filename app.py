@@ -14,7 +14,7 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.15: UI 微調) ---
+# --- Custom CSS (V50.13: 專業表格優化 + 系統修復) ---
 st.markdown("""
 <style>
     /* 全局設定 */
@@ -115,6 +115,24 @@ def read_data(sheet_name):
 
 def clear_cache(): st.cache_data.clear()
 
+def check_schema_updates():
+    client = get_gs_client()
+    if not client: return
+    try:
+        sh = client.open("tim_team_db")
+        try:
+            ws_users = sh.worksheet("users")
+            if "last_read" not in ws_users.row_values(1): ws_users.update_cell(1, len(ws_users.row_values(1)) + 1, "last_read"); clear_cache()
+        except: pass
+        try:
+            ws_act = sh.worksheet("activities")
+            if "timestamp" not in ws_act.row_values(1): ws_act.update_cell(1, len(ws_act.row_values(1)) + 1, "timestamp"); clear_cache()
+        except: pass
+    except: pass
+
+# 🔥 FIX: 移除 Global level 的 check_schema_updates 調用，防止啟動時 API Error
+# check_schema_updates() 
+
 def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     ws = get_sheet(sheet_name)
     if not ws: return
@@ -153,6 +171,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except Exception as e: st.error(f"操作失敗: {e}")
 
+# 🔥 FIX: 加入 Try-Except 防止 API Error 卡死
 def init_db_gs():
     try:
         ws = get_sheet("users")
@@ -185,6 +204,7 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
+    # 🔥 FIX: 登入時去重，防止 Leaderboard 出現多個 Tim
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -214,11 +234,9 @@ def add_act(u, d, t, n):
 
 def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
-    if not df.empty:
-        df['month'] = df['month'].astype(str).str.strip()
-    exist = df[(df['username'] == u) & (df['month'] == str(m))]
+    exist = df[(df['username'] == u) & (df['month'] == m)]
     if not exist.empty: run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=exist.iloc[0]['id'])
-    else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": str(m), "amount": a})
+    else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": m, "amount": a})
 
 def upd_rec(u, a):
     ws = get_sheet("users"); cell = ws.find(u)
@@ -243,6 +261,7 @@ def get_data(month=None):
     users = read_data("users")
     if users.empty: return pd.DataFrame(columns=base_columns)
     
+    # 🔥 FIX: 關鍵去重 (Drop Duplicates)
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
     
@@ -251,24 +270,18 @@ def get_data(month=None):
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
     
     if not fyc_df.empty and 'amount' in fyc_df.columns:
-        fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
-        fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
-        
-        if month == "Yearly": 
-            fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
-        else: 
-            fyc = fyc_df[fyc_df['month'] == str(month)][['username', 'amount']].rename(columns={'amount': 'fyc'})
-    else: 
-        fyc = pd.DataFrame(columns=['username', 'fyc'])
+        if month == "Yearly": fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
+        else: fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'})
+    else: fyc = pd.DataFrame(columns=['username', 'fyc'])
 
     if not act_df.empty and 'points' in act_df.columns:
         act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
-    else: 
-        act = pd.DataFrame(columns=['username', 'Total_Score'])
+    else: act = pd.DataFrame(columns=['username', 'Total_Score'])
     
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     
+    # 🔥 FIX: 強制填充 0，防止 KeyError: 'fyc'
     for col in ['fyc', 'Total_Score', 'recruit']:
         if col not in df.columns: df[col] = 0
     return df
@@ -280,8 +293,6 @@ def get_q1_data():
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
-        fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
-        fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
         q1 = fyc_df[fyc_df['month'].isin(['2026-01', '2026-02', '2026-03'])]
         q1_sum = q1.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'q1_total'})
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
@@ -458,6 +469,7 @@ else:
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
+            # 🔥 FIX: 重新讀取 users 解決 NameError
             users_df = read_data("users")
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -511,43 +523,42 @@ else:
             st.dataframe(
                 q1_df[['avatar', 'username', 'q1_total']].sort_values(by='q1_total', ascending=False),
                 column_config={
-                    "avatar": st.column_config.ImageColumn("Avatar", width="medium"),
-                    "username": st.column_config.TextColumn("Name", width="small"),
-                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000, width="medium"),
+                    "avatar": st.column_config.ImageColumn("", width="small"),
+                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000),
                 }, use_container_width=True, hide_index=True
             )
         else: st.info("暫無 Q1 業績數據，加油！")
-        st.divider(); st.markdown("### 🎁 年度獎賞計劃")
-        c1, c2 = st.columns(2)
-        with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
-        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>', unsafe_allow_html=True)
-        st.write(""); c3, c4 = st.columns(2)
-        with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
-        with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
 
+    # --- 🔥 Recruit 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Recruit" in menu:
         st.markdown("## 🤝 Recruit 龍虎榜")
         df = get_data("Yearly")
         if not df.empty:
+            # 🔥 強制轉換格式，防止報錯
             df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
             df['avatar'] = df['avatar'].astype(str)
+            
             st.dataframe(
                 df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
                 column_config={
                     "avatar": st.column_config.ImageColumn("Avatar", width="small"),
                     "username": st.column_config.TextColumn("Agent"),
                     "recruit": st.column_config.ProgressColumn("Recruits (Headcount)", format="%d", min_value=0, max_value=10)
-                }, use_container_width=True, hide_index=True
+                },
+                use_container_width=True, hide_index=True
             )
         else: st.info("暫無招募數據，大家加油！")
 
+    # --- 🔥 Monthly 頁面 (變回專業表格 + 強制修復 Type Error) 🔥 ---
     elif "Monthly" in menu:
         st.markdown("## 📅 Monthly FYC 龍虎榜")
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
+            # 🔥 強制轉換格式，防止報錯
             df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
             df['avatar'] = df['avatar'].astype(str)
+            
             max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
@@ -555,7 +566,8 @@ else:
                     "avatar": st.column_config.ImageColumn("Avatar", width="small"),
                     "username": st.column_config.TextColumn("Agent"),
                     "fyc": st.column_config.ProgressColumn("FYC Achievement", format="$%d", min_value=0, max_value=max_fyc)
-                }, use_container_width=True, hide_index=True
+                },
+                use_container_width=True, hide_index=True
             )
         else: st.info("本月暫無數據")
 
