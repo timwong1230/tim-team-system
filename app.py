@@ -14,12 +14,12 @@ from gspread.exceptions import WorksheetNotFound
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.9 UI 優化版) ---
+# --- Custom CSS (V50.10: Timeline Feed UI) ---
 st.markdown("""
 <style>
     /* 全局設定 */
-    [data-testid="stAppViewContainer"] { background-color: #ffffff !important; }
-    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #e9ecef; }
+    [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } /* 背景改淡灰，突出卡片 */
+    [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
@@ -35,45 +35,49 @@ st.markdown("""
         border-color: #D4AF37 !important; background-color: #FFF8E1 !important;
         transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
     }
-    div[role="radiogroup"] label p {
-        font-size: 16px !important; font-weight: 600 !important; color: #2c3e50 !important; margin: 0 !important;
-    }
 
-    /* 其他元件 */
+    /* Standard Components */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
-    div[data-testid="stMetric"]:hover, .stContainer:hover { box-shadow: 0 6px 15px rgba(197, 160, 40, 0.15); }
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; color: #2c3e50 !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
-    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); transition: transform 0.1s; }
-    div.stButton > button:active { transform: scale(0.98); }
-    div.stButton > button p { color: #FFFFFF !important; }
-    div[data-testid="stDataFrame"] { border: none; }
-    img { border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
+    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
+    img { border-radius: 50%; }
 
-    /* Admin Box */
-    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
+    /* ============================================= */
+    /* 🔥 Timeline Card 專用樣式 (New)               */
+    /* ============================================= */
+    .activity-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        border-left: 5px solid #e9ecef; /* Default Border */
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        transition: transform 0.2s;
+    }
+    .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+    
+    /* 不同類型的顏色條 */
+    .card-signed { border-left-color: #D4AF37 !important; } /* 金色 */
+    .card-meeting { border-left-color: #3498db !important; } /* 藍色 */
+    .card-recruit { border-left-color: #9b59b6 !important; } /* 紫色 */
+    .card-admin { border-left-color: #95a5a6 !important; } /* 灰色 */
 
-    /* Challenge */
-    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
-    .challenge-title { font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px; display: flex; align-items: center; }
-    .q1-player-card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; display: flex; align-items: center; transition: transform 0.2s; }
-    .q1-player-card:hover { transform: scale(1.02); box-shadow: 0 6px 15px rgba(212, 175, 55, 0.15); }
-    .q1-avatar-box { flex: 0 0 70px; margin-right: 15px; }
-    .q1-avatar-box img { width: 70px; height: 70px; border: 3px solid #D4AF37; border-radius: 50%; }
-    .q1-info-box { flex: 1; }
-    .q1-name { font-size: 1.2em; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
-    .q1-amount { font-size: 1.1em; color: #D4AF37; font-weight: 700; }
-    .q1-progress-container { height: 12px; background-color: #e9ecef; border-radius: 6px; overflow: hidden; margin-top: 8px; }
-    .q1-progress-bar { height: 100%; background: linear-gradient(90deg, #D4AF37, #FDC830); border-radius: 6px; }
-    .q1-target-label { font-size: 0.85em; color: #999; text-align: right; margin-top: 2px; }
+    .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .act-user-info { display: flex; align-items: center; gap: 10px; }
+    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0; }
+    .act-name { font-weight: bold; color: #2c3e50; font-size: 1.05em; }
+    .act-time { font-size: 0.85em; color: #95a5a6; }
+    
+    .act-badge {
+        padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px;
+    }
+    .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
+    .badge-meeting { background-color: #ebf5fb; color: #3498db; border: 1px solid #3498db; }
+    .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
+    .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
 
-    /* Reward Card */
-    .reward-card-premium { background: linear-gradient(145deg, #ffffff, #f0f0f0); border: 1px solid #d4af3766; border-radius: 16px; padding: 25px 20px; text-align: center; box-shadow: 5px 5px 15px rgba(212, 175, 55, 0.15), -5px -5px 15px rgba(255, 255, 255, 0.8); transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; }
-    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
-    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 8px 8px 20px rgba(212, 175, 55, 0.25), -8px -8px 20px rgba(255, 255, 255, 0.9); border-color: #D4AF37; }
-    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; }
-    .reward-title-p { color: #D4AF37; font-size: 1.1em; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
-    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
+    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
+    .act-points { font-size: 0.8em; color: #bbb; text-align: right; margin-top: 5px; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -108,54 +112,42 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# --- 3. 數據庫操作 (Schema Update included) ---
+# --- 3. 數據庫操作 ---
 @st.cache_data(ttl=5)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
-    
-    # 標準欄位定義
     schemas = {
         "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
         "monthly_fyc": ["id", "username", "month", "amount"],
         "activities": ["id", "username", "date", "type", "points", "note", "timestamp"]
     }
     expected_cols = schemas.get(sheet_name, [])
-
     if ws:
         try:
             data = ws.get_all_records()
             df = pd.DataFrame(data)
-            
-            # 強制 Schema 對齊 (防止缺少欄位)
             if df.empty or not set(expected_cols).issubset(df.columns):
                 for col in expected_cols:
-                    if col not in df.columns:
-                        df[col] = "" 
+                    if col not in df.columns: df[col] = "" 
                 df = df[expected_cols] 
-            
             return df
-        except Exception:
-            pass
-            
+        except: pass
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
 
 def check_schema_updates():
-    """檢查並自動新增缺少的欄位"""
     client = get_gs_client()
     if not client: return
     try:
         sh = client.open("tim_team_db")
         try:
             ws_users = sh.worksheet("users")
-            if "last_read" not in ws_users.row_values(1):
-                ws_users.update_cell(1, len(ws_users.row_values(1)) + 1, "last_read"); clear_cache()
+            if "last_read" not in ws_users.row_values(1): ws_users.update_cell(1, len(ws_users.row_values(1)) + 1, "last_read"); clear_cache()
         except: pass
         try:
             ws_act = sh.worksheet("activities")
-            if "timestamp" not in ws_act.row_values(1):
-                ws_act.update_cell(1, len(ws_act.row_values(1)) + 1, "timestamp"); clear_cache()
+            if "timestamp" not in ws_act.row_values(1): ws_act.update_cell(1, len(ws_act.row_values(1)) + 1, "timestamp"); clear_cache()
         except: pass
     except: pass
 
@@ -176,7 +168,6 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
             
             headers = ws.row_values(1)
             if not headers: 
-                # 緊急修復 Header
                 schemas = {
                     "monthly_fyc": ["id", "username", "month", "amount"],
                     "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
@@ -208,7 +199,6 @@ def init_db_gs():
         if not existing: 
             ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
             existing = ["username"]
-        
         defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
                     ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
         for u in defaults:
@@ -216,8 +206,6 @@ def init_db_gs():
                 url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
                 ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
                 clear_cache()
-    
-    # 確保其他表也有 Header
     for sn in ["monthly_fyc", "activities"]:
         ws_tmp = get_sheet(sn)
         if ws_tmp and not ws_tmp.row_values(1):
@@ -230,7 +218,6 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
-    # 🔥 FIX 1: 登入時去重，防止重複名單問題
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -282,50 +269,25 @@ def get_all_act():
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     return df.sort_values(by='date', ascending=False)
 
-def get_user_act(u):
-    df = read_data("activities")
-    if df.empty: return pd.DataFrame()
-    return df[df['username'] == u].sort_values(by='date', ascending=False)[['date', 'type', 'points', 'note']]
-
-# 🔥 FIX 2: 終極防報錯版 get_data (解決 KeyError) 🔥
 def get_data(month=None):
-    # 標準欄位結構
     base_columns = ['username', 'team', 'recruit', 'avatar', 'fyc', 'Total_Score']
-    
     users = read_data("users")
     if users.empty: return pd.DataFrame(columns=base_columns)
-    
-    # 這裡也去重，保險起見
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
-    
     if users.empty: return pd.DataFrame(columns=base_columns)
-
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
-    
-    # 準備 FYC 數據
     if not fyc_df.empty and 'amount' in fyc_df.columns:
-        if month == "Yearly":
-            fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
-        else:
-            fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'})
-    else:
-        fyc = pd.DataFrame(columns=['username', 'fyc'])
-
-    # 準備 Activity 數據
+        if month == "Yearly": fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
+        else: fyc = fyc_df[fyc_df['month'] == month][['username', 'amount']].rename(columns={'amount': 'fyc'})
+    else: fyc = pd.DataFrame(columns=['username', 'fyc'])
     if not act_df.empty and 'points' in act_df.columns:
         act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
-    else:
-        act = pd.DataFrame(columns=['username', 'Total_Score'])
-    
-    # 合併
+    else: act = pd.DataFrame(columns=['username', 'Total_Score'])
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
-    
-    # 再次確保欄位存在 (填補 0)
     for col in ['fyc', 'Total_Score', 'recruit']:
         if col not in df.columns: df[col] = 0
-            
     return df
 
 def get_q1_data():
@@ -333,7 +295,6 @@ def get_q1_data():
     if users.empty: return pd.DataFrame()
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'avatar']]
-    
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
         q1 = fyc_df[fyc_df['month'].isin(['2026-01', '2026-02', '2026-03'])]
@@ -349,7 +310,6 @@ def get_weekly_data():
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     act_df = read_data("activities")
-    
     stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
     if not act_df.empty:
         act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
@@ -381,11 +341,9 @@ def check_notifications(current_user):
     if users_df.empty or act_df.empty: return
     user_record = users_df[users_df['username'] == current_user]
     if user_record.empty: return
-    
     last_read_str = str(user_record.iloc[0]['last_read'])
     try: last_read = pd.to_datetime(last_read_str) if last_read_str and last_read_str != "" else pd.to_datetime("2020-01-01")
     except: last_read = pd.to_datetime("2020-01-01")
-
     if 'timestamp' not in act_df.columns: return
     act_df['timestamp_dt'] = pd.to_datetime(act_df['timestamp'], errors='coerce')
     new_activities = act_df[(act_df['timestamp_dt'] > last_read) & (act_df['username'] != current_user)]
@@ -397,6 +355,13 @@ TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不
 TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
 ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "新人報考試 (3分)", "簽單 (5分)", "新人出code (8分)"]
 
+# --- UI Helper ---
+def get_activity_style(act_type):
+    if "簽單" in act_type: return "card-signed", "badge-signed"
+    if "見面" in act_type or "傾" in act_type: return "card-meeting", "badge-meeting"
+    if "招募" in act_type or "新人" in act_type: return "card-recruit", "badge-recruit"
+    return "card-admin", "badge-default"
+
 # --- UI Layout ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
@@ -406,10 +371,7 @@ if not st.session_state['logged_in']:
         st.markdown("<br><br>", unsafe_allow_html=True)
         with st.container():
             st.markdown("<div style='text-align: center;'><h1>🦁 TIM TEAM 2026</h1></div>", unsafe_allow_html=True)
-            st.markdown("""<div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
-                <h2 style='color: #C5A028 !important; margin:0;'>M + 2</h2>
-                <h3 style='color: #4A4A4A !important; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3>
-                <div style='margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ddd;'><span style='color: #666; font-size: 0.9em;'>2027 MDRT Requirement:</span><br><strong style='color: #D4AF37; font-size: 1.3em;'>HK$ 512,800</strong></div></div>""", unsafe_allow_html=True)
+            st.markdown("""<div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'><h2 style='color: #C5A028 !important; margin:0;'>M + 2</h2><h3 style='color: #4A4A4A !important; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3><div style='margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ddd;'><span style='color: #666; font-size: 0.9em;'>2027 MDRT Requirement:</span><br><strong style='color: #D4AF37; font-size: 1.3em;'>HK$ 512,800</strong></div></div>""", unsafe_allow_html=True)
             u = st.text_input("Username", placeholder="e.g., Tim")
             p = st.text_input("Password", type="password", placeholder="••••••")
             if st.button("🚀 LOGIN", use_container_width=True):
@@ -445,19 +407,16 @@ else:
                     losers = wk_df[wk_df['wk_count'] < 3] if not wk_df.empty else pd.DataFrame()
                     penalty_total = len(losers) * 100
                     prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
-                    
                     report = f"📅 *【TIM TEAM 本週戰報 ({start} ~ {end})】* 🦁\n\n"
                     if max_score > 0 and not winners.empty:
                         report += f"🏆 *本週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
                         for i, w in winners.iterrows(): report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
                         report += f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n" if penalty_total > 0 else "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
                     else: report += "⚠️ *本週全軍覆沒？* 無人開工？\n\n"
-
                     if not losers.empty:
                         report += f"💸 *【罰款名單 - 每人 $100】*\n_活動量不足 3 次，請自覺 PayMe 俾 Winner！_\n"
                         for i, l in losers.iterrows(): report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
                     else: report += "✅ *本週無人罰款！Excellent！*\n"
-                    
                     report += "\n📊 *詳細戰況：*\n"
                     if not wk_df.empty:
                         for i, row in wk_df.sort_values(by='wk_score', ascending=False).iterrows():
@@ -468,7 +427,6 @@ else:
 
         df = get_data("Yearly")
         c1, c2, c3 = st.columns(3)
-        # 這裡的 df 經過上面 get_data 修復，一定會有 fyc 欄位，不會報錯
         c1.metric("💰 Team FYC", f"${df['fyc'].sum():,.0f}"); c2.metric("👥 Recruits", int(df['recruit'].sum())); c3.metric("🔥 Activities", int(df['Total_Score'].sum()))
         st.markdown("### 🏆 Leaderboard")
         mdrt_target = 512800
@@ -488,7 +446,6 @@ else:
         if st.session_state['role'] == 'Leader':
             with st.expander("⚙️ 業績/招募管理 (Admin Only)"):
                 c_a, c_b, c_c = st.columns(3)
-                # 🔥 FIX: 確保名單不重複
                 user_list = df['username'].unique().tolist()
                 tgt = c_a.selectbox("User", user_list); mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); amt = c_c.number_input("Amount", step=1000)
                 if st.button("Save FYC"): upd_fyc(tgt, mth, amt); st.toast("Saved!", icon="✅"); st.rerun()
@@ -513,44 +470,48 @@ else:
                     add_act(st.session_state['user'], d, t, n); st.toast("提交成功！", icon="✅"); st.rerun()
 
         with tab_hist:
-            st.markdown("### 📜 團隊最新動態 (Real-time)")
-            # 🔥 FIX 3: 重新讀取 users，解決 NameError: df not defined
+            st.markdown("### 📜 Timeline")
             users_df = read_data("users")
             user_options = users_df['username'].unique() if not users_df.empty else []
-            filter_user = st.multiselect("🔍 篩選同事", options=user_options)
+            filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
             
+            # 獲取活動並加上頭像
             all_acts = get_all_act()
-            if not all_acts.empty and 'date' in all_acts.columns: all_acts['date'] = pd.to_datetime(all_acts['date']).dt.strftime('%Y-%m-%d')
-
-            display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
-
-            if st.session_state['role'] == 'Leader':
-                st.info("👋 Admin 模式：你可修改任何紀錄")
-                st.dataframe(display_df, use_container_width=True, height=400, hide_index=True)
-                with st.expander("🛠 修改/刪除紀錄 (Admin Only)"):
-                    st.markdown("<div class='admin-edit-box'>", unsafe_allow_html=True)
-                    target_id = st.number_input("輸入 ID (見上表第一列)", min_value=0, step=1)
-                    if target_id > 0:
-                        record = get_act_by_id(target_id)
-                        if record:
-                            r = record[0] 
-                            st.write(f"正在修改: **{r[1]}** 於 {r[2]} 的紀錄")
-                            with st.form("admin_edit_form"):
-                                new_date = st.date_input("新日期", value=pd.to_datetime(r[2]))
-                                new_type = st.selectbox("新活動種類", ACTIVITY_TYPES, index=ACTIVITY_TYPES.index(r[3]) if r[3] in ACTIVITY_TYPES else 0)
-                                new_note = st.text_area("新備註", value=r[5])
-                                c_update, c_delete = st.columns(2)
-                                with c_update:
-                                    if st.form_submit_button("✅ 更新"): upd_act(target_id, new_date, new_type, new_note); st.toast("Updated!"); st.rerun()
-                                with c_delete:
-                                    if st.form_submit_button("🗑 刪除", type="primary"): del_act(target_id); st.toast("Deleted!"); st.rerun()
-                        else: st.warning("找不到此 ID")
-                    st.markdown("</div>", unsafe_allow_html=True)
+            if not all_acts.empty:
+                # 合併頭像
+                users_mini = users_df[['username', 'avatar']].drop_duplicates()
+                all_acts = pd.merge(all_acts, users_mini, on='username', how='left')
+                # 篩選
+                display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
+                
+                # --- 🔥 渲染 Timeline Card 🔥 ---
+                for idx, row in display_df.iterrows():
+                    # 處理顯示數據
+                    act_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
+                    act_time = pd.to_datetime(row['timestamp']).strftime('%H:%M') if row['timestamp'] else ""
+                    avatar_url = row['avatar'] if isinstance(row['avatar'], str) and row['avatar'].startswith('http') else "https://ui-avatars.com/api/?background=random&color=fff&name=" + row['username']
+                    card_class, badge_class = get_activity_style(row['type'])
+                    
+                    st.markdown(f"""
+                    <div class="activity-card {card_class}">
+                        <div class="act-header">
+                            <div class="act-user-info">
+                                <img src="{avatar_url}" class="act-avatar">
+                                <div>
+                                    <div class="act-name">{row['username']}</div>
+                                    <div class="act-time">{act_date} {act_time}</div>
+                                </div>
+                            </div>
+                            <div class="act-badge {badge_class}">{row['type']}</div>
+                        </div>
+                        <div class="act-content">
+                            {row['note'].replace(chr(10), '<br>')}
+                        </div>
+                        <div class="act-points">ID: {row['id']} • {row['points']} pts</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
-                if not display_df.empty:
-                    st.dataframe(display_df[['date', 'username', 'type', 'points', 'note']], use_container_width=True, height=500, hide_index=True,
-                        column_config={"date": st.column_config.TextColumn("日期", width="small"), "username": st.column_config.TextColumn("同事", width="small"), "type": st.column_config.TextColumn("活動", width="medium"), "points": st.column_config.NumberColumn("分", format="%d"), "note": st.column_config.TextColumn("內容細節", width="large")})
-                else: st.info("暫時未有活動紀錄，快啲搶頭香！")
+                st.info("暫無動態，快啲去 Check-in！")
 
     elif "Challenge" in menu:
         df, start, end = get_weekly_data()
