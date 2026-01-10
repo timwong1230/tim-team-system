@@ -6,6 +6,7 @@ import json
 import gspread
 import os
 import io
+import time
 import urllib.parse
 from PIL import Image
 from google.oauth2.service_account import Credentials
@@ -14,38 +15,22 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.19: 穩定修復版) ---
+# --- Custom CSS (V50.20: 穩定版 + 專業表格) ---
 st.markdown("""
 <style>
-    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
-
-    /* Sidebar Menu */
     div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] label {
-        background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important;
-        border-radius: 10px !important; border: 1px solid #e9ecef !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important;
-    }
-    div[role="radiogroup"] label:hover {
-        border-color: #D4AF37 !important; background-color: #FFF8E1 !important;
-        transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
-    }
-
-    /* Standard Components */
+    div[role="radiogroup"] label { background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important; border-radius: 10px !important; border: 1px solid #e9ecef !important; box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important; }
+    div[role="radiogroup"] label:hover { border-color: #D4AF37 !important; background-color: #FFF8E1 !important; transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important; }
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
-
-    /* Admin Box */
     .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
-
-    /* Timeline Card (Check-in 頁專用) */
     .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     .card-signed { border-left-color: #D4AF37 !important; } 
     .card-meeting { border-left-color: #3498db !important; }
@@ -56,15 +41,8 @@ st.markdown("""
     .act-name { font-weight: bold; color: #2c3e50; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
     .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; }
-
-    /* Golden Frame */
-    .reward-card-premium { 
-        background: linear-gradient(145deg, #ffffff, #fffdf5); 
-        border: 2px solid #D4AF37; 
-        border-radius: 16px; padding: 25px 20px; text-align: center; 
-        box-shadow: 0 10px 25px rgba(212, 175, 55, 0.15); 
-        transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; 
-    }
+    
+    .reward-card-premium { background: linear-gradient(145deg, #ffffff, #fffdf5); border: 2px solid #D4AF37; border-radius: 16px; padding: 25px 20px; text-align: center; box-shadow: 0 10px 25px rgba(212, 175, 55, 0.15); transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; }
     .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 8px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
     .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(212, 175, 55, 0.3); }
     .reward-icon { font-size: 3em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
@@ -104,7 +82,8 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-@st.cache_data(ttl=5)
+# 🔥 FIX: 增加 TTL，並加入 Retry 機制，防止數據消失
+@st.cache_data(ttl=15)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     schemas = {
@@ -113,16 +92,33 @@ def read_data(sheet_name):
         "activities": ["id", "username", "date", "type", "points", "note", "timestamp"]
     }
     expected_cols = schemas.get(sheet_name, [])
-    if ws:
-        try:
-            data = ws.get_all_records()
-            df = pd.DataFrame(data)
-            if df.empty or not set(expected_cols).issubset(df.columns):
-                for col in expected_cols:
-                    if col not in df.columns: df[col] = "" 
-                df = df[expected_cols] 
-            return df
-        except: pass
+    
+    # 嘗試讀取 3 次 (Retry Logic)
+    for attempt in range(3):
+        if ws:
+            try:
+                data = ws.get_all_records()
+                df = pd.DataFrame(data)
+                # 強制補齊欄位
+                if df.empty or not set(expected_cols).issubset(df.columns):
+                    for col in expected_cols:
+                        if col not in df.columns: df[col] = "" 
+                    df = df[expected_cols]
+                
+                # 如果成功讀取到數據，更新 Session State 備份
+                if not df.empty:
+                    st.session_state[f'backup_{sheet_name}'] = df
+                return df
+            except Exception as e:
+                time.sleep(1) # 失敗後等待 1 秒重試
+                pass
+    
+    # 🔥 如果 3 次都失敗，嘗試從 Session State 讀取舊數據 (Backup)
+    if f'backup_{sheet_name}' in st.session_state:
+        st.toast(f"⚠️ 網絡不穩，顯示舊數據 ({sheet_name})", icon="📶")
+        return st.session_state[f'backup_{sheet_name}']
+
+    # 真的沒辦法才回傳空表
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
@@ -245,6 +241,8 @@ def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    # 去重
+    df = df.drop_duplicates(subset=['id'], keep='first')
     return df.sort_values(by='date', ascending=False)
 
 def get_data(month=None):
@@ -455,7 +453,6 @@ else:
         tab_new, tab_hist = st.tabs(["✍️ 立即打卡 (Check-in)", "👀 團隊動態 (Team Feed)"])
         
         with tab_new:
-            # 🔥 Fix: 使用 Form 避免重複提交
             with st.form("checkin_form", clear_on_submit=True):
                 with st.container(border=True):
                     c_date, c_type = st.columns([1, 1])
@@ -464,15 +461,12 @@ else:
                     note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
                     n = st.text_area("📝 內容詳情 / 備註", value=note_val, height=180, help="請詳細記錄客戶反應或下一步行動")
                     st.markdown("<br>", unsafe_allow_html=True)
-                    
                     submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary")
                     if submitted: 
-                        add_act(st.session_state['user'], d, t, n)
-                        st.toast("提交成功！", icon="✅")
+                        add_act(st.session_state['user'], d, t, n); st.toast("提交成功！", icon="✅")
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 Fix: 確保合併前 User 名單是乾淨唯一的
             users_df = read_data("users").drop_duplicates(subset=['username'], keep='first')
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -480,7 +474,6 @@ else:
             all_acts = get_all_act()
             if not all_acts.empty:
                 users_mini = users_df[['username', 'avatar']]
-                # 🔥 Fix: 安全合併 (Left Join on Unique User List)
                 all_acts = pd.merge(all_acts, users_mini, on='username', how='left')
                 display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
                 
