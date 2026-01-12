@@ -15,7 +15,7 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.20: 穩定版 + 專業表格) ---
+# --- Custom CSS (V50.21: 邏輯修正版) ---
 st.markdown("""
 <style>
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
@@ -82,7 +82,6 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# 🔥 FIX: 增加 TTL，並加入 Retry 機制，防止數據消失
 @st.cache_data(ttl=15)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
@@ -93,32 +92,28 @@ def read_data(sheet_name):
     }
     expected_cols = schemas.get(sheet_name, [])
     
-    # 嘗試讀取 3 次 (Retry Logic)
+    # Retry Logic
     for attempt in range(3):
         if ws:
             try:
                 data = ws.get_all_records()
                 df = pd.DataFrame(data)
-                # 強制補齊欄位
                 if df.empty or not set(expected_cols).issubset(df.columns):
                     for col in expected_cols:
                         if col not in df.columns: df[col] = "" 
                     df = df[expected_cols]
-                
-                # 如果成功讀取到數據，更新 Session State 備份
                 if not df.empty:
                     st.session_state[f'backup_{sheet_name}'] = df
                 return df
             except Exception as e:
-                time.sleep(1) # 失敗後等待 1 秒重試
+                time.sleep(1)
                 pass
     
-    # 🔥 如果 3 次都失敗，嘗試從 Session State 讀取舊數據 (Backup)
+    # Backup
     if f'backup_{sheet_name}' in st.session_state:
         st.toast(f"⚠️ 網絡不穩，顯示舊數據 ({sheet_name})", icon="📶")
         return st.session_state[f'backup_{sheet_name}']
 
-    # 真的沒辦法才回傳空表
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
@@ -241,7 +236,6 @@ def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    # 去重
     df = df.drop_duplicates(subset=['id'], keep='first')
     return df.sort_values(by='date', ascending=False)
 
@@ -294,6 +288,35 @@ def get_q1_data():
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
     return pd.DataFrame(columns=['username', 'q1_total'])
 
+# --- 🔥 New Function: Get Last Week's Data (Mon-Sun) 🔥 ---
+def get_last_week_data():
+    today = datetime.date.today()
+    # Calculate current week's Monday
+    current_week_start = today - datetime.timedelta(days=today.weekday())
+    # Last week's Monday and Sunday
+    start = current_week_start - datetime.timedelta(days=7)
+    end = start + datetime.timedelta(days=6)
+    
+    users = read_data("users")
+    if users.empty: return pd.DataFrame(columns=['username', 'wk_score', 'wk_count']), start, end
+    
+    users = users.drop_duplicates(subset=['username'], keep='first')
+    users = users[users['role'] == 'Member'][['username', 'avatar']]
+    
+    act_df = read_data("activities")
+    stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
+    
+    if not act_df.empty:
+        act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
+        # Filter for Last Week
+        this_week = act_df[(act_df['date'] >= start) & (act_df['date'] <= end)]
+        if not this_week.empty:
+            stats = this_week.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
+            stats.columns = ['username', 'wk_score', 'wk_count']
+            
+    return pd.merge(users, stats, on='username', how='left').fillna(0), start, end
+
+# --- Original Function: Get Current Week's Data (Live) ---
 def get_weekly_data():
     today = datetime.date.today()
     start = today - datetime.timedelta(days=today.weekday())
@@ -394,14 +417,15 @@ else:
         if st.session_state['role'] == 'Leader':
             with st.container(border=True):
                 st.markdown("### 📢 每週戰報生成器 (Admin Only)")
-                if st.button("📝 生成本週結算戰報"):
-                    wk_df, start, end = get_weekly_data()
+                # 🔥 Fix: 按鈕改名，邏輯改為「上週結算」
+                if st.button("📝 生成上週結算戰報"):
+                    wk_df, start, end = get_last_week_data()
                     max_score = wk_df['wk_score'].max() if not wk_df.empty else 0
                     winners = wk_df[wk_df['wk_score'] == max_score] if not wk_df.empty and max_score > 0 else pd.DataFrame()
                     losers = wk_df[wk_df['wk_count'] < 3] if not wk_df.empty else pd.DataFrame()
                     penalty_total = len(losers) * 100
                     prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
-                    report = f"📅 *【TIM TEAM 本週戰報 ({start} ~ {end})】* 🦁\n\n"
+                    report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】* 🦁\n\n"
                     if max_score > 0 and not winners.empty:
                         report += f"🏆 *本週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
                         for i, w in winners.iterrows(): report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
