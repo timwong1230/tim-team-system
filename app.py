@@ -607,3 +607,4 @@ else:
                     if st.button("Upload"):
                         img_str = proc_img(uploaded_file)
                         if img_str: update_avt(st.session_state['user'], img_str); st.session_state['avatar'] = img_str; st.toast("Avatar Updated!", icon="✅"); st.rerun()
+
