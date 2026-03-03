@@ -15,9 +15,10 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.22) ---
+# --- Custom CSS (V50.23: 專業美學版) ---
 st.markdown("""
 <style>
+    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
@@ -39,24 +40,22 @@ st.markdown("""
     /* Standard Components */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
-    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
+    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); width: 100%;}
     img { border-radius: 50%; }
 
     /* Admin Box */
     .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
 
     /* Timeline Card (Check-in 頁專用) */
-    .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; }
+    .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s;}
     .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
     .card-signed { border-left-color: #D4AF37 !important; } 
     .card-meeting { border-left-color: #3498db !important; }
     .card-recruit { border-left-color: #9b59b6 !important; } 
     .card-admin { border-left-color: #95a5a6 !important; }
-
     .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .act-user-info { display: flex; align-items: center; gap: 10px; }
-    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0; }
-    .act-name { font-weight: bold; color: #2c3e50; font-size: 1.05em; }
+    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px; border: 2px solid #f0f0f0;}
+    .act-name { font-weight: bold; color: #2c3e50; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
     .act-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px; }
     .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
@@ -64,17 +63,22 @@ st.markdown("""
     .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
     .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
     .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
-    .act-points { font-size: 0.8em; color: #bbb; text-align: right; margin-top: 5px; }
 
-    /* 年度挑戰 & 金色獎賞卡 */
-    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
-    .reward-card-premium { background: linear-gradient(145deg, #ffffff, #f9f9f9); border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 16px; padding: 25px 20px; text-align: center; box-shadow: 0 10px 20px rgba(0,0,0,0.05), inset 0 0 15px rgba(255,255,255,0.8); transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; }
-    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
-    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(212, 175, 55, 0.2); border-color: #D4AF37; }
-    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
-    .reward-title-p { color: #D4AF37; font-size: 1.2em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .reward-prize-p { color: #c0392b; font-size: 1.5em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
-    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
+    /* Golden Frame Rewards */
+    .reward-card-premium { 
+        background: linear-gradient(145deg, #ffffff, #fffdf5); 
+        border: 2px solid #D4AF37; 
+        border-radius: 16px; padding: 25px 20px; text-align: center; 
+        box-shadow: 0 10px 25px rgba(212, 175, 55, 0.15); 
+        transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; 
+    }
+    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 8px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
+    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(212, 175, 55, 0.3); }
+    .reward-icon { font-size: 3em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
+    .reward-title-p { color: #D4AF37; font-size: 1.3em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; }
+    .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
+    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; font-weight: 500; }
+    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 6px solid #D4AF37; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,7 +111,7 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# 防斷線緩存機制
+# --- 3. 防斷線資料庫讀取 ---
 @st.cache_data(ttl=30)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
@@ -262,7 +266,6 @@ def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    # 🔥 強制防重複顯示
     df = df.drop_duplicates(subset=['username', 'date', 'type', 'note'], keep='first')
     return df.sort_values(by='date', ascending=False)
 
@@ -312,7 +315,7 @@ def get_q1_data():
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
     return pd.DataFrame(columns=['username', 'q1_total'])
 
-# --- 🔥 新增函數：獲取「上週」數據 (For Admin 戰報) 🔥 ---
+# --- 🔥 FIX: 強制安全轉換 Points 為數字，修復「上週無人開工」Bug 🔥 ---
 def get_last_week_data():
     today = datetime.date.today()
     current_week_monday = today - datetime.timedelta(days=today.weekday())
@@ -326,17 +329,22 @@ def get_last_week_data():
     
     act_df = read_data("activities")
     stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
+    
     if not act_df.empty:
         act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
-        # 篩選出「大於等於上週一」且「小於等於上週日」
+        # 這是關鍵修復：保證 points 變為純數字，讓系統能正確加總！
+        act_df['points'] = pd.to_numeric(act_df['points'], errors='coerce').fillna(0).astype(int)
+        
         last_week_acts = act_df[(act_df['date'] >= start) & (act_df['date'] <= end)]
         if not last_week_acts.empty:
-            stats = last_week_acts.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
-            stats.columns = ['username', 'wk_score', 'wk_count']
+            stats = last_week_acts.groupby('username').agg(
+                wk_score=('points', 'sum'),
+                wk_count=('points', 'count')
+            ).reset_index()
             
     return pd.merge(users, stats, on='username', how='left').fillna(0), start, end
 
-# --- 原有函數：獲取「本週」數據 (For Challenge 實時排名) ---
+# --- FIX: 同樣修復本週數據的 Points 加總 ---
 def get_weekly_data():
     today = datetime.date.today()
     start = today - datetime.timedelta(days=today.weekday())
@@ -346,12 +354,17 @@ def get_weekly_data():
     users = users[users['role'] == 'Member'][['username', 'avatar']]
     act_df = read_data("activities")
     stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
+    
     if not act_df.empty:
         act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
+        act_df['points'] = pd.to_numeric(act_df['points'], errors='coerce').fillna(0).astype(int)
         this_week = act_df[act_df['date'] >= start]
         if not this_week.empty:
-            stats = this_week.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
-            stats.columns = ['username', 'wk_score', 'wk_count']
+            stats = this_week.groupby('username').agg(
+                wk_score=('points', 'sum'),
+                wk_count=('points', 'count')
+            ).reset_index()
+            
     return pd.merge(users, stats, on='username', how='left').fillna(0), start, today
 
 # --- Notification Logic ---
@@ -436,8 +449,6 @@ else:
         if st.session_state['role'] == 'Leader':
             with st.container(border=True):
                 st.markdown("### 📢 每週戰報生成器 (Admin Only)")
-                
-                # 🔥 FIX: 呼叫上週的數據
                 if st.button("📝 生成上週結算戰報"):
                     wk_df, start, end = get_last_week_data()
                     max_score = wk_df['wk_score'].max() if not wk_df.empty else 0
@@ -446,7 +457,6 @@ else:
                     penalty_total = len(losers) * 100
                     prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
                     
-                    # 文案改為「上週」
                     report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】* 🦁\n\n"
                     if max_score > 0 and not winners.empty:
                         report += f"🏆 *上週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
@@ -464,7 +474,6 @@ else:
                         for i, row in wk_df.sort_values(by='wk_score', ascending=False).iterrows():
                             report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
                     report += "\n🚀 *新一週由零開始，大家加油！*"
-                    
                     st.code(report)
                     st.link_button("📤 Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
 
@@ -474,12 +483,15 @@ else:
         st.markdown("### 🏆 Leaderboard")
         mdrt_target = 512800
         df['mdrt_fraction'] = df['fyc'].apply(lambda x: f"${x:,.0f} / ${mdrt_target:,.0f}")
+        
+        # 🔥 FIX 4: 修正百分比算法 (* 100)，解決顯示 0.1% 的 Bug
         df['mdrt_percent'] = (df['fyc'] / mdrt_target) * 100
         df_sorted = df.sort_values(by='fyc', ascending=False)
+        
         st.dataframe(df_sorted[['avatar', 'username', 'mdrt_fraction', 'mdrt_percent', 'recruit', 'Total_Score']],
             column_config={
-                "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                "username": st.column_config.TextColumn("Name"),
+                "avatar": st.column_config.ImageColumn("Avatar", width="medium"),
+                "username": st.column_config.TextColumn("Name", width="small"),
                 "mdrt_fraction": st.column_config.TextColumn("MDRT 進度 (實數)"),
                 "mdrt_percent": st.column_config.ProgressColumn("MDRT %", format="%.1f%%", min_value=0, max_value=100),
                 "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
@@ -502,6 +514,7 @@ else:
         tab_new, tab_hist = st.tabs(["✍️ 立即打卡 (Check-in)", "👀 團隊動態 (Team Feed)"])
         
         with tab_new:
+            # 🔥 採用 Form 杜絕連按 Double Submit 的問題
             with st.form("checkin_form", clear_on_submit=True):
                 with st.container(border=True):
                     c_date, c_type = st.columns([1, 1])
@@ -510,11 +523,10 @@ else:
                     note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
                     n = st.text_area("📝 內容詳情 / 備註", value=note_val, height=180, help="請詳細記錄客戶反應或下一步行動")
                     st.markdown("<br>", unsafe_allow_html=True)
-                    submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary", use_container_width=True)
+                    submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary")
                     if submitted: 
                         add_act(st.session_state['user'], d, t, n)
                         st.toast("提交成功！", icon="✅")
-                        st.rerun()
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
@@ -539,10 +551,7 @@ else:
                         <div class="act-header">
                             <div class="act-user-info">
                                 <img src="{avatar_url}" class="act-avatar">
-                                <div>
-                                    <div class="act-name">{row['username']}</div>
-                                    <div class="act-time">{act_date} {act_time}</div>
-                                </div>
+                                <div><div class="act-name">{row['username']}</div><div class="act-time">{act_date} {act_time}</div></div>
                             </div>
                             <div class="act-badge {badge_class}">{row['type']}</div>
                         </div>
@@ -553,7 +562,6 @@ else:
                 st.info("暫無動態，快啲去 Check-in！")
 
     elif "Challenge" in menu:
-        # Challenge 頁面繼續用「本週」資料
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ Winner Takes All ({start} ~ {end})")
         st.markdown("""<div class="challenge-header-box"><div class="challenge-title">📜 詳細遊戲規則 (Game Rules)：</div><ul class="challenge-rules"><li><strong>結算時間：</strong> 逢星期日晚 23:59 系統自動結算。</li><li><strong>罰款準則：</strong> 每週活動量 (Count) <strong>少於 3 次</strong> 者，需罰款 <strong>$100</strong>。</li><li><strong>獎金歸屬：</strong> 所有罰款注入獎金池，由 <strong>最高分 (Score)</strong> 者獨得。</li></ul></div>""", unsafe_allow_html=True)
@@ -572,9 +580,14 @@ else:
         q1_df = get_q1_data(); q1_target = 88000
         st.markdown("""<div class="challenge-header-box"><div class="challenge-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div><p class="challenge-rules"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。<br>這是通往 MDRT 的第一張入場券，必須拿下！</p></div>""", unsafe_allow_html=True)
         if not q1_df.empty:
-            for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
-                progress = min(r['q1_total'] / q1_target, 1.0)
-                st.markdown(f"""<div class="q1-player-card"><div class="q1-avatar-box"><img src="{r['avatar']}"></div><div class="q1-info-box"><div class="q1-name">{r['username']}</div><div class="q1-amount">${r['q1_total']:,.0f}</div><div class="q1-progress-container"><div class="q1-progress-bar" style="width: {progress*100}%;"></div></div><div class="q1-target-label">Target: $88,000 ({progress*100:.1f}%)</div></div></div>""", unsafe_allow_html=True)
+            st.dataframe(
+                q1_df[['avatar', 'username', 'q1_total']].sort_values(by='q1_total', ascending=False),
+                column_config={
+                    "avatar": st.column_config.ImageColumn("Avatar", width="medium"),
+                    "username": st.column_config.TextColumn("Name", width="small"),
+                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000, width="medium"),
+                }, use_container_width=True, hide_index=True
+            )
         else: st.info("暫無 Q1 業績數據，加油！")
         st.divider(); st.markdown("### 🎁 年度獎賞計劃")
         c1, c2 = st.columns(2)
@@ -588,6 +601,8 @@ else:
         st.markdown("## 🤝 Recruit 龍虎榜")
         df = get_data("Yearly")
         if not df.empty:
+            df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
+            df['avatar'] = df['avatar'].astype(str)
             st.dataframe(
                 df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
                 column_config={
@@ -603,6 +618,8 @@ else:
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
+            df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
+            df['avatar'] = df['avatar'].astype(str)
             max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
