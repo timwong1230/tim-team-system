@@ -15,41 +15,64 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (V50.21: 邏輯修正版) ---
+# --- Custom CSS (保留你最滿意的介面) ---
 st.markdown("""
 <style>
+    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
     h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
     h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
+
+    /* Sidebar Menu */
     div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] label { background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important; border-radius: 10px !important; border: 1px solid #e9ecef !important; box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important; }
-    div[role="radiogroup"] label:hover { border-color: #D4AF37 !important; background-color: #FFF8E1 !important; transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important; }
+    div[role="radiogroup"] label {
+        background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important;
+        border-radius: 10px !important; border: 1px solid #e9ecef !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important;
+    }
+    div[role="radiogroup"] label:hover {
+        border-color: #D4AF37 !important; background-color: #FFF8E1 !important;
+        transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
+    }
+
+    /* Standard Components */
     div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
-    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
-    .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+    /* Timeline Card (Check-in 頁) */
+    .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; }
+    .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
     .card-signed { border-left-color: #D4AF37 !important; } 
     .card-meeting { border-left-color: #3498db !important; }
     .card-recruit { border-left-color: #9b59b6 !important; } 
     .card-admin { border-left-color: #95a5a6 !important; }
+
     .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px; }
-    .act-name { font-weight: bold; color: #2c3e50; }
+    .act-user-info { display: flex; align-items: center; gap: 10px; }
+    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0; }
+    .act-name { font-weight: bold; color: #2c3e50; font-size: 1.05em; }
     .act-time { font-size: 0.85em; color: #95a5a6; }
-    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; }
-    
-    .reward-card-premium { background: linear-gradient(145deg, #ffffff, #fffdf5); border: 2px solid #D4AF37; border-radius: 16px; padding: 25px 20px; text-align: center; box-shadow: 0 10px 25px rgba(212, 175, 55, 0.15); transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; }
-    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 8px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
-    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(212, 175, 55, 0.3); }
-    .reward-icon { font-size: 3em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
-    .reward-title-p { color: #D4AF37; font-size: 1.3em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; }
-    .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
-    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; font-weight: 500; }
-    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 6px solid #D4AF37; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; }
+    .act-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px; }
+    .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
+    .badge-meeting { background-color: #ebf5fb; color: #3498db; border: 1px solid #3498db; }
+    .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
+    .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
+    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
+    .act-points { font-size: 0.8em; color: #bbb; text-align: right; margin-top: 5px; }
+
+    /* 年度挑戰 & 金色獎賞卡 */
+    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 5px solid #D4AF37; padding: 20px; margin-bottom: 25px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
+    .reward-card-premium { background: linear-gradient(145deg, #ffffff, #f9f9f9); border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 16px; padding: 25px 20px; text-align: center; box-shadow: 0 10px 20px rgba(0,0,0,0.05), inset 0 0 15px rgba(255,255,255,0.8); transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; }
+    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
+    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(212, 175, 55, 0.2); border-color: #D4AF37; }
+    .reward-icon { font-size: 2.5em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
+    .reward-title-p { color: #D4AF37; font-size: 1.2em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .reward-prize-p { color: #c0392b; font-size: 1.5em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
+    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,7 +105,8 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-@st.cache_data(ttl=15)
+# 🔥 FIX 1: 防斷線緩存機制 (TTL 延長至 30 秒，自動重連，備用 Session)
+@st.cache_data(ttl=30)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
     schemas = {
@@ -92,8 +116,7 @@ def read_data(sheet_name):
     }
     expected_cols = schemas.get(sheet_name, [])
     
-    # Retry Logic
-    for attempt in range(3):
+    for attempt in range(3): # 嘗試連線 3 次
         if ws:
             try:
                 data = ws.get_all_records()
@@ -101,19 +124,19 @@ def read_data(sheet_name):
                 if df.empty or not set(expected_cols).issubset(df.columns):
                     for col in expected_cols:
                         if col not in df.columns: df[col] = "" 
-                    df = df[expected_cols]
+                    df = df[expected_cols] 
+                
                 if not df.empty:
-                    st.session_state[f'backup_{sheet_name}'] = df
+                    st.session_state[f'backup_{sheet_name}'] = df # 成功則備份
                 return df
-            except Exception as e:
-                time.sleep(1)
+            except Exception:
+                time.sleep(1) # 失敗等 1 秒重試
                 pass
-    
-    # Backup
+                
+    # 若 Google 完全死機，自動調用備用數據，防止全站變空白
     if f'backup_{sheet_name}' in st.session_state:
-        st.toast(f"⚠️ 網絡不穩，顯示舊數據 ({sheet_name})", icon="📶")
         return st.session_state[f'backup_{sheet_name}']
-
+        
     return pd.DataFrame(columns=expected_cols)
 
 def clear_cache(): st.cache_data.clear()
@@ -130,6 +153,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                     ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
                     if ids: new_id = max(ids) + 1
                 data_dict['id'] = new_id
+            
             headers = ws.row_values(1)
             if not headers: 
                 schemas = {
@@ -139,8 +163,10 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                 }
                 headers = schemas.get(sheet_name, [])
                 if headers: ws.append_row(headers)
+            
             row_to_add = [str(data_dict.get(h, "")) for h in headers]
             ws.append_row(row_to_add)
+
         elif action == "UPDATE":
             cell = ws.find(str(row_id))
             if cell:
@@ -153,6 +179,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except Exception as e: st.error(f"操作失敗: {e}")
 
+# 保護初始化避免 API Error 卡死
 def init_db_gs():
     try:
         ws = get_sheet("users")
@@ -172,7 +199,7 @@ def init_db_gs():
         for sn in ["monthly_fyc", "activities"]:
             ws_tmp = get_sheet(sn)
             if ws_tmp:
-                try: 
+                try:
                     if not ws_tmp.row_values(1):
                         if sn == "monthly_fyc": ws_tmp.append_row(["id", "username", "month", "amount"])
                         if sn == "activities": ws_tmp.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
@@ -185,6 +212,7 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
+    # 🔥 FIX 2: 登入時強制去重，防止重複登入紀錄
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -198,7 +226,7 @@ def proc_img(f):
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format='JPEG', quality=80)
         return f"data:image/jpeg;base64,{base64.b64encode(img_byte_arr.getvalue()).decode()}"
-    except Exception as e: return None
+    except Exception: return None
 
 def update_avt(u, i): 
     ws = get_sheet("users"); cell = ws.find(u)
@@ -214,8 +242,7 @@ def add_act(u, d, t, n):
 
 def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
-    if not df.empty:
-        df['month'] = df['month'].astype(str).str.strip()
+    if not df.empty: df['month'] = df['month'].astype(str).str.strip()
     exist = df[(df['username'] == u) & (df['month'] == str(m))]
     if not exist.empty: run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=exist.iloc[0]['id'])
     else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": str(m), "amount": a})
@@ -236,6 +263,7 @@ def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    # 去重
     df = df.drop_duplicates(subset=['id'], keep='first')
     return df.sort_values(by='date', ascending=False)
 
@@ -246,7 +274,6 @@ def get_data(month=None):
     
     users = users.drop_duplicates(subset=['username'], keep='first')
     users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
-    
     if users.empty: return pd.DataFrame(columns=base_columns)
 
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
@@ -254,24 +281,23 @@ def get_data(month=None):
     if not fyc_df.empty and 'amount' in fyc_df.columns:
         fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
         fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
-        
-        if month == "Yearly": 
-            fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
-        else: 
-            fyc = fyc_df[fyc_df['month'] == str(month)][['username', 'amount']].rename(columns={'amount': 'fyc'})
-    else: 
-        fyc = pd.DataFrame(columns=['username', 'fyc'])
+        if month == "Yearly": fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
+        else: fyc = fyc_df[fyc_df['month'] == str(month)][['username', 'amount']].rename(columns={'amount': 'fyc'})
+    else: fyc = pd.DataFrame(columns=['username', 'fyc'])
 
     if not act_df.empty and 'points' in act_df.columns:
+        act_df['points'] = pd.to_numeric(act_df['points'], errors='coerce').fillna(0)
         act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
-    else: 
-        act = pd.DataFrame(columns=['username', 'Total_Score'])
+    else: act = pd.DataFrame(columns=['username', 'Total_Score'])
     
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     
-    for col in ['fyc', 'Total_Score', 'recruit']:
-        if col not in df.columns: df[col] = 0
+    # 🔥 FIX 3: 強制 JSON 轉換安全類型 (防止TypeError)
+    df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
+    df['Total_Score'] = pd.to_numeric(df['Total_Score'], errors='coerce').fillna(0).astype(int)
+    df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
+    
     return df
 
 def get_q1_data():
@@ -288,35 +314,6 @@ def get_q1_data():
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
     return pd.DataFrame(columns=['username', 'q1_total'])
 
-# --- 🔥 New Function: Get Last Week's Data (Mon-Sun) 🔥 ---
-def get_last_week_data():
-    today = datetime.date.today()
-    # Calculate current week's Monday
-    current_week_start = today - datetime.timedelta(days=today.weekday())
-    # Last week's Monday and Sunday
-    start = current_week_start - datetime.timedelta(days=7)
-    end = start + datetime.timedelta(days=6)
-    
-    users = read_data("users")
-    if users.empty: return pd.DataFrame(columns=['username', 'wk_score', 'wk_count']), start, end
-    
-    users = users.drop_duplicates(subset=['username'], keep='first')
-    users = users[users['role'] == 'Member'][['username', 'avatar']]
-    
-    act_df = read_data("activities")
-    stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
-    
-    if not act_df.empty:
-        act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
-        # Filter for Last Week
-        this_week = act_df[(act_df['date'] >= start) & (act_df['date'] <= end)]
-        if not this_week.empty:
-            stats = this_week.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
-            stats.columns = ['username', 'wk_score', 'wk_count']
-            
-    return pd.merge(users, stats, on='username', how='left').fillna(0), start, end
-
-# --- Original Function: Get Current Week's Data (Live) ---
 def get_weekly_data():
     today = datetime.date.today()
     start = today - datetime.timedelta(days=today.weekday())
@@ -372,12 +369,11 @@ TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不
 TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
 ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "新人報考試 (3分)", "簽單 (5分)", "新人出code (8分)"]
 
-# --- UI Helper ---
 def get_activity_style(act_type):
-    if "簽單" in act_type: return "card-signed"
-    if "見面" in act_type or "傾" in act_type: return "card-meeting"
-    if "招募" in act_type or "新人" in act_type: return "card-recruit"
-    return "card-admin"
+    if "簽單" in act_type: return "card-signed", "badge-signed"
+    if "見面" in act_type or "傾" in act_type: return "card-meeting", "badge-meeting"
+    if "招募" in act_type or "新人" in act_type: return "card-recruit", "badge-recruit"
+    return "card-admin", "badge-default"
 
 # --- UI Layout ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -417,15 +413,14 @@ else:
         if st.session_state['role'] == 'Leader':
             with st.container(border=True):
                 st.markdown("### 📢 每週戰報生成器 (Admin Only)")
-                # 🔥 Fix: 按鈕改名，邏輯改為「上週結算」
-                if st.button("📝 生成上週結算戰報"):
-                    wk_df, start, end = get_last_week_data()
+                if st.button("📝 生成本週結算戰報"):
+                    wk_df, start, end = get_weekly_data()
                     max_score = wk_df['wk_score'].max() if not wk_df.empty else 0
                     winners = wk_df[wk_df['wk_score'] == max_score] if not wk_df.empty and max_score > 0 else pd.DataFrame()
                     losers = wk_df[wk_df['wk_count'] < 3] if not wk_df.empty else pd.DataFrame()
                     penalty_total = len(losers) * 100
                     prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
-                    report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】* 🦁\n\n"
+                    report = f"📅 *【TIM TEAM 本週戰報 ({start} ~ {end})】* 🦁\n\n"
                     if max_score > 0 and not winners.empty:
                         report += f"🏆 *本週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
                         for i, w in winners.iterrows(): report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
@@ -449,14 +444,18 @@ else:
         st.markdown("### 🏆 Leaderboard")
         mdrt_target = 512800
         df['mdrt_fraction'] = df['fyc'].apply(lambda x: f"${x:,.0f} / ${mdrt_target:,.0f}")
-        df['mdrt_percent'] = df['fyc'] / mdrt_target
+        
+        # 🔥 FIX 4: 修正 MDRT 百分比算法 (乘 100)，讓它顯示正確的 9.8%
+        df['mdrt_percent'] = (df['fyc'] / mdrt_target) * 100 
         df_sorted = df.sort_values(by='fyc', ascending=False)
+        
         st.dataframe(df_sorted[['avatar', 'username', 'mdrt_fraction', 'mdrt_percent', 'recruit', 'Total_Score']],
             column_config={
-                "avatar": st.column_config.ImageColumn("Avatar", width="medium"),
-                "username": st.column_config.TextColumn("Name", width="small"),
+                "avatar": st.column_config.ImageColumn("Avatar", width="small"),
+                "username": st.column_config.TextColumn("Name"),
                 "mdrt_fraction": st.column_config.TextColumn("MDRT 進度 (實數)"),
-                "mdrt_percent": st.column_config.ProgressColumn("MDRT %", format="%.1f%%", min_value=0, max_value=1),
+                # 🔥 FIX 4: 設定 max_value 為 100
+                "mdrt_percent": st.column_config.ProgressColumn("MDRT %", format="%.1f%%", min_value=0, max_value=100),
                 "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
                 "Total_Score": st.column_config.NumberColumn("Activity", format="%d")
             }, use_container_width=True, hide_index=True)
@@ -477,6 +476,7 @@ else:
         tab_new, tab_hist = st.tabs(["✍️ 立即打卡 (Check-in)", "👀 團隊動態 (Team Feed)"])
         
         with tab_new:
+            # 🔥 FIX 5: 使用 st.form 鎖定按鈕，防止狂按產生 Duplicate 打卡
             with st.form("checkin_form", clear_on_submit=True):
                 with st.container(border=True):
                     c_date, c_type = st.columns([1, 1])
@@ -485,12 +485,15 @@ else:
                     note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
                     n = st.text_area("📝 內容詳情 / 備註", value=note_val, height=180, help="請詳細記錄客戶反應或下一步行動")
                     st.markdown("<br>", unsafe_allow_html=True)
-                    submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary")
+                    submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary", use_container_width=True)
                     if submitted: 
-                        add_act(st.session_state['user'], d, t, n); st.toast("提交成功！", icon="✅")
+                        add_act(st.session_state['user'], d, t, n)
+                        st.toast("提交成功！", icon="✅")
+                        st.rerun()
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
+            # 🔥 FIX 6: 重新讀取 users 解決 NameError
             users_df = read_data("users").drop_duplicates(subset=['username'], keep='first')
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -505,16 +508,19 @@ else:
                     act_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
                     act_time = pd.to_datetime(row['timestamp']).strftime('%H:%M') if row['timestamp'] else ""
                     avatar_url = row['avatar'] if isinstance(row['avatar'], str) and row['avatar'].startswith('http') else "https://ui-avatars.com/api/?background=random&color=fff&name=" + row['username']
-                    card_class = get_activity_style(row['type'])
+                    card_class, badge_class = get_activity_style(row['type'])
                     
                     st.markdown(f"""
                     <div class="activity-card {card_class}">
                         <div class="act-header">
-                            <div style="display:flex;align-items:center;">
+                            <div class="act-user-info">
                                 <img src="{avatar_url}" class="act-avatar">
-                                <div><div class="act-name">{row['username']}</div><div class="act-time">{act_date} {act_time}</div></div>
+                                <div>
+                                    <div class="act-name">{row['username']}</div>
+                                    <div class="act-time">{act_date} {act_time}</div>
+                                </div>
                             </div>
-                            <div style="font-size:0.8em;font-weight:bold;color:#777;">{row['type']}</div>
+                            <div class="act-badge {badge_class}">{row['type']}</div>
                         </div>
                         <div class="act-content">{row['note'].replace(chr(10), '<br>')}</div>
                     </div>
@@ -539,16 +545,11 @@ else:
     elif "Year Goal" in menu:
         st.markdown("## 🏆 2026 年度挑戰")
         q1_df = get_q1_data(); q1_target = 88000
-        st.markdown("""<div class="challenge-header-box"><div style="font-size: 1.5em; font-weight: 900; color: #D4AF37; margin-bottom: 10px;">🔥 Q1 88000 Challenge (1/1 - 31/3)</div><p style="margin:0;color:#555;"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="challenge-header-box"><div class="challenge-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div><p class="challenge-rules"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。<br>這是通往 MDRT 的第一張入場券，必須拿下！</p></div>""", unsafe_allow_html=True)
         if not q1_df.empty:
-            st.dataframe(
-                q1_df[['avatar', 'username', 'q1_total']].sort_values(by='q1_total', ascending=False),
-                column_config={
-                    "avatar": st.column_config.ImageColumn("Avatar", width="medium"),
-                    "username": st.column_config.TextColumn("Name", width="small"),
-                    "q1_total": st.column_config.ProgressColumn("Q1 Progress ($88k)", format="$%d", min_value=0, max_value=88000, width="medium"),
-                }, use_container_width=True, hide_index=True
-            )
+            for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
+                progress = min(r['q1_total'] / q1_target, 1.0)
+                st.markdown(f"""<div class="q1-player-card"><div class="q1-avatar-box"><img src="{r['avatar']}"></div><div class="q1-info-box"><div class="q1-name">{r['username']}</div><div class="q1-amount">${r['q1_total']:,.0f}</div><div class="q1-progress-container"><div class="q1-progress-bar" style="width: {progress*100}%;"></div></div><div class="q1-target-label">Target: $88,000 ({progress*100:.1f}%)</div></div></div>""", unsafe_allow_html=True)
         else: st.info("暫無 Q1 業績數據，加油！")
         st.divider(); st.markdown("### 🎁 年度獎賞計劃")
         c1, c2 = st.columns(2)
@@ -562,8 +563,6 @@ else:
         st.markdown("## 🤝 Recruit 龍虎榜")
         df = get_data("Yearly")
         if not df.empty:
-            df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
-            df['avatar'] = df['avatar'].astype(str)
             st.dataframe(
                 df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
                 column_config={
@@ -579,8 +578,6 @@ else:
         m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
         df = get_data(month=m)
         if not df.empty:
-            df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
-            df['avatar'] = df['avatar'].astype(str)
             max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
             st.dataframe(
                 df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
@@ -607,4 +604,3 @@ else:
                     if st.button("Upload"):
                         img_str = proc_img(uploaded_file)
                         if img_str: update_avt(st.session_state['user'], img_str); st.session_state['avatar'] = img_str; st.toast("Avatar Updated!", icon="✅"); st.rerun()
-
