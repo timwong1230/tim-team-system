@@ -15,10 +15,9 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (保留你最滿意的介面) ---
+# --- Custom CSS (V50.22) ---
 st.markdown("""
 <style>
-    /* 全局設定 */
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
     [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
@@ -43,7 +42,10 @@ st.markdown("""
     div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
     img { border-radius: 50%; }
 
-    /* Timeline Card (Check-in 頁) */
+    /* Admin Box */
+    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
+
+    /* Timeline Card (Check-in 頁專用) */
     .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; }
     .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
     .card-signed { border-left-color: #D4AF37 !important; } 
@@ -105,7 +107,7 @@ def get_sheet(sheet_name):
         except: return None
     return None
 
-# 🔥 FIX 1: 防斷線緩存機制 (TTL 延長至 30 秒，自動重連，備用 Session)
+# 防斷線緩存機制
 @st.cache_data(ttl=30)
 def read_data(sheet_name):
     ws = get_sheet(sheet_name)
@@ -116,7 +118,7 @@ def read_data(sheet_name):
     }
     expected_cols = schemas.get(sheet_name, [])
     
-    for attempt in range(3): # 嘗試連線 3 次
+    for attempt in range(3): 
         if ws:
             try:
                 data = ws.get_all_records()
@@ -127,13 +129,12 @@ def read_data(sheet_name):
                     df = df[expected_cols] 
                 
                 if not df.empty:
-                    st.session_state[f'backup_{sheet_name}'] = df # 成功則備份
+                    st.session_state[f'backup_{sheet_name}'] = df 
                 return df
             except Exception:
-                time.sleep(1) # 失敗等 1 秒重試
+                time.sleep(1) 
                 pass
                 
-    # 若 Google 完全死機，自動調用備用數據，防止全站變空白
     if f'backup_{sheet_name}' in st.session_state:
         return st.session_state[f'backup_{sheet_name}']
         
@@ -179,7 +180,6 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
         clear_cache()
     except Exception as e: st.error(f"操作失敗: {e}")
 
-# 保護初始化避免 API Error 卡死
 def init_db_gs():
     try:
         ws = get_sheet("users")
@@ -212,7 +212,6 @@ init_db_gs()
 def login(u, p):
     df = read_data("users")
     if df.empty: return []
-    # 🔥 FIX 2: 登入時強制去重，防止重複登入紀錄
     df = df.drop_duplicates(subset=['username'], keep='first')
     df['password'] = df['password'].astype(str)
     user = df[(df['username'] == u) & (df['password'] == str(p))]
@@ -263,8 +262,8 @@ def get_all_act():
     df = read_data("activities")
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    # 去重
-    df = df.drop_duplicates(subset=['id'], keep='first')
+    # 🔥 強制防重複顯示
+    df = df.drop_duplicates(subset=['username', 'date', 'type', 'note'], keep='first')
     return df.sort_values(by='date', ascending=False)
 
 def get_data(month=None):
@@ -293,7 +292,6 @@ def get_data(month=None):
     df = pd.merge(users, fyc, on='username', how='left').fillna(0)
     df = pd.merge(df, act, on='username', how='left').fillna(0)
     
-    # 🔥 FIX 3: 強制 JSON 轉換安全類型 (防止TypeError)
     df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
     df['Total_Score'] = pd.to_numeric(df['Total_Score'], errors='coerce').fillna(0).astype(int)
     df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
@@ -314,6 +312,31 @@ def get_q1_data():
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
     return pd.DataFrame(columns=['username', 'q1_total'])
 
+# --- 🔥 新增函數：獲取「上週」數據 (For Admin 戰報) 🔥 ---
+def get_last_week_data():
+    today = datetime.date.today()
+    current_week_monday = today - datetime.timedelta(days=today.weekday())
+    start = current_week_monday - datetime.timedelta(days=7) # 上週一
+    end = start + datetime.timedelta(days=6) # 上週日
+    
+    users = read_data("users")
+    if users.empty: return pd.DataFrame(columns=['username', 'wk_score', 'wk_count']), start, end
+    users = users.drop_duplicates(subset=['username'], keep='first')
+    users = users[users['role'] == 'Member'][['username', 'avatar']]
+    
+    act_df = read_data("activities")
+    stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
+    if not act_df.empty:
+        act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
+        # 篩選出「大於等於上週一」且「小於等於上週日」
+        last_week_acts = act_df[(act_df['date'] >= start) & (act_df['date'] <= end)]
+        if not last_week_acts.empty:
+            stats = last_week_acts.groupby('username').agg({'points': ['sum', 'count']}).reset_index()
+            stats.columns = ['username', 'wk_score', 'wk_count']
+            
+    return pd.merge(users, stats, on='username', how='left').fillna(0), start, end
+
+# --- 原有函數：獲取「本週」數據 (For Challenge 實時排名) ---
 def get_weekly_data():
     today = datetime.date.today()
     start = today - datetime.timedelta(days=today.weekday())
@@ -413,28 +436,35 @@ else:
         if st.session_state['role'] == 'Leader':
             with st.container(border=True):
                 st.markdown("### 📢 每週戰報生成器 (Admin Only)")
-                if st.button("📝 生成本週結算戰報"):
-                    wk_df, start, end = get_weekly_data()
+                
+                # 🔥 FIX: 呼叫上週的數據
+                if st.button("📝 生成上週結算戰報"):
+                    wk_df, start, end = get_last_week_data()
                     max_score = wk_df['wk_score'].max() if not wk_df.empty else 0
                     winners = wk_df[wk_df['wk_score'] == max_score] if not wk_df.empty and max_score > 0 else pd.DataFrame()
                     losers = wk_df[wk_df['wk_count'] < 3] if not wk_df.empty else pd.DataFrame()
                     penalty_total = len(losers) * 100
                     prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
-                    report = f"📅 *【TIM TEAM 本週戰報 ({start} ~ {end})】* 🦁\n\n"
+                    
+                    # 文案改為「上週」
+                    report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】* 🦁\n\n"
                     if max_score > 0 and not winners.empty:
-                        report += f"🏆 *本週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
+                        report += f"🏆 *上週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
                         for i, w in winners.iterrows(): report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
                         report += f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n" if penalty_total > 0 else "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
-                    else: report += "⚠️ *本週全軍覆沒？* 無人開工？\n\n"
+                    else: report += "⚠️ *上週全軍覆沒？* 無人開工？\n\n"
+                    
                     if not losers.empty:
                         report += f"💸 *【罰款名單 - 每人 $100】*\n_活動量不足 3 次，請自覺 PayMe 俾 Winner！_\n"
                         for i, l in losers.iterrows(): report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
-                    else: report += "✅ *本週無人罰款！Excellent！*\n"
+                    else: report += "✅ *上週無人罰款！Excellent！*\n"
+                    
                     report += "\n📊 *詳細戰況：*\n"
                     if not wk_df.empty:
                         for i, row in wk_df.sort_values(by='wk_score', ascending=False).iterrows():
                             report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
                     report += "\n🚀 *新一週由零開始，大家加油！*"
+                    
                     st.code(report)
                     st.link_button("📤 Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
 
@@ -444,17 +474,13 @@ else:
         st.markdown("### 🏆 Leaderboard")
         mdrt_target = 512800
         df['mdrt_fraction'] = df['fyc'].apply(lambda x: f"${x:,.0f} / ${mdrt_target:,.0f}")
-        
-        # 🔥 FIX 4: 修正 MDRT 百分比算法 (乘 100)，讓它顯示正確的 9.8%
-        df['mdrt_percent'] = (df['fyc'] / mdrt_target) * 100 
+        df['mdrt_percent'] = (df['fyc'] / mdrt_target) * 100
         df_sorted = df.sort_values(by='fyc', ascending=False)
-        
         st.dataframe(df_sorted[['avatar', 'username', 'mdrt_fraction', 'mdrt_percent', 'recruit', 'Total_Score']],
             column_config={
                 "avatar": st.column_config.ImageColumn("Avatar", width="small"),
                 "username": st.column_config.TextColumn("Name"),
                 "mdrt_fraction": st.column_config.TextColumn("MDRT 進度 (實數)"),
-                # 🔥 FIX 4: 設定 max_value 為 100
                 "mdrt_percent": st.column_config.ProgressColumn("MDRT %", format="%.1f%%", min_value=0, max_value=100),
                 "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
                 "Total_Score": st.column_config.NumberColumn("Activity", format="%d")
@@ -476,7 +502,6 @@ else:
         tab_new, tab_hist = st.tabs(["✍️ 立即打卡 (Check-in)", "👀 團隊動態 (Team Feed)"])
         
         with tab_new:
-            # 🔥 FIX 5: 使用 st.form 鎖定按鈕，防止狂按產生 Duplicate 打卡
             with st.form("checkin_form", clear_on_submit=True):
                 with st.container(border=True):
                     c_date, c_type = st.columns([1, 1])
@@ -493,7 +518,6 @@ else:
 
         with tab_hist:
             st.markdown("### 📜 Timeline")
-            # 🔥 FIX 6: 重新讀取 users 解決 NameError
             users_df = read_data("users").drop_duplicates(subset=['username'], keep='first')
             user_options = users_df['username'].unique() if not users_df.empty else []
             filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
@@ -529,6 +553,7 @@ else:
                 st.info("暫無動態，快啲去 Check-in！")
 
     elif "Challenge" in menu:
+        # Challenge 頁面繼續用「本週」資料
         df, start, end = get_weekly_data()
         st.markdown(f"## ⚖️ Winner Takes All ({start} ~ {end})")
         st.markdown("""<div class="challenge-header-box"><div class="challenge-title">📜 詳細遊戲規則 (Game Rules)：</div><ul class="challenge-rules"><li><strong>結算時間：</strong> 逢星期日晚 23:59 系統自動結算。</li><li><strong>罰款準則：</strong> 每週活動量 (Count) <strong>少於 3 次</strong> 者，需罰款 <strong>$100</strong>。</li><li><strong>獎金歸屬：</strong> 所有罰款注入獎金池，由 <strong>最高分 (Score)</strong> 者獨得。</li></ul></div>""", unsafe_allow_html=True)
