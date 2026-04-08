@@ -252,8 +252,7 @@ def remove_departed_members():
             st.error(f"清理失敗: {e}")
 
 # 取消註解下一行來執行刪除，執行成功後請務必將它重新註解或刪除！
-
-remove_departed_members()
+# remove_departed_members()
 
 # --- 4. Logic Functions ---
 def login(u, p):
