@@ -195,7 +195,7 @@ def init_db_gs():
                 ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
                 existing = ["username"]
             defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
-                        ('Catherine', '1234', 'Member'), ('Maggie', '1234', 'Member'), ('Wilson', '1234', 'Member')]
+                        ('Maggie', '1234', 'Member')]
             for u in defaults:
                 if u[0] not in existing:
                     url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
@@ -253,7 +253,7 @@ def remove_departed_members():
 
 # 取消註解下一行來執行刪除，執行成功後請務必將它重新註解或刪除！
 
-# remove_departed_members()
+remove_departed_members()
 
 # --- 4. Logic Functions ---
 def login(u, p):
