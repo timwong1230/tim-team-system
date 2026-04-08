@@ -185,6 +185,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     except Exception as e: st.error(f"操作失敗: {e}")
 
 def init_db_gs():
+    
     try:
         ws = get_sheet("users")
         if ws:
@@ -211,6 +212,40 @@ def init_db_gs():
     except: pass
 
 init_db_gs()
+
+# --- 執行一次性的帳戶清理 ---
+def remove_departed_members():
+    ws = get_sheet("users")
+    if ws:
+        try:
+            # 取得所有資料
+            records = ws.get_all_records()
+            df = pd.DataFrame(records)
+            
+            # 找出 Wilson 和 Catherine 的列數 (Row numbers)
+            # 注意：Gspread 的 row number 是從 1 開始，而 row 1 是標題 (Headers)
+            # 所以 DataFrame 的 index 要加上 2 才是真正的 Google Sheet row number
+            rows_to_delete = []
+            for index, row in df.iterrows():
+                if row['username'] in ['Wilson', 'Catherine']:
+                    rows_to_delete.append(index + 2) 
+            
+            # 從底部開始刪除，避免刪除後列數改變導致錯誤
+            rows_to_delete.sort(reverse=True)
+            
+            if rows_to_delete:
+                for row_num in rows_to_delete:
+                    ws.delete_rows(row_num)
+                st.success("成功將 Wilson 和 Catherine 移出系統！")
+                clear_cache() # 清除緩存以更新畫面
+            else:
+                st.info("系統中找不到 Wilson 或 Catherine，或者已經被刪除了。")
+        except Exception as e:
+            st.error(f"刪除失敗: {e}")
+
+# 取消註解下一行來執行刪除，執行成功後請務必將它重新註解或刪除！
+
+remove_departed_members()
 
 # --- 4. Logic Functions ---
 def login(u, p):
