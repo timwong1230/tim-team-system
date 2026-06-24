@@ -194,8 +194,7 @@ def init_db_gs():
             if not existing: 
                 ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
                 existing = ["username"]
-            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'),
-                        ('Maggie', '1234', 'Member')]
+            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member')]
             for u in defaults:
                 if u[0] not in existing:
                     url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
@@ -213,13 +212,12 @@ def init_db_gs():
 
 init_db_gs()
 
-# --- 執行一次性的帳戶清理 (防 API 超標版) ---
+# --- 執行一次性的帳戶清理 (移除 Maggie) ---
 def remove_departed_members():
     ws = get_sheet("users")
     if ws:
         try:
             st.info("正在讀取資料...")
-            # 1. 一次性讀取所有資料 (1 API Call)
             records = ws.get_all_records()
             if not records:
                 st.warning("表格無資料。")
@@ -228,31 +226,28 @@ def remove_departed_members():
             df = pd.DataFrame(records)
             original_count = len(df)
             
-            # 2. 在系統本地端 (Pandas) 直接過濾掉 Wilson 和 Catherine
-            df_clean = df[~df['username'].isin(['Wilson', 'Catherine'])]
+            # 🔥 將目標改為 Maggie
+            df_clean = df[~df['username'].isin(['Maggie'])]
             new_count = len(df_clean)
             
             if original_count == new_count:
-                st.success("系統中已經無 Wilson 或 Catherine 嘅資料啦！")
+                st.success("系統中已經無 Maggie 嘅資料啦！")
                 return
             
             st.info(f"搵到 {original_count - new_count} 筆舊紀錄，準備一次過刪除...")
             
-            # 3. 準備寫入的新資料 (必須包含 Headers)
             updated_data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
             
-            # 4. 一次性清空並覆寫 (2 API Calls，絕對唔會超標)
             ws.clear()
             ws.update(updated_data)
             
-            st.success(f"✅ 清理成功！乾淨俐落，已經將 Wilson 同 Catherine 徹底移出系統！")
+            st.success(f"✅ 清理成功！乾淨俐落，已經將 Maggie 徹底移出系統！")
             clear_cache() # 清除緩存以更新畫面
             
         except Exception as e:
             st.error(f"清理失敗: {e}")
 
 # 取消註解下一行來執行刪除，執行成功後請務必將它重新註解或刪除！
-
 # remove_departed_members()
 
 # --- 4. Logic Functions ---
