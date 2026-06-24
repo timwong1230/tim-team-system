@@ -213,7 +213,7 @@ def init_db_gs():
 init_db_gs()
 
 # --- 執行一次性的帳戶清理 (移除 Maggie) ---
-def remove_departed_members():
+# def remove_departed_members():
     ws = get_sheet("users")
     if ws:
         try:
