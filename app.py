@@ -15,7 +15,7 @@ from gspread.exceptions import WorksheetNotFound, APIError
 # --- 1. 系統設定 ---
 st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom CSS (專業金框美學版) ---
+# --- Custom CSS ---
 st.markdown("""
 <style>
     [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
@@ -73,10 +73,14 @@ st.markdown("""
     .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
     .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; font-weight: 500; }
     .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 6px solid #D4AF37; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; }
+    
+    /* 彈藥庫專用標籤 */
+    .ammo-nightmare { background-color: #fdedec; border-left: 4px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
+    .ammo-dream { background-color: #eafaf1; border-left: 4px solid #2ecc71; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🔥 離職/退出成員黑名單（系統會在全域自動隱藏佢哋）
+# 離職成員黑名單
 INACTIVE_MEMBERS = ['Wilson', 'Catherine', 'Maggie']
 
 # Google Sheets 設定
@@ -103,7 +107,7 @@ def get_sheet(sheet_name):
             sh = client.open("tim_team_db")
             try: return sh.worksheet(sheet_name)
             except WorksheetNotFound:
-                ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=10)
+                ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=11) # 增加 cols
                 return ws
         except Exception: return None
     return None
@@ -115,7 +119,9 @@ def read_data(sheet_name):
     schemas = {
         "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
         "monthly_fyc": ["id", "username", "month", "amount"],
-        "activities": ["id", "username", "date", "type", "points", "note", "timestamp"]
+        "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
+        # 🔥 全新 Schema 結構
+        "story_ammo": ["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"]
     }
     expected_cols = schemas.get(sheet_name, [])
     
@@ -148,7 +154,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     if not ws: return
     try:
         if action == "INSERT":
-            if sheet_name in ["activities", "monthly_fyc"]:
+            if sheet_name in ["activities", "monthly_fyc", "story_ammo"]:
                 records = ws.get_all_records()
                 new_id = 1
                 if records:
@@ -161,6 +167,7 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
                 schemas = {
                     "monthly_fyc": ["id", "username", "month", "amount"],
                     "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
+                    "story_ammo": ["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"],
                     "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"]
                 }
                 headers = schemas.get(sheet_name, [])
@@ -190,32 +197,32 @@ def init_db_gs():
             if not existing: 
                 ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
                 existing = ["username"]
-            # 🔥 預設名單只保留活躍成員
             defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member')]
             for u in defaults:
                 if u[0] not in existing:
                     url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
                     ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
                     clear_cache()
-        for sn in ["monthly_fyc", "activities"]:
+        for sn in ["monthly_fyc", "activities", "story_ammo"]:
             ws_tmp = get_sheet(sn)
             if ws_tmp:
                 try:
                     if not ws_tmp.row_values(1):
                         if sn == "monthly_fyc": ws_tmp.append_row(["id", "username", "month", "amount"])
                         if sn == "activities": ws_tmp.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
+                        # 🔥 全新 Headers
+                        if sn == "story_ammo": ws_tmp.append_row(["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"])
                 except Exception: pass
     except Exception: pass
 
 init_db_gs()
 
-# --- 4. 核心邏輯（全部整合黑名單過濾） ---
+# --- 4. 核心邏輯 ---
 
 def get_clean_users():
     df = read_data("users")
     if df.empty: return pd.DataFrame(columns=["username", "password", "role", "team", "recruit", "avatar", "last_read"])
     df = df.drop_duplicates(subset=['username'], keep='first')
-    # 🔥 動態剃除黑名單
     return df[~df['username'].isin(INACTIVE_MEMBERS)]
 
 def login(u, p):
@@ -247,6 +254,15 @@ def add_act(u, d, t, n):
     pts = 8 if "出code" in t else 5 if "簽單" in t else 3 if "報考試" in t else 2 if "傾" in t else 1
     run_query_gs("INSERT", "activities", {"username": u, "date": str(d), "type": t, "points": pts, "note": n, "timestamp": str(datetime.datetime.now())})
 
+# 🔥 更新傳入參數
+def add_ammo(u, d, cat, title, knowledge, story_context, nightmare, dream, scenario):
+    run_query_gs("INSERT", "story_ammo", {
+        "username": u, "date": str(d), "category": cat, 
+        "title": title, "knowledge": knowledge, "story_context": story_context, 
+        "nightmare": nightmare, "dream": dream, "scenario": scenario, 
+        "timestamp": str(datetime.datetime.now())
+    })
+
 def upd_fyc(u, m, a):
     df = read_data("monthly_fyc")
     if not df.empty: df['month'] = df['month'].astype(str).str.strip()
@@ -265,7 +281,6 @@ def get_all_act():
     if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     df = df.drop_duplicates(subset=['username', 'date', 'type', 'note'], keep='first')
-    # 🔥 隱藏黑名單成員的動態
     return df[~df['username'].isin(INACTIVE_MEMBERS)].sort_values(by='date', ascending=False)
 
 def get_data(month=None):
@@ -310,7 +325,6 @@ def get_q1_data():
         return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
     return pd.DataFrame(columns=['username', 'q1_total'])
 
-# 獲取「上週」數據 (For Admin 戰報)
 def get_last_week_data():
     today = datetime.date.today()
     current_week_monday = today - datetime.timedelta(days=today.weekday())
@@ -337,7 +351,6 @@ def get_last_week_data():
             
     return pd.merge(users, stats, on='username', how='left').fillna(0), start, end
 
-# 獲取「本週」數據 (For Challenge 實時排名)
 def get_weekly_data():
     today = datetime.date.today()
     start = today - datetime.timedelta(days=today.weekday())
@@ -389,7 +402,6 @@ def check_notifications(current_user):
     except Exception: last_read = pd.to_datetime("2020-01-01")
     if 'timestamp' not in act_df.columns: return
     act_df['timestamp_dt'] = pd.to_datetime(act_df['timestamp'], errors='coerce')
-    # 🔥 通知彈窗同樣剔除黑名單
     new_activities = act_df[(act_df['timestamp_dt'] > last_read) & (act_df['username'] != current_user) & (~act_df['username'].isin(INACTIVE_MEMBERS))]
     if not new_activities.empty: show_notification_modal(new_activities, current_user)
 
@@ -432,7 +444,7 @@ else:
             st.markdown(f"<h3 style='margin:0; color:#C5A028 !important;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
             st.caption(f"{st.session_state['role']} | TIM TEAM")
         st.divider()
-        menu = st.radio("MAIN MENU", ["📊 Dashboard 團隊報表", "📝 Check-in 打卡", "⚖️ Challenge 獎罰", "🏆 Year Goal 年度挑戰", "🤝 Recruit 招募龍虎榜", "📅 Monthly 業績表", "👤 Profile 設定"], label_visibility="collapsed")
+        menu = st.radio("MAIN MENU", ["📊 Dashboard 團隊報表", "📝 Check-in 打卡", "📚 Story Depot 彈藥庫", "⚖️ Challenge 獎罰", "🏆 Year Goal 年度挑戰", "🤝 Recruit 招募龍虎榜", "📅 Monthly 業績表", "👤 Profile 設定"], label_visibility="collapsed")
         st.markdown("<br>"*3, unsafe_allow_html=True)
         if st.button("🔒 Logout", use_container_width=True, type="secondary"): st.session_state['logged_in'] = False; st.rerun()
 
@@ -497,6 +509,114 @@ else:
                 c_d, c_e = st.columns(2)
                 tgt_r = c_d.selectbox("User", user_list, key="r1"); rec = c_e.number_input("Recruits", step=1)
                 if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
+
+    elif "Story Depot" in menu:
+        st.markdown("## 📚 逢星期四 Drill Training 素材庫")
+        st.caption("「將客觀數據轉化為真實故事，極端對比出無保障嘅噩夢 vs 有保障嘅美夢」")
+        
+        active_pool_df = get_clean_users()
+        roster_pool = active_pool_df[~active_pool_df['username'].isin(['Admin', 'Tim'])]['username'].dropna().unique().tolist()
+        roster_pool.sort() 
+        
+        if not roster_pool: roster_pool = [u for u in active_pool_df['username'].unique() if u != 'Admin']
+        if not roster_pool: roster_pool = ['本週負責同事']
+        
+        curr_week_num = datetime.date.today().isocalendar()[1]
+        this_week_duty = roster_pool[curr_week_num % len(roster_pool)]
+        
+        st.markdown(f"""
+        <div class="challenge-header-box" style="border-left-color: #9b59b6; background: linear-gradient(to right, #f4ecf7, #ffffff);">
+            <div style="font-size: 1.1em; font-weight: 800; color: #9b59b6; margin-bottom: 5px;">📢 本週 Drill Training (Week {curr_week_num}) 任務分配</div>
+            <div style="font-size: 1.1em; color: #333;">
+                🎯 輪值主講同事： <strong style="color: #9b59b6; font-size:1.25em;">【 {this_week_duty} 】</strong><br>
+                👑 固定主講底子： <strong style="color: #D4AF37; font-size:1.25em;">【 Tim 】</strong>
+            </div>
+            <p style="margin: 8px 0 0 0; font-size: 0.9em; color: #666;">
+                玩法：提交「專業知識點」同「真實故事背景」。Training 時全隊一齊腦力激盪，畫出客戶不作為嘅「噩夢畫面」同擁有方案嘅「美夢畫面」！
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        tab_submit, tab_library = st.tabs(["📥 1. 提交知識素材 (Drill 前)", "📖 2. 團隊武器庫 (天堂與地獄對照)"])
+        
+        with tab_submit:
+            with st.form("ammo_form", clear_on_submit=True):
+                st.markdown("### ✍️ 準備 Heaven & Hell 銷售素材")
+                c_cat, c_date = st.columns(2)
+                with c_cat:
+                    cat = st.selectbox("📌 知識點範疇", [
+                        "行為金融學 (理智漏洞)", 
+                        "醫療理賠 (危機感)", 
+                        "財富傳承 (家族案例)", 
+                        "資產配置 (觀念導正)", 
+                        "市場熱話 / 政策解讀"
+                    ])
+                with c_date:
+                    d = st.date_input("📅 提交日期", value=datetime.date.today())
+                
+                title = st.text_input("🏷️ 知識點主題 (Hook)", placeholder="e.g., 隱形醫療通脹")
+                knowledge = st.text_area("📚 專業知識點 (客觀事實)", height=80, placeholder="e.g., 過去十年香港醫療通脹率平均每年8-10%...")
+                story_context = st.text_area("🗣️ 真實故事背景 (引起共鳴)", height=80, placeholder="e.g., 一位IT中層，突然確診，公司保險3個月就打爆咗...")
+                
+                st.markdown("---")
+                st.markdown("*(以下欄位可於 Training 討論後再完整補上)*")
+                c_night, c_dream = st.columns(2)
+                with c_night:
+                    nightmare = st.text_area("💔 噩夢畫面 (無保障嘅慘況)", height=150, placeholder="e.g., 太太喊到崩潰，要賣樓賣車籌醫藥費...")
+                with c_dream:
+                    dream = st.text_area("✨ 美夢畫面 (擁有保障嘅安心)", height=150, placeholder="e.g., 唯一任務就係專心養病，唔使愁下個月供樓啲錢...")
+                
+                scenario = st.text_input("🎯 實戰場景 (幾時對客講？)", placeholder="e.g., 當客戶嫌醫療保險貴，覺得有公司醫保就夠嗰陣")
+                
+                if st.form_submit_button("🚀 儲存知識素材"):
+                    if title and knowledge and story_context:
+                        add_ammo(st.session_state['user'], d, cat, title, knowledge, story_context, nightmare, dream, scenario)
+                        st.toast("知識點提交成功！", icon="💥")
+                    else:
+                        st.error("「標題」、「知識點」同「真實故事」係必填架！噩夢/美夢可以留空。")
+
+        with tab_library:
+            df_ammo = read_data("story_ammo")
+            if not df_ammo.empty and 'knowledge' in df_ammo.columns:
+                df_ammo = df_ammo.drop_duplicates(subset=['id'], keep='first').sort_values(by='id', ascending=False)
+                
+                col_s, col_f = st.columns([2, 1])
+                with col_s: search_kw = st.text_input("🔍 關鍵字搜尋", placeholder="搜尋標題或故事內容...")
+                with col_f: filter_cat = st.selectbox("📂 分類篩選", ["全部"] + df_ammo['category'].unique().tolist())
+                
+                filtered_df = df_ammo
+                if filter_cat != "全部": filtered_df = filtered_df[filtered_df['category'] == filter_cat]
+                if search_kw:
+                    filtered_df = filtered_df[
+                        filtered_df['title'].str.contains(search_kw, na=False) | 
+                        filtered_df['knowledge'].str.contains(search_kw, na=False) |
+                        filtered_df['story_context'].str.contains(search_kw, na=False)
+                    ]
+                
+                st.markdown(f"**武器庫總存量： {len(filtered_df)} 個 Script**")
+                
+                for idx, row in filtered_df.iterrows():
+                    with st.expander(f"[{row['category']}] {row['title']}  (✍️ 提交人: {row['username']})"):
+                        
+                        st.markdown(f"**📚 專業知識點：**\n{row['knowledge']}")
+                        st.markdown(f"**🗣️ 真實故事背景：**\n{row['story_context']}")
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        c_night, c_dream = st.columns(2)
+                        with c_night:
+                            if row['nightmare']:
+                                st.markdown(f"<div class='ammo-nightmare'><strong>💔 噩夢畫面 (無買/買錯的代價)：</strong><br><br>{row['nightmare']}</div>", unsafe_allow_html=True)
+                            else:
+                                st.warning("⏳ 噩夢畫面等待 Training 討論...")
+                        with c_dream:
+                            if row['dream']:
+                                st.markdown(f"<div class='ammo-dream'><strong>✨ 美夢畫面 (擁有方案的結果)：</strong><br><br>{row['dream']}</div>", unsafe_allow_html=True)
+                            else:
+                                st.warning("⏳ 美夢畫面等待 Training 討論...")
+                                
+                        st.caption(f"🎯 應用場景：{row['scenario']}  •  📅 記錄日期：{row['date']}")
+            else:
+                st.info("武器庫仲係吉架，快啲提交第一批素材！(請確保已刪除 Google Sheet 舊有嘅 story_ammo)")
 
     elif "Check-in" in menu:
         st.markdown("## 📝 Activity Center")
