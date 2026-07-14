@@ -197,12 +197,17 @@ def init_db_gs():
             if not existing: 
                 ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
                 existing = ["username"]
-            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member')]
+            
+            # 👇 加入咗 Hanes 作為預設 Member
+            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'), ('Hanes', '1234', 'Member')]
+            
             for u in defaults:
                 if u[0] not in existing:
                     url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-                    ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
+                    # 👇 將原本嘅 "Tim Team" 改為 "Triangle"
+                    ws.append_row([u[0], u[1], u[2], "Triangle", 0, url, ""])
                     clear_cache()
+                    
         for sn in ["monthly_fyc", "activities", "story_ammo"]:
             ws_tmp = get_sheet(sn)
             if ws_tmp:
