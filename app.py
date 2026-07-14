@@ -278,7 +278,7 @@ def upd_fyc(u, m, a):
 def upd_rec(u, a):
     ws = get_sheet("users"); cell = ws.find(u)
     if cell: ws.update_cell(cell.row, ws.row_values(1).index("recruit") + 1, a); clear_cache()
-        if not ws:
+    if not ws:
         import streamlit as st
         st.error("系統暫時未能連接 Google Sheet，請稍後再試！")
         return
