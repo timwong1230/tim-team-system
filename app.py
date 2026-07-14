@@ -282,7 +282,7 @@ def upd_rec(u, a):
         import streamlit as st
         st.error("系統暫時未能連接 Google Sheet，請稍後再試！")
         return
-            cell = ws.find(u)
+    cell = ws.find(u)
 
 def del_act(id): run_query_gs("DELETE", "activities", row_id=id)
 
