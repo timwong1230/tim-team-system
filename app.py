@@ -189,38 +189,60 @@ def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
     except Exception as e: st.error(f"操作失敗: {e}")
 
 def init_db_gs():
+
     try:
+
         ws = get_sheet("users")
+
         if ws:
+
             try: existing = ws.col_values(1)
+
             except Exception: existing = []
+
             if not existing: 
+
                 ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
+
                 existing = ["username"]
-            
-            # 👇 加入咗 Hanes 作為預設 Member
-            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member'), ('Hanes', '1234', 'Member')]
-            
+
+            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member')]
+
             for u in defaults:
+
                 if u[0] not in existing:
+
                     url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-                    # 👇 將原本嘅 "Tim Team" 改為 "Triangle"
-                    ws.append_row([u[0], u[1], u[2], "Triangle", 0, url, ""])
+
+                    ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
+
                     clear_cache()
-                    
+
         for sn in ["monthly_fyc", "activities", "story_ammo"]:
+
             ws_tmp = get_sheet(sn)
+
             if ws_tmp:
+
                 try:
+
                     if not ws_tmp.row_values(1):
+
                         if sn == "monthly_fyc": ws_tmp.append_row(["id", "username", "month", "amount"])
+
                         if sn == "activities": ws_tmp.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
+
                         # 🔥 全新 Headers
+
                         if sn == "story_ammo": ws_tmp.append_row(["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"])
+
                 except Exception: pass
+
     except Exception: pass
 
-init_db_gs()
+
+
+init_db_gs() 
 
 # --- 4. 核心邏輯 ---
 
@@ -278,11 +300,6 @@ def upd_fyc(u, m, a):
 def upd_rec(u, a):
     ws = get_sheet("users"); cell = ws.find(u)
     if cell: ws.update_cell(cell.row, ws.row_values(1).index("recruit") + 1, a); clear_cache()
-    if not ws:
-        import streamlit as st
-        st.error("系統暫時未能連接 Google Sheet，請稍後再試！")
-        return
-    cell = ws.find(u)
 
 def del_act(id): run_query_gs("DELETE", "activities", row_id=id)
 
