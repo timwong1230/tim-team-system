@@ -498,14 +498,17 @@ def render_dashboard_kpis(team_fyc: float, team_rec: int, team_act: int) -> None
     """KPI tiles via components.html (Streamlit markdown drops custom CSS)."""
     html = f"""
 <!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif; background:transparent; }}
-  .wrap {{ display:grid; grid-template-columns:1fr; gap:8px; }}
-  @media(min-width:720px) {{ .wrap {{ grid-template-columns:repeat(3,1fr); gap:10px; }} }}
-  .kpi {{ background:#fff; border:1px solid #E6E8EC; border-radius:14px; padding:12px 14px;
-          box-shadow:0 6px 18px rgba(28,36,48,.05); }}
-  .k {{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#6B7280; }}
-  .v {{ font-family:Georgia,'Instrument Serif',serif; font-size:28px; color:#1C2430; margin-top:4px; line-height:1.1; }}
+  html, body {{ margin:0; padding:0; overflow:visible; background:transparent;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }}
+  .wrap {{ display:grid; grid-template-columns:1fr; gap:10px; padding-bottom:4px; }}
+  @media(min-width:720px) {{ .wrap {{ grid-template-columns:repeat(3,1fr); }} }}
+  .kpi {{ background:#fff; border:1px solid #E6E8EC; border-radius:14px;
+          padding:14px 14px 16px; box-shadow:0 6px 18px rgba(28,36,48,.05); }}
+  .k {{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#6B7280; margin-bottom:6px; }}
+  .v {{ font-family:Georgia,'Times New Roman',serif; font-size:30px; color:#1C2430;
+        line-height:1.25; padding-bottom:2px; word-break:break-word; }}
 </style></head><body>
 <div class="wrap">
   <div class="kpi"><div class="k">Team FYC</div><div class="v">${team_fyc:,.0f}</div></div>
@@ -514,16 +517,35 @@ def render_dashboard_kpis(team_fyc: float, team_rec: int, team_act: int) -> None
 </div>
 </body></html>
 """
-    components.html(html, height=220 if MOBILE else 110, scrolling=False)
+    # Mobile stacks 3 cards — give enough height so Activities digits are not clipped
+    components.html(html, height=280 if MOBILE else 120, scrolling=False)
 
 
-def render_leaderboard(df: pd.DataFrame) -> None:
-    """Card-style MDRT leaderboard rendered in an HTML component (reliable on mobile)."""
+def render_rank_cards(
+    df: pd.DataFrame,
+    *,
+    mode: str = "mdrt",
+    month_label: str = "",
+) -> None:
+    """
+    Card-style FYC leaderboard.
+    mode='mdrt'   → progress vs MDRT_TARGET
+    mode='monthly'→ progress vs that month's team max (min scale 20k)
+    """
     ranked = df.sort_values(by="fyc", ascending=False).reset_index(drop=True)
+    month_scale = float(ranked["fyc"].max()) if not ranked.empty else 0.0
+    if mode == "monthly":
+        bar_target = max(month_scale, 20000.0)
+        target_label_fn = lambda _fyc: f"{month_label} 本月排名" if month_label else "本月排名"
+    else:
+        bar_target = float(MDRT_TARGET)
+        target_label_fn = lambda _fyc: f"目標 ${MDRT_TARGET:,.0f}"
+
     parts = []
     for i, row in ranked.iterrows():
         rank = i + 1
-        pct = min(max(float(row["fyc"]) / MDRT_TARGET * 100, 0), 100) if MDRT_TARGET else 0
+        fyc = float(row["fyc"])
+        pct = min(max(fyc / bar_target * 100, 0), 100) if bar_target else 0
         rank_bg = (
             "linear-gradient(135deg,#F0D078,#C5A028)"
             if rank == 1
@@ -535,24 +557,30 @@ def render_leaderboard(df: pd.DataFrame) -> None:
         )
         border = "#E2C56A" if rank == 1 else "#E6E8EC"
         bg = "linear-gradient(145deg,#FFFDF5 0%,#FFFFFF 55%)" if rank == 1 else "#FFFFFF"
-        medal = "1" if rank == 1 else "2" if rank == 2 else "3" if rank == 3 else str(rank)
+        medal = str(rank)
         name = _esc(row["username"])
         av = _esc(_avatar_url(row))
-        fyc = float(row["fyc"])
         recruit = int(row.get("recruit", 0) or 0)
         score = int(row.get("Total_Score", 0) or 0)
-        chip = (
-            '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
-            'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">MDRT</span>'
-            if pct >= 100
-            else ""
-        )
+        chip = ""
+        if mode == "mdrt" and pct >= 100:
+            chip = (
+                '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">MDRT</span>'
+            )
+        elif mode == "monthly" and rank == 1 and fyc > 0:
+            chip = (
+                '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">月冠</span>'
+            )
         top_bar = (
             '<div style="position:absolute;left:0;top:0;right:0;height:4px;'
             'background:linear-gradient(90deg,#D4AF37,#F0D078,#D4AF37);"></div>'
             if rank == 1
             else ""
         )
+        sub = target_label_fn(fyc)
+        pct_text = f"{pct:.0f}%" if mode == "mdrt" else (f"#{rank}" if fyc > 0 else "—")
         parts.append(
             "<div style='position:relative;background:"
             + bg
@@ -573,11 +601,11 @@ def render_leaderboard(df: pd.DataFrame) -> None:
             + "<div style='flex:1;min-width:0;'>"
             + f"<div style='font-weight:700;font-size:16px;color:#1C2430;'>{name}{chip}</div>"
             + f"<div style=\"font-family:Georgia,serif;font-size:22px;color:#1C2430;"
-            + f"line-height:1.15;margin-top:2px;\">${fyc:,.0f}</div>"
-            + f"<div style='color:#6B7280;font-size:12px;margin-top:2px;'>目標 ${MDRT_TARGET:,.0f}</div>"
+            + f"line-height:1.2;margin-top:2px;\">${fyc:,.0f}</div>"
+            + f"<div style='color:#6B7280;font-size:12px;margin-top:2px;'>{sub}</div>"
             + "</div>"
             + f"<div style='flex-shrink:0;text-align:right;font-weight:800;font-size:17px;"
-            + f"color:#9A7B1A;min-width:52px;'>{pct:.0f}%</div>"
+            + f"color:#9A7B1A;min-width:52px;'>{pct_text}</div>"
             + "</div>"
             + "<div style='margin-top:10px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
             + f"<div style='height:100%;width:{pct:.1f}%;border-radius:999px;"
@@ -589,16 +617,21 @@ def render_leaderboard(df: pd.DataFrame) -> None:
         )
 
     n = max(len(parts), 1)
-    height = 24 + n * 148
+    height = 28 + n * 152
     html = (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<style>body{margin:0;padding:2px 0;font-family:-apple-system,BlinkMacSystemFont,"
-        "'Segoe UI',sans-serif;background:transparent;}</style></head><body>"
+        "<style>html,body{margin:0;padding:2px 0 8px;overflow:visible;"
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+        "background:transparent;}</style></head><body>"
         + "".join(parts)
         + "</body></html>"
     )
     components.html(html, height=height, scrolling=False)
+
+
+def render_leaderboard(df: pd.DataFrame) -> None:
+    render_rank_cards(df, mode="mdrt")
 
 
 def page_dashboard():
@@ -1009,25 +1042,44 @@ def page_iris_sync():
 
 
 def page_monthly():
-    st.markdown("## 每月 FYC")
-    m = st.selectbox("月份", [f"2026-{i:02d}" for i in range(1, 13)], index=datetime.date.today().month - 1)
+    st.markdown("## 每月業績")
+    m = st.selectbox(
+        "月份",
+        [f"2026-{i:02d}" for i in range(1, 13)],
+        index=datetime.date.today().month - 1,
+    )
     df = get_data(month=m)
     if df.empty:
         st.info("本月暫無數據 — Leader 可用 Iris 同步匯入。")
         return
-    max_fyc = df["fyc"].max() if df["fyc"].max() > 0 else 50000
-    st.dataframe(
-        df[["avatar", "username", "fyc"]].sort_values(by="fyc", ascending=False),
-        column_config={
-            "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-            "username": "Agent",
-            "fyc": st.column_config.ProgressColumn(
-                "FYC", format="$%d", min_value=0, max_value=max_fyc
-            ),
-        },
-        use_container_width=True,
-        hide_index=True,
-    )
+
+    month_total = float(df["fyc"].sum())
+    leaders = df.sort_values(by="fyc", ascending=False)
+    top_name = str(leaders.iloc[0]["username"]) if not leaders.empty else "—"
+    top_fyc = float(leaders.iloc[0]["fyc"]) if not leaders.empty else 0.0
+
+    # Monthly summary strip
+    summary_html = f"""
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:transparent;}}
+  .box{{background:linear-gradient(145deg,#1C2430,#2C3A4E);color:#F8F4EA;border-radius:16px;padding:16px 16px 14px;}}
+  .k{{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#D4AF37;margin-bottom:6px;}}
+  .v{{font-family:Georgia,serif;font-size:30px;line-height:1.2;}}
+  .s{{margin-top:8px;color:rgba(248,244,234,.78);font-size:13px;}}
+</style></head><body>
+<div class="box">
+  <div class="k">{m} 團隊 FYC</div>
+  <div class="v">${month_total:,.0f}</div>
+  <div class="s">月冠：{ _esc(top_name) } · ${top_fyc:,.0f}</div>
+</div>
+</body></html>
+"""
+    components.html(summary_html, height=120, scrolling=False)
+
+    st.markdown("### 本月排行")
+    st.caption("按該月 FYC 排名 · 進度條對比本月最高（至少 $20,000 尺度）")
+    render_rank_cards(df, mode="monthly", month_label=m)
 
 
 def page_year_goal():
