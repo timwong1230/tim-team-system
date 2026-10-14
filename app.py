@@ -9,7 +9,7 @@ import urllib.parse
 import pandas as pd
 import streamlit as st
 
-from lib.constants import (
+from tt_core.constants import (
     ACTIVITY_TYPES,
     AMMO_CATEGORIES,
     MDRT_TARGET,
@@ -17,7 +17,7 @@ from lib.constants import (
     WEEKLY_MIN_ACTS,
     WEEKLY_PENALTY,
 )
-from lib.data import (
+from tt_core.data import (
     add_act,
     add_ammo,
     check_notifications,
@@ -38,13 +38,13 @@ from lib.data import (
     update_avt,
     update_pw,
 )
-from lib.db import (
+from tt_core.db import (
     connection_banner_state,
     init_db_gs,
     read_data,
     warm_cache,
 )
-from lib.iris import (
+from tt_core.iris import (
     apply_sync,
     auto_build_preview,
     build_sync_preview,
@@ -57,7 +57,7 @@ from lib.iris import (
     save_agent_mapping,
     unmapped_agents,
 )
-from lib.iris_drive import (
+from tt_core.iris_drive import (
     download_file,
     get_folder_id,
     has_new_inbox_file,
@@ -66,7 +66,7 @@ from lib.iris_drive import (
     save_folder_id,
     service_account_email,
 )
-from lib.styles import CUSTOM_CSS
+from tt_core.styles import CUSTOM_CSS
 
 st.set_page_config(
     page_title="TIM TEAM System",

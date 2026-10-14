@@ -14,8 +14,8 @@ import streamlit as st
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError, WorksheetNotFound
 
-from lib import cache_store
-from lib.constants import SHEET_SCHEMAS
+from tt_core import cache_store
+from tt_core.constants import SHEET_SCHEMAS
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",

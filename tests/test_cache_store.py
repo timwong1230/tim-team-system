@@ -16,7 +16,7 @@ def test_save_load_roundtrip(monkeypatch_dir=None):
         os.environ["TIM_TEAM_CACHE_DIR"] = tmp
         # Re-import with new env
         import importlib
-        import lib.cache_store as cs
+        import tt_core.cache_store as cs
 
         importlib.reload(cs)
 

@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def test_save_folder_id_parses_url():
-    import lib.iris_drive as d
+    import tt_core.iris_drive as d
 
     saved = {}
 

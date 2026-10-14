@@ -9,7 +9,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from lib.iris import detect_columns, load_iris_bytes, build_sync_preview  # noqa: E402
+from tt_core.iris import detect_columns, load_iris_bytes, build_sync_preview  # noqa: E402
 
 
 def test_numeric_name_becomes_code():

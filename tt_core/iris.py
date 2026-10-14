@@ -14,14 +14,14 @@ from typing import Any
 
 import pandas as pd
 
-from lib.constants import (
+from tt_core.constants import (
     IRIS_AGENT_ALIASES,
     IRIS_CODE_ALIASES,
     IRIS_FYC_ALIASES,
     IRIS_MONTH_ALIASES,
 )
-from lib.data import get_clean_users, upd_fyc
-from lib.db import read_data, run_query_gs
+from tt_core.data import get_clean_users, upd_fyc
+from tt_core.db import read_data, run_query_gs
 
 
 def _norm(s: Any) -> str:
@@ -216,7 +216,7 @@ def save_agent_mapping(iris_name: str, iris_code: str, username: str, notes: str
     }
     if not match.empty:
         # iris_agent_map has no id — delete+reinsert via row find on name
-        from lib.db import get_sheet, clear_cache
+        from tt_core.db import get_sheet, clear_cache
 
         ws = get_sheet("iris_agent_map")
         if ws:

@@ -10,8 +10,8 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-from lib.constants import INACTIVE_MEMBERS, MDRT_TARGET
-from lib.db import read_data, run_query_gs, update_user_field
+from tt_core.constants import INACTIVE_MEMBERS, MDRT_TARGET
+from tt_core.db import read_data, run_query_gs, update_user_field
 
 
 def get_clean_users() -> pd.DataFrame:
@@ -327,7 +327,7 @@ def get_activity_style(act_type: str):
 
 
 def get_note_template(act_type: str) -> str:
-    from lib.constants import TEMPLATE_NEWBIE, TEMPLATE_RECRUIT, TEMPLATE_SALES
+    from tt_core.constants import TEMPLATE_NEWBIE, TEMPLATE_RECRUIT, TEMPLATE_SALES
 
     if "招募" in act_type:
         return TEMPLATE_RECRUIT
