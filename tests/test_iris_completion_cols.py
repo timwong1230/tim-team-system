@@ -1,4 +1,4 @@
-"""Iris should use Monthly Completion / YTD Completion, never Submission."""
+"""Daily report should use MTD-COMPLETION / Monthly Completion, never Submission."""
 
 import io
 import sys
@@ -26,7 +26,6 @@ def test_prefers_monthly_completion_not_submission():
     df = load_iris_bytes(csv.encode(), "iris.csv")
     cols = detect_columns(df)
     assert cols["fyc"] == "Monthly Completion"
-    assert cols["ytd"] == "YTD Completion"
     assert cols["code"] == "Agent Code"
 
     preview = build_sync_preview(
@@ -36,12 +35,10 @@ def test_prefers_monthly_completion_not_submission():
         cols["fyc"],
         "Month",
         "2026-10",
-        col_ytd=cols["ytd"],
+        col_ytd=None,
     )
-    # amounts must be completion, not submission
     by_code = {str(r.iris_code): r for r in preview.itertuples()}
     assert by_code["30947"].amount == 52000
-    assert by_code["30947"].ytd_amount == 397457
     assert by_code["59164"].amount == 10000
     print("completion cols ok")
 
@@ -49,8 +46,7 @@ def test_prefers_monthly_completion_not_submission():
 def test_sample_template_detects():
     df = pd.read_csv(io.StringIO(sample_template_csv()))
     cols = detect_columns(df)
-    assert cols["fyc"] == "Monthly Completion"
-    assert cols["ytd"] == "YTD Completion"
+    assert cols["fyc"] == "MTD-COMPLETION"
     print("template ok")
 
 

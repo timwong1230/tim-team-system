@@ -1,9 +1,10 @@
-"""Google Drive inbox for FWD Iris exports.
+"""Google Drive inboxes for TIM TEAM reports.
 
-Most convenient workflow without Iris API:
-1. Export report from Iris (Excel/CSV)
-2. Save into a Drive folder shared with the app service account
-3. Leader taps「同步最新檔」— no manual upload each time
+Two report folders (recommended):
+1. Daily Production → monthly FYC (MTD-COMPLETION)
+2. MDRT Progress → Leaderboard temporary progress (Total Credit eligible for MDRT)
+
+Legacy single-folder key `iris_drive_folder_id` is treated as the Daily folder.
 """
 
 from __future__ import annotations
@@ -20,8 +21,18 @@ from googleapiclient.http import MediaIoBaseDownload
 from tt_core.db import SCOPES, _credentials_dict, read_data, run_query_gs
 
 SETTINGS_SHEET = "system_settings"
-IRIS_FOLDER_KEY = "iris_drive_folder_id"
-LAST_FILE_KEY = "iris_drive_last_file_id"
+
+# Daily production report inbox (MTD-COMPLETION → monthly FYC)
+DAILY_FOLDER_KEY = "iris_drive_folder_id"
+LAST_DAILY_FILE_KEY = "iris_drive_last_file_id"
+
+# MDRT progress report inbox (Total Credit eligible for MDRT)
+MDRT_FOLDER_KEY = "mdrt_drive_folder_id"
+LAST_MDRT_FILE_KEY = "mdrt_drive_last_file_id"
+
+# Back-compat aliases
+IRIS_FOLDER_KEY = DAILY_FOLDER_KEY
+LAST_FILE_KEY = LAST_DAILY_FILE_KEY
 
 
 @st.cache_resource(show_spinner=False)
@@ -51,7 +62,6 @@ def _settings_df():
 
 
 def get_setting(key: str, default: str = "") -> str:
-    # Secrets override (Streamlit Cloud)
     try:
         if "iris" in st.secrets and key.replace("iris_", "") in st.secrets["iris"]:
             short = key.replace("iris_", "")
@@ -96,22 +106,42 @@ def set_setting(key: str, value: str) -> bool:
     )
 
 
+def _normalize_folder_id(folder_id: str) -> str:
+    folder_id = (folder_id or "").strip()
+    if "/folders/" in folder_id:
+        folder_id = folder_id.split("/folders/")[1].split("?")[0].split("/")[0]
+    return folder_id
+
+
+def get_daily_folder_id() -> str:
+    return get_setting(DAILY_FOLDER_KEY, "").strip()
+
+
+def get_mdrt_folder_id() -> str:
+    return get_setting(MDRT_FOLDER_KEY, "").strip()
+
+
+def save_daily_folder_id(folder_id: str) -> bool:
+    return set_setting(DAILY_FOLDER_KEY, _normalize_folder_id(folder_id))
+
+
+def save_mdrt_folder_id(folder_id: str) -> bool:
+    return set_setting(MDRT_FOLDER_KEY, _normalize_folder_id(folder_id))
+
+
+# Back-compat
 def get_folder_id() -> str:
-    return get_setting(IRIS_FOLDER_KEY, "").strip()
+    return get_daily_folder_id()
 
 
 def save_folder_id(folder_id: str) -> bool:
-    # Accept full Drive URL or bare id
-    folder_id = folder_id.strip()
-    if "/folders/" in folder_id:
-        folder_id = folder_id.split("/folders/")[1].split("?")[0].split("/")[0]
-    return set_setting(IRIS_FOLDER_KEY, folder_id)
+    return save_daily_folder_id(folder_id)
 
 
 def list_inbox_files(folder_id: str | None = None, limit: int = 15) -> list[dict[str, Any]]:
-    """List recent Excel/CSV files in the Iris inbox folder."""
+    """List recent Excel/CSV files in a Drive folder."""
     service = get_drive_service()
-    folder_id = (folder_id or get_folder_id()).strip()
+    folder_id = (folder_id or get_daily_folder_id()).strip()
     if not service or not folder_id:
         return []
 
@@ -161,19 +191,39 @@ def newest_file(folder_id: str | None = None) -> dict[str, Any] | None:
     return files[0] if files else None
 
 
+def mark_daily_file_synced(file_id: str) -> None:
+    set_setting(LAST_DAILY_FILE_KEY, file_id)
+
+
+def mark_mdrt_file_synced(file_id: str) -> None:
+    set_setting(LAST_MDRT_FILE_KEY, file_id)
+
+
 def mark_file_synced(file_id: str) -> None:
-    set_setting(LAST_FILE_KEY, file_id)
+    """Back-compat: mark daily file synced."""
+    mark_daily_file_synced(file_id)
+
+
+def last_daily_synced_file_id() -> str:
+    return get_setting(LAST_DAILY_FILE_KEY, "")
+
+
+def last_mdrt_synced_file_id() -> str:
+    return get_setting(LAST_MDRT_FILE_KEY, "")
 
 
 def last_synced_file_id() -> str:
-    return get_setting(LAST_FILE_KEY, "")
+    return last_daily_synced_file_id()
 
 
 def has_new_inbox_file() -> dict[str, Any] | None:
-    """Return newest file if it differs from last synced file id."""
-    f = newest_file()
-    if not f:
-        return None
-    if f.get("id") and f["id"] != last_synced_file_id():
-        return f
+    """Return newest unread file from either inbox (prefers daily)."""
+    daily = newest_file(get_daily_folder_id() or None)
+    if daily and daily.get("id") and daily["id"] != last_daily_synced_file_id():
+        return {**daily, "report_kind": "daily"}
+    mdrt_folder = get_mdrt_folder_id()
+    if mdrt_folder:
+        mdrt = newest_file(mdrt_folder)
+        if mdrt and mdrt.get("id") and mdrt["id"] != last_mdrt_synced_file_id():
+            return {**mdrt, "report_kind": "mdrt"}
     return None
