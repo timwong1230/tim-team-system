@@ -46,7 +46,7 @@ def test_prefers_monthly_completion_not_submission():
 def test_sample_template_detects():
     df = pd.read_csv(io.StringIO(sample_template_csv()))
     cols = detect_columns(df)
-    assert cols["fyc"] == "MTD-COMPLETION"
+    assert cols["fyc"] == "MTD_Comp_FYC"
     print("template ok")
 
 

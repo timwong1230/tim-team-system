@@ -90,9 +90,15 @@ IRIS_CODE_ALIASES = [
     "producer code",
 ]
 
-# Prefer Monthly / MTD Completion — NEVER Monthly Submission
-# Daily production report: MTD-COMPLETION (FYC)
+# Prefer MTD Completion FYC — NEVER MTD Submission / MTD_Sub_FYC
+# Daily production report column: MTD_Comp_FYC (also MTD-COMPLETION)
 IRIS_MONTHLY_COMPLETION_ALIASES = [
+    "mtd comp fyc",
+    "mtd_comp_fyc",
+    "mtdcompfyc",
+    "mtd comp",
+    "mtd_comp",
+    "comp fyc",
     "mtd-completion",
     "mtd completion",
     "mtd_completion",
@@ -100,7 +106,6 @@ IRIS_MONTHLY_COMPLETION_ALIASES = [
     "mtd-completion fyc",
     "fyc mtd completion",
     "mtd fyc completion",
-    "mtd fyc",
     "monthly completion",
     "month completion",
     "completion monthly",
@@ -159,6 +164,12 @@ IRIS_FYC_ALIASES = [
 
 # Columns that must not be used as FYC / completion
 IRIS_FYC_REJECT_SUBSTR = [
+    "mtd sub fyc",
+    "mtd_sub_fyc",
+    "mtd sub",
+    "mtd_sub",
+    "sub fyc",
+    "sub_fyc",
     "submission",
     "submit",
     "submitted",
