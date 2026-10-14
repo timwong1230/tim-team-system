@@ -131,34 +131,75 @@ def set_mdrt_progress(username: str, amount: float) -> None:
     upd_fyc(username, _MDRT_PROGRESS_MONTH, float(amount), source="mdrt_progress")
 
 
-from tt_core.iris import (
-    apply_report_sync,
-    auto_build_preview,
-    build_mdrt_preview,
-    build_sync_preview,
-    detect_columns,
-    detect_report_kind,
-    get_agent_map,
-    load_iris_bytes,
-    load_iris_file,
-    preview_summary,
-    sample_mdrt_template_csv,
-    sample_template_csv,
-    save_agent_mapping,
-    unmapped_agents,
-)
-from tt_core.iris_drive import (
-    download_file,
-    get_daily_folder_id,
-    get_mdrt_folder_id,
-    has_new_inbox_file,
-    list_inbox_files,
-    mark_daily_file_synced,
-    mark_mdrt_file_synced,
-    save_daily_folder_id,
-    save_mdrt_folder_id,
-    service_account_email,
-)
+def _iris():
+    """Lazy-load iris module so login/home still boots if Cloud has a stale cache."""
+    import tt_core.iris as m
+
+    return m
+
+
+def _drive():
+    """Lazy-load Drive helpers with back-compat for older module shapes."""
+    import tt_core.iris_drive as m
+
+    return m
+
+
+def get_daily_folder_id() -> str:
+    d = _drive()
+    fn = getattr(d, "get_daily_folder_id", None) or getattr(d, "get_folder_id", None)
+    return str(fn() or "") if fn else ""
+
+
+def get_mdrt_folder_id() -> str:
+    d = _drive()
+    fn = getattr(d, "get_mdrt_folder_id", None)
+    return str(fn() or "") if fn else ""
+
+
+def save_daily_folder_id(folder_id: str) -> bool:
+    d = _drive()
+    fn = getattr(d, "save_daily_folder_id", None) or getattr(d, "save_folder_id", None)
+    return bool(fn(folder_id)) if fn else False
+
+
+def save_mdrt_folder_id(folder_id: str) -> bool:
+    d = _drive()
+    fn = getattr(d, "save_mdrt_folder_id", None)
+    return bool(fn(folder_id)) if fn else False
+
+
+def mark_daily_file_synced(file_id: str) -> None:
+    d = _drive()
+    fn = getattr(d, "mark_daily_file_synced", None) or getattr(d, "mark_file_synced", None)
+    if fn:
+        fn(file_id)
+
+
+def mark_mdrt_file_synced(file_id: str) -> None:
+    d = _drive()
+    fn = getattr(d, "mark_mdrt_file_synced", None) or getattr(d, "mark_file_synced", None)
+    if fn:
+        fn(file_id)
+
+
+def has_new_inbox_file():
+    d = _drive()
+    fn = getattr(d, "has_new_inbox_file", None)
+    return fn() if fn else None
+
+
+def list_inbox_files(folder_id: str | None = None, limit: int = 15):
+    return _drive().list_inbox_files(folder_id=folder_id, limit=limit)
+
+
+def download_file(file_id: str) -> bytes:
+    return _drive().download_file(file_id)
+
+
+def service_account_email():
+    return _drive().service_account_email()
+
 from tt_core.mobile import (
     inject_pwa_head,
     is_mobile,
@@ -347,16 +388,20 @@ if conn["level"] == "degraded":
         icon="📡",
     )
 
-if is_leader and (get_daily_folder_id() or get_mdrt_folder_id()):
-    new_iris = has_new_inbox_file()
-    if new_iris:
-        kind = new_iris.get("report_kind") or "daily"
-        kind_label = "MDRT Progress" if kind == "mdrt" else "Daily Production"
-        st.info(
-            f"Drive {kind_label} 有新檔：**{new_iris.get('name')}** — "
-            "去側欄「業績報告同步」撳對應「同步最新檔」。",
-            icon="📥",
-        )
+if is_leader:
+    try:
+        if get_daily_folder_id() or get_mdrt_folder_id():
+            new_iris = has_new_inbox_file()
+            if new_iris:
+                kind = new_iris.get("report_kind") or "daily"
+                kind_label = "MDRT Progress" if kind == "mdrt" else "Daily Production"
+                st.info(
+                    f"Drive {kind_label} 有新檔：**{new_iris.get('name')}** — "
+                    "去側欄「業績報告同步」撳對應「同步最新檔」。",
+                    icon="📥",
+                )
+    except Exception:
+        pass
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
@@ -911,8 +956,8 @@ def _render_drive_report_box(
 
     try:
         raw = download_file(latest["id"])
-        raw_df = load_iris_bytes(raw, latest.get("name", "report.xlsx"))
-        preview, detected = auto_build_preview(
+        raw_df = _iris().load_iris_bytes(raw, latest.get("name", "report.xlsx"))
+        preview, detected = _iris().auto_build_preview(
             raw_df,
             month_fallback,
             filename=latest.get("name", ""),
@@ -926,7 +971,7 @@ def _render_drive_report_box(
             f"金額欄={detected.get('mdrt_credit') or detected.get('fyc') or '—'} · "
             f"月份={detected.get('month') or month_fallback}"
         )
-        summary = preview_summary(preview)
+        summary = _iris().preview_summary(preview)
         st.write(
             f"團隊可同步：**{summary['matched_rows']}** 列 "
             f"（{summary['matched_users']} 人）· "
@@ -952,7 +997,7 @@ def _render_drive_report_box(
             if summary["matched_rows"] == 0:
                 st.error("未有團隊成員可同步。請先完成顧問對應。")
             else:
-                result = apply_report_sync(
+                result = _iris().apply_report_sync(
                     preview,
                     st.session_state["user"],
                     latest.get("name", "drive.xlsx"),
@@ -1077,7 +1122,7 @@ def page_iris_sync():
         )
 
         last_preview = st.session_state.get("_iris_last_preview")
-        pending = unmapped_agents(last_preview) if last_preview is not None else pd.DataFrame()
+        pending = _iris().unmapped_agents(last_preview) if last_preview is not None else pd.DataFrame()
         if not pending.empty:
             st.markdown("##### 從最新預覽快速對應")
             st.dataframe(
@@ -1099,9 +1144,9 @@ def page_iris_sync():
                 if st.form_submit_button("儲存呢個對應", type="primary"):
                     if pick and user_q:
                         if re.fullmatch(r"\d{4,}", str(pick)):
-                            save_agent_mapping("", str(pick), user_q, "quick-map")
+                            _iris().save_agent_mapping("", str(pick), user_q, "quick-map")
                         else:
-                            save_agent_mapping(str(pick), "", user_q, "quick-map")
+                            _iris().save_agent_mapping(str(pick), "", user_q, "quick-map")
                         st.toast(f"已對應 {pick} → {user_q}", icon="✅")
                         st.rerun()
 
@@ -1114,13 +1159,13 @@ def page_iris_sync():
             notes = st.text_input("備註（可選）")
             if st.form_submit_button("儲存對應", type="primary"):
                 if iris_name or iris_code:
-                    save_agent_mapping(iris_name, iris_code, username, notes)
+                    _iris().save_agent_mapping(iris_name, iris_code, username, notes)
                     st.toast("對應已儲存", icon="✅")
                     st.rerun()
                 else:
                     st.error("請至少填 Iris 姓名或編號")
 
-        amap = get_agent_map()
+        amap = _iris().get_agent_map()
         if amap.empty:
             st.info("未有對應。建議先「預覽最新檔」，再用上面快速對應你團隊。")
         else:
@@ -1143,14 +1188,14 @@ def page_iris_sync():
         with c_dl1:
             st.download_button(
                 "下載 Daily 範本 CSV",
-                data=sample_template_csv(),
+                data=_iris().sample_template_csv(),
                 file_name="daily_production_template.csv",
                 mime="text/csv",
             )
         with c_dl2:
             st.download_button(
                 "下載 MDRT 範本 CSV",
-                data=sample_mdrt_template_csv(),
+                data=_iris().sample_mdrt_template_csv(),
                 file_name="mdrt_progress_template.csv",
                 mime="text/csv",
             )
@@ -1169,7 +1214,7 @@ def page_iris_sync():
 
         if uploaded:
             try:
-                raw_df = load_iris_file(uploaded)
+                raw_df = _iris().load_iris_file(uploaded)
             except Exception as e:
                 st.error(f"無法讀取檔案：{e}")
                 return
@@ -1177,8 +1222,8 @@ def page_iris_sync():
             st.markdown("#### 原始預覽")
             st.dataframe(raw_df.head(20), use_container_width=True)
 
-            detected = detect_columns(raw_df)
-            auto_kind = detect_report_kind(raw_df, uploaded.name)
+            detected = _iris().detect_columns(raw_df)
+            auto_kind = _iris().detect_report_kind(raw_df, uploaded.name)
             if auto_kind in {"daily", "mdrt"} and auto_kind != report_kind_manual:
                 st.warning(
                     f"檔案欄位較似 **{auto_kind}** report；你揀咗 **{report_kind_manual}**。"
@@ -1211,7 +1256,7 @@ def page_iris_sync():
                 )
                 col_month = None
                 st.caption("會寫入 Leaderboard 2027 MDRT 暫時進度。Team SC 仍要人手入。")
-                preview = build_mdrt_preview(
+                preview = _iris().build_mdrt_preview(
                     raw_df,
                     None if col_agent == "（無）" else col_agent,
                     None if col_code == "（無）" else col_code,
@@ -1234,7 +1279,7 @@ def page_iris_sync():
                     else 0,
                 )
                 st.caption("會寫入每月業績 FYC。唔會改 Leaderboard 暫時進度／Team SC。")
-                preview = build_sync_preview(
+                preview = _iris().build_sync_preview(
                     raw_df,
                     None if col_agent == "（無）" else col_agent,
                     None if col_code == "（無）" else col_code,
@@ -1247,7 +1292,7 @@ def page_iris_sync():
 
             st.session_state["_iris_last_preview"] = preview
             st.markdown("#### 對應結果")
-            summary = preview_summary(preview)
+            summary = _iris().preview_summary(preview)
             st.write(
                 f"團隊可同步：**{summary['matched_rows']}** 列 · "
                 f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
@@ -1265,7 +1310,7 @@ def page_iris_sync():
                 st.caption("未對應 = 非團隊／未設定，同步時會自動略過。只需對應 TIM TEAM 成員。")
                 with st.expander("查看將被忽略嘅編號"):
                     st.dataframe(
-                        unmapped_agents(preview),
+                        _iris().unmapped_agents(preview),
                         use_container_width=True,
                         hide_index=True,
                     )
@@ -1275,7 +1320,7 @@ def page_iris_sync():
                 type="primary",
                 disabled=summary["matched_rows"] == 0,
             ):
-                result = apply_report_sync(
+                result = _iris().apply_report_sync(
                     preview,
                     st.session_state["user"],
                     uploaded.name,
