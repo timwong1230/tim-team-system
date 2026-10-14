@@ -31,9 +31,11 @@ from tt_core.data import (
     get_note_template,
     get_q1_data,
     get_weekly_data,
+    get_team_sc,
     last_iris_sync,
     login,
     proc_img,
+    set_team_sc,
     upd_fyc,
     upd_rec,
     update_avt,
@@ -298,7 +300,7 @@ def page_home():
                 snap["mdrt_pct"],
             ),
             ("活動分數", f"{snap['score']}", "全年累積", None),
-            ("招募", f"{snap['recruit']}", f"Team FYC ${snap['team_fyc']:,.0f}", None),
+            ("招募", f"{snap['recruit']}", f"Team SC ${get_team_sc(snap['team_fyc']):,.0f}", None),
         ]
         if MOBILE:
             for col, card in zip(row1, cards[:2]):
@@ -341,7 +343,8 @@ def page_home():
         # Admin / Leader home: 2 metrics on phone, 3 on desktop
         if MOBILE:
             c1, c2 = st.columns(2)
-            c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
+            calc = float(team["fyc"].sum()) if not team.empty else 0.0
+            c1.metric("Team SC", f"${get_team_sc(calc):,.0f}")
             c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
             st.metric(
                 "Activities",
@@ -349,7 +352,8 @@ def page_home():
             )
         else:
             c1, c2, c3 = st.columns(3)
-            c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
+            calc = float(team["fyc"].sum()) if not team.empty else 0.0
+            c1.metric("Team SC", f"${get_team_sc(calc):,.0f}")
             c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
             c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
 
@@ -494,7 +498,7 @@ def _avatar_url(row) -> str:
     return f"https://ui-avatars.com/api/?name={urllib.parse.quote(name)}&background=d4af37&color=fff&size=128"
 
 
-def render_dashboard_kpis(team_fyc: float, team_rec: int, team_act: int) -> None:
+def render_dashboard_kpis(team_sc: float, team_rec: int, team_act: int) -> None:
     """KPI tiles via components.html (Streamlit markdown drops custom CSS)."""
     html = f"""
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -511,7 +515,7 @@ def render_dashboard_kpis(team_fyc: float, team_rec: int, team_act: int) -> None
         line-height:1.25; padding-bottom:2px; word-break:break-word; }}
 </style></head><body>
 <div class="wrap">
-  <div class="kpi"><div class="k">Team FYC</div><div class="v">${team_fyc:,.0f}</div></div>
+  <div class="kpi"><div class="k">Team SC</div><div class="v">${team_sc:,.0f}</div></div>
   <div class="kpi"><div class="k">Recruits</div><div class="v">{team_rec}</div></div>
   <div class="kpi"><div class="k">Activities</div><div class="v">{team_act}</div></div>
 </div>
@@ -680,10 +684,32 @@ def page_dashboard():
                 st.link_button("Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
 
     df = get_data("Yearly")
-    team_fyc = float(df["fyc"].sum()) if not df.empty else 0.0
+    calc_ytd = float(df["fyc"].sum()) if not df.empty else 0.0
+    team_sc = get_team_sc(calc_ytd)
     team_rec = int(df["recruit"].sum()) if not df.empty else 0
     team_act = int(df["Total_Score"].sum()) if not df.empty else 0
-    render_dashboard_kpis(team_fyc, team_rec, team_act)
+    render_dashboard_kpis(team_sc, team_rec, team_act)
+
+    if is_leader:
+        with st.expander("編輯 Team SC（Year to date）", expanded=False):
+            st.caption(
+                f"Dashboard 顯示嘅 Team SC 以呢度輸入為準。"
+                f"系統計算出嚟嘅成員 YTD 加總（參考）：${calc_ytd:,.0f}"
+            )
+            sc_in = st.number_input(
+                "Team SC（YTD）",
+                min_value=0.0,
+                value=float(team_sc),
+                step=1000.0,
+                format="%.0f",
+                key="team_sc_input",
+            )
+            if st.button("儲存 Team SC", type="primary", use_container_width=True):
+                if set_team_sc(float(sc_in)):
+                    st.toast(f"Team SC 已更新為 ${float(sc_in):,.0f}", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("儲存失敗，請稍後再試")
 
     st.markdown("### Leaderboard")
     st.caption("按全年 FYC 排名 · MDRT 目標 $512,800")
@@ -693,8 +719,8 @@ def page_dashboard():
         render_leaderboard(df)
 
     if is_leader:
-        with st.expander("手動調整業績 / 招募（備用）"):
-            st.caption("日常請用「Iris 業績同步」。呢度只係後備人手修正。")
+        with st.expander("手動調整個人業績 / 招募（備用）"):
+            st.caption("日常請用「Iris 業績同步」。呢度只係後備人手修正個人數。")
             c_a, c_b, c_c = st.columns(3)
             user_list = df["username"].unique().tolist() if not df.empty else []
             tgt = c_a.selectbox("User", user_list)
@@ -721,7 +747,8 @@ def page_iris_sync():
         <div class="iris-banner">
           <strong>業績欄位規則</strong><br>
           當月 FYC = <b>Monthly Completion</b>（唔用 Monthly Submission）<br>
-          Team FYC / MDRT = 各人 <b>YTD Completion</b> 總和<br>
+          個人 MDRT = 各人 <b>YTD Completion</b><br>
+          <b>Team SC</b> 喺 Dashboard 由 Leader 人手輸入（Year to date）<br>
           只需對應 TIM TEAM 成員；其他同事會自動忽略。
         </div>
         """,
@@ -821,7 +848,7 @@ def page_iris_sync():
                         )
                         st.caption(
                             "當月 FYC 用 Monthly Completion（唔用 Submission）；"
-                            "Team FYC / MDRT 用各人 YTD Completion 總和。"
+                            "個人 MDRT 用 YTD Completion；Team SC 請喺 Dashboard 人手輸入。"
                         )
                         summary = preview_summary(preview)
                         st.write(
@@ -998,7 +1025,7 @@ def page_iris_sync():
                 (cols.index(detected["ytd"]) + 1) if detected.get("ytd") in cols else 0
             )
             col_ytd = c4.selectbox(
-                "YTD Completion 欄（Team FYC）",
+                "YTD Completion 欄（個人年度）",
                 ytd_opts,
                 index=ytd_default,
             )
@@ -1008,7 +1035,7 @@ def page_iris_sync():
                 index=(cols.index(detected["month"]) + 1) if detected["month"] in cols else 0,
             )
             st.caption(
-                "當月用 Monthly Completion；Team FYC / MDRT 用 YTD Completion 總和。"
+                "當月用 Monthly Completion；個人年度用 YTD Completion；Team SC 喺 Dashboard 輸入。"
             )
 
             preview = build_sync_preview(
