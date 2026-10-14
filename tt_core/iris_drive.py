@@ -17,7 +17,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-from lib.db import SCOPES, _credentials_dict, read_data, run_query_gs
+from tt_core.db import SCOPES, _credentials_dict, read_data, run_query_gs
 
 SETTINGS_SHEET = "system_settings"
 IRIS_FOLDER_KEY = "iris_drive_folder_id"
