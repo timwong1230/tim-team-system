@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 import urllib.parse
 
 import pandas as pd
@@ -51,8 +52,10 @@ from lib.iris import (
     get_agent_map,
     load_iris_bytes,
     load_iris_file,
+    preview_summary,
     sample_template_csv,
     save_agent_mapping,
+    unmapped_agents,
 )
 from lib.iris_drive import (
     download_file,
@@ -467,10 +470,10 @@ def page_iris_sync():
     st.markdown(
         """
         <div class="iris-banner">
-          <strong>最方便做法（推薦）</strong><br>
-          Iris 本身冇公開 API，唔可以穩定「自動登入讀數」。<br>
-          最省事流程：<b>Iris 匯出 Excel → 丟入指定 Google Drive 資料夾 → 撳「同步最新檔」</b>。<br>
-          之後唔使每次喺網站手動上傳。
+          <strong>點用先啱</strong><br>
+          Iris 團隊報表通常會連其他同事一齊出嚟 — <b>唔使全部入系統</b>。<br>
+          只需對應 <b>TIM TEAM 成員</b>；其他編號會自動忽略，唔會寫入業績。<br>
+          日常：Iris 匯出 → 丟 Drive → 撳「同步最新檔」。
         </div>
         """,
         unsafe_allow_html=True,
@@ -559,23 +562,46 @@ def page_iris_sync():
                         raw = download_file(latest["id"])
                         raw_df = load_iris_bytes(raw, latest.get("name", "iris.xlsx"))
                         preview, detected = auto_build_preview(raw_df, month_drive)
+                        st.session_state["_iris_last_preview"] = preview
                         st.caption(
                             f"自動欄位：姓名={detected.get('agent') or '—'} · "
                             f"編號={detected.get('code') or '—'} · "
                             f"FYC={detected.get('fyc')} · "
                             f"月份={detected.get('month') or month_drive}"
                         )
-                        matched_n = int(preview["matched"].sum()) if not preview.empty else 0
+                        summary = preview_summary(preview)
                         st.write(
-                            f"可同步：**{matched_n}** 列 · "
-                            f"未對應：**{len(preview) - matched_n}** 列"
+                            f"團隊可同步：**{summary['matched_rows']}** 列 "
+                            f"（{summary['matched_users']} 人）· "
+                            f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
                         )
-                        st.dataframe(preview, use_container_width=True, hide_index=True)
-                        if (~preview["matched"]).any():
-                            st.warning("有未對應顧問 — 請先去「② 顧問對應」補返，再開同步。")
+                        show_all = st.checkbox("顯示全部（含非團隊）", value=False, key="drv_show_all")
+                        matched_view = preview[preview["matched"]]
+                        view = preview if show_all else matched_view
+                        if matched_view.empty:
+                            st.info("而家未對應到任何團隊成員。請去「② 顧問對應」只加你團隊。")
+                        st.dataframe(
+                            view if not view.empty else preview.head(20),
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "amount": st.column_config.NumberColumn("FYC", format="$%.0f"),
+                                "matched": "團隊成員",
+                            },
+                        )
+                        if summary["matched_rows"] == 0:
+                            st.warning(
+                                "未對應到 TIM TEAM 成員。請去「② 顧問對應」，"
+                                "用 Iris 編號（例如 30947）對應你團隊 Username。"
+                                "其他同事唔使加。"
+                            )
+                        elif summary["unmapped_agents"] > 0:
+                            st.caption(
+                                f"有 {summary['unmapped_agents']} 個非團隊編號會自動略過 — 正常。"
+                            )
                         if do_sync:
-                            if matched_n == 0:
-                                st.error("冇可同步列，請先完成顧問對應。")
+                            if summary["matched_rows"] == 0:
+                                st.error("未有團隊成員可同步。請先完成顧問對應。")
                             else:
                                 result = apply_sync(
                                     preview,
@@ -584,9 +610,10 @@ def page_iris_sync():
                                 )
                                 mark_file_synced(latest["id"])
                                 st.success(
-                                    f"已同步 Drive 檔「{latest.get('name')}」： "
+                                    f"已同步「{latest.get('name')}」： "
                                     f"更新 {result['updated']} 筆 · "
-                                    f"{result['matched_users']} 位成員"
+                                    f"{result['matched_users']} 位團隊成員 "
+                                    f"（另忽略 {result['unmatched']} 列非團隊）"
                                 )
                                 st.balloons()
                     except Exception as e:
@@ -598,11 +625,46 @@ def page_iris_sync():
     )
 
     with tab_map:
-        st.markdown("#### 將 Iris 顧問對應到系統帳號")
+        st.markdown("#### 只對應你團隊（其他 Iris 同事可忽略）")
+        st.caption(
+            "你張報表入面嘅數字（如 30947）多數係 Iris 顧問編號。"
+            "只需為 TIM TEAM 成員建立對應；其餘編號唔使理。"
+        )
+
+        last_preview = st.session_state.get("_iris_last_preview")
+        pending = unmapped_agents(last_preview) if last_preview is not None else pd.DataFrame()
+        if not pending.empty:
+            st.markdown("##### 從最新預覽快速對應")
+            st.dataframe(
+                pending.head(30),
+                use_container_width=True,
+                hide_index=True,
+                column_config={"amount": st.column_config.NumberColumn("FYC", format="$%.0f")},
+            )
+            with st.form("quick_map_form", clear_on_submit=True):
+                options = []
+                for _, r in pending.iterrows():
+                    code = str(r.get("iris_code") or "").strip()
+                    name = str(r.get("iris_name") or "").strip()
+                    label = code or name
+                    if label:
+                        options.append(label)
+                pick = st.selectbox("揀一個 Iris 編號／姓名", options)
+                user_q = st.selectbox("對應到系統 Username", member_names, key="quick_map_user")
+                if st.form_submit_button("儲存呢個對應", type="primary"):
+                    if pick and user_q:
+                        if re.fullmatch(r"\d{4,}", str(pick)):
+                            save_agent_mapping("", str(pick), user_q, "quick-map")
+                        else:
+                            save_agent_mapping(str(pick), "", user_q, "quick-map")
+                        st.toast(f"已對應 {pick} → {user_q}", icon="✅")
+                        st.rerun()
+
+        st.markdown("##### 手動新增對應")
         with st.form("map_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
-            iris_name = c1.text_input("Iris 姓名", placeholder="報表上嘅 Agent Name")
-            iris_code = c2.text_input("Iris 編號（可選）", placeholder="Agent Code")
+            iris_name = c1.text_input("Iris 姓名（可留空）", placeholder="報表有姓名先填")
+            iris_code = c2.text_input("Iris 編號", placeholder="例如 30947")
             username = c3.selectbox("系統 Username", member_names)
             notes = st.text_input("備註（可選）")
             if st.form_submit_button("儲存對應", type="primary"):
@@ -615,8 +677,9 @@ def page_iris_sync():
 
         amap = get_agent_map()
         if amap.empty:
-            st.info("未有對應。第一次同步前建議先加齊團隊成員。")
+            st.info("未有對應。建議先「預覽最新檔」，再用上面快速對應你團隊。")
         else:
+            st.markdown("##### 已儲存對應")
             st.dataframe(amap, use_container_width=True, hide_index=True)
 
     with tab_sync:
@@ -677,32 +740,42 @@ def page_iris_sync():
                 None if col_month == "（用上方選擇）" else col_month,
                 month_choice or default_month,
             )
+            st.session_state["_iris_last_preview"] = preview
             st.markdown("#### 對應結果")
-            matched_n = int(preview["matched"].sum()) if not preview.empty else 0
-            st.write(f"可同步：**{matched_n}** 列 · 未對應：**{len(preview) - matched_n}** 列")
+            summary = preview_summary(preview)
+            st.write(
+                f"團隊可同步：**{summary['matched_rows']}** 列 · "
+                f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
+            )
             st.dataframe(
                 preview,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "amount": st.column_config.NumberColumn("FYC", format="$%.0f"),
-                    "matched": "已對應",
+                    "matched": "團隊成員",
                 },
             )
-            unmatched = preview[~preview["matched"]] if not preview.empty else preview
-            if not unmatched.empty:
-                st.warning("以下 Iris 顧問未對應到系統帳號 — 請返去「顧問對應」補返：")
-                st.dataframe(
-                    unmatched[["iris_name", "iris_code", "amount", "month"]],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            if summary["unmapped_agents"] > 0:
+                st.caption("未對應 = 非團隊／未設定，同步時會自動略過。只需對應 TIM TEAM 成員。")
+                with st.expander("查看將被忽略嘅編號"):
+                    st.dataframe(
+                        unmapped_agents(preview),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
-            if st.button("確認同步到系統", type="primary", disabled=matched_n == 0):
+            if st.button(
+                "確認同步到系統",
+                type="primary",
+                disabled=summary["matched_rows"] == 0,
+            ):
                 result = apply_sync(preview, st.session_state["user"], uploaded.name)
                 st.success(
                     f"同步完成：更新 {result['updated']} 筆 · "
-                    f"涵蓋 {result['matched_users']} 位成員 · 月份 {', '.join(result['months']) or '—'}"
+                    f"涵蓋 {result['matched_users']} 位團隊成員 · "
+                    f"忽略 {result['unmatched']} 列非團隊 · "
+                    f"月份 {', '.join(result['months']) or '—'}"
                 )
                 st.balloons()
                 st.rerun()
