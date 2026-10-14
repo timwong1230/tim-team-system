@@ -66,14 +66,23 @@ from tt_core.iris_drive import (
     save_folder_id,
     service_account_email,
 )
+from tt_core.mobile import (
+    inject_pwa_head,
+    is_mobile,
+    mobile_top_nav,
+    render_install_guide,
+)
 from tt_core.styles import CUSTOM_CSS
 
+MOBILE = is_mobile()
+
 st.set_page_config(
-    page_title="TIM TEAM System",
+    page_title="TIM TEAM",
     page_icon="🦁",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered" if MOBILE else "wide",
+    initial_sidebar_state="collapsed" if MOBILE else "expanded",
 )
+inject_pwa_head()
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 init_db_gs()  # cached once per server process — no longer hits Sheets every rerun
 
@@ -83,23 +92,21 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    c1, c2, c3 = st.columns([1, 1.4, 1])
-    with c2:
-        st.markdown("<br>", unsafe_allow_html=True)
+    if MOBILE:
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         st.markdown(
             """
             <div class="login-panel">
-              <div class="tt-kicker" style="color:#C5A028 !important;">TIM TEAM SYSTEM</div>
-              <h1 style="margin:0 0 6px 0;">活動量 · 業績 · 一站管理</h1>
-              <p style="color:#6B7280; margin:0 0 18px 0;">打卡更快 · 戰報更清晰 · Iris 業績自動同步</p>
+              <div class="tt-kicker" style="color:#C5A028 !important;">TIM TEAM APP</div>
+              <h1 style="margin:0 0 6px 0;">活動量 · 業績</h1>
+              <p style="color:#6B7280; margin:0 0 8px 0;">專為 iPhone / iPad 優化 · 加到主畫面更快</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        st.markdown("<br>", unsafe_allow_html=True)
         u = st.text_input("Username", placeholder="e.g. Tim")
         p = st.text_input("Password", type="password", placeholder="••••••")
-        if st.button("登入系統", use_container_width=True):
+        if st.button("登入", use_container_width=True):
             d = login(u, p)
             if d:
                 st.session_state.update(
@@ -114,7 +121,51 @@ if not st.session_state["logged_in"]:
                 st.rerun()
             else:
                 st.toast("登入失敗，請檢查帳密", icon="❌")
-        st.caption("2026 MDRT 目標：$512,800  ·  M + 2 = 百萬年薪之路")
+        st.markdown(
+            """
+            <div class="tt-install-card">
+              <strong>想變主畫面 App？</strong><br>
+              Safari 打開 → 分享 □↑ →「加到主畫面」
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        render_install_guide(compact=True)
+        st.caption("MDRT 目標：$512,800")
+    else:
+        c1, c2, c3 = st.columns([1, 1.4, 1])
+        with c2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div class="login-panel">
+                  <div class="tt-kicker" style="color:#C5A028 !important;">TIM TEAM SYSTEM</div>
+                  <h1 style="margin:0 0 6px 0;">活動量 · 業績 · 一站管理</h1>
+                  <p style="color:#6B7280; margin:0 0 18px 0;">打卡更快 · 戰報更清晰 · Iris 業績自動同步</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+            u = st.text_input("Username", placeholder="e.g. Tim")
+            p = st.text_input("Password", type="password", placeholder="••••••")
+            if st.button("登入系統", use_container_width=True):
+                d = login(u, p)
+                if d:
+                    st.session_state.update(
+                        {
+                            "logged_in": True,
+                            "user": d[0][0],
+                            "role": d[0][2],
+                            "avatar": d[0][5],
+                        }
+                    )
+                    st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
+                    st.rerun()
+                else:
+                    st.toast("登入失敗，請檢查帳密", icon="❌")
+            render_install_guide(compact=True)
+            st.caption("2026 MDRT 目標：$512,800  ·  M + 2 = 百萬年薪之路")
     st.stop()
 
 
@@ -128,12 +179,26 @@ check_notifications(st.session_state["user"])
 is_leader = st.session_state["role"] == "Leader"
 conn = connection_banner_state()
 
+menu_items = [
+    "🏠 我的主頁",
+    "📝 打卡 Check-in",
+    "📊 團隊 Dashboard",
+    "📅 每月業績",
+    "🏆 年度挑戰",
+    "⚖️ 每週挑戰",
+    "🤝 招募龍虎榜",
+    "📚 彈藥庫",
+]
+if is_leader:
+    menu_items.insert(4, "🔄 Iris 業績同步")
+menu_items.append("👤 設定")
+
 with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     c_avt, c_txt = st.columns([1, 2])
     with c_avt:
         if st.session_state.get("avatar"):
-            st.image(st.session_state["avatar"], width=72)
+            st.image(st.session_state["avatar"], width=64 if MOBILE else 72)
     with c_txt:
         st.markdown(
             f"<h3 style='margin:0'>{st.session_state['user']}</h3>",
@@ -161,25 +226,26 @@ with st.sidebar:
         st.caption("Iris 尚未同步業績")
 
     st.divider()
-    menu_items = [
-        "🏠 我的主頁",
-        "📝 打卡 Check-in",
-        "📊 團隊 Dashboard",
-        "📅 每月業績",
-        "🏆 年度挑戰",
-        "⚖️ 每週挑戰",
-        "🤝 招募龍虎榜",
-        "📚 彈藥庫",
-    ]
-    if is_leader:
-        menu_items.insert(4, "🔄 Iris 業績同步")
-    menu_items.append("👤 設定")
+    # Desktop: full radio menu in sidebar. Mobile: short list + top selectbox.
+    if MOBILE:
+        st.caption("手機可用上方選單切換功能；側欄放設定同登出。")
+        render_install_guide(compact=True)
+    else:
+        menu_sidebar = st.radio("MAIN MENU", menu_items, label_visibility="collapsed")
+        st.session_state["_menu_choice"] = menu_sidebar
 
-    menu = st.radio("MAIN MENU", menu_items, label_visibility="collapsed")
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("登出", use_container_width=True, type="secondary"):
         st.session_state["logged_in"] = False
         st.rerun()
+
+if MOBILE:
+    st.markdown('<div class="tt-mobile-nav">', unsafe_allow_html=True)
+    menu = mobile_top_nav(menu_items, st.session_state.get("_menu_choice"))
+    st.session_state["_menu_choice"] = menu
+    st.markdown("</div>", unsafe_allow_html=True)
+else:
+    menu = st.session_state.get("_menu_choice", menu_items[0])
 
 if conn["level"] == "degraded":
     st.warning(
@@ -207,67 +273,100 @@ def page_home():
     st.markdown(
         f"""
         <div class="tt-hero">
-          <div class="tt-kicker">TIM TEAM SYSTEM</div>
+          <div class="tt-kicker">{"TIM TEAM APP" if MOBILE else "TIM TEAM SYSTEM"}</div>
           <h1 style="margin:0;">你好，{user}</h1>
-          <p class="tt-sub">今日目標：完成活動打卡 · 睇清楚自己同團隊進度</p>
+          <p class="tt-sub">{"一撳打卡 · 即睇進度" if MOBILE else "今日目標：完成活動打卡 · 睇清楚自己同團隊進度"}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     if snap:
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(
-                f"""<div class="tt-card"><div class="tt-label">本週活動</div>
-                <div class="tt-value">{snap['wk_count']} / {WEEKLY_MIN_ACTS}</div>
-                <div class="tt-hint">分數 {snap['wk_score']} · {snap['wk_start']} 起</div></div>""",
-                unsafe_allow_html=True,
-            )
-        with c2:
-            st.markdown(
-                f"""<div class="tt-card"><div class="tt-label">我的 FYC</div>
-                <div class="tt-value">${snap['fyc']:,.0f}</div>
-                <div class="tt-hint">MDRT {snap['mdrt_pct']:.1f}%</div>
-                <div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{snap['mdrt_pct']}%"></div></div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-        with c3:
-            st.markdown(
-                f"""<div class="tt-card"><div class="tt-label">活動分數</div>
-                <div class="tt-value">{snap['score']}</div>
-                <div class="tt-hint">全年累積</div></div>""",
-                unsafe_allow_html=True,
-            )
-        with c4:
-            st.markdown(
-                f"""<div class="tt-card"><div class="tt-label">招募</div>
-                <div class="tt-value">{snap['recruit']}</div>
-                <div class="tt-hint">Team FYC ${snap['team_fyc']:,.0f}</div></div>""",
-                unsafe_allow_html=True,
-            )
+        row1 = st.columns(2) if MOBILE else st.columns(4)
+        cards = [
+            (
+                "本週活動",
+                f"{snap['wk_count']} / {WEEKLY_MIN_ACTS}",
+                f"分數 {snap['wk_score']} · {snap['wk_start']} 起",
+                None,
+            ),
+            (
+                "我的 FYC",
+                f"${snap['fyc']:,.0f}",
+                f"MDRT {snap['mdrt_pct']:.1f}%",
+                snap["mdrt_pct"],
+            ),
+            ("活動分數", f"{snap['score']}", "全年累積", None),
+            ("招募", f"{snap['recruit']}", f"Team FYC ${snap['team_fyc']:,.0f}", None),
+        ]
+        if MOBILE:
+            for col, card in zip(row1, cards[:2]):
+                label, value, hint, pct = card
+                bar = (
+                    f'<div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{pct}%"></div></div>'
+                    if pct is not None
+                    else ""
+                )
+                col.markdown(
+                    f'<div class="tt-card"><div class="tt-label">{label}</div>'
+                    f'<div class="tt-value">{value}</div>'
+                    f'<div class="tt-hint">{hint}</div>{bar}</div>',
+                    unsafe_allow_html=True,
+                )
+            row2 = st.columns(2)
+            for col, card in zip(row2, cards[2:]):
+                label, value, hint, pct = card
+                col.markdown(
+                    f'<div class="tt-card"><div class="tt-label">{label}</div>'
+                    f'<div class="tt-value">{value}</div>'
+                    f'<div class="tt-hint">{hint}</div></div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            for col, card in zip(row1, cards):
+                label, value, hint, pct = card
+                bar = (
+                    f'<div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{pct}%"></div></div>'
+                    if pct is not None
+                    else ""
+                )
+                col.markdown(
+                    f'<div class="tt-card"><div class="tt-label">{label}</div>'
+                    f'<div class="tt-value">{value}</div>'
+                    f'<div class="tt-hint">{hint}</div>{bar}</div>',
+                    unsafe_allow_html=True,
+                )
     else:
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = st.columns(2 if MOBILE else 3)
         c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
         c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
-        c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
+        if not MOBILE:
+            c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
 
     st.markdown("### 快速打卡")
 
     @st.fragment
     def _quick_checkin():
         with st.form("quick_checkin", clear_on_submit=True):
-            c1, c2 = st.columns([1, 2])
-            with c1:
+            if MOBILE:
                 d = st.date_input("日期", value=datetime.date.today())
                 t = st.selectbox("活動種類", ACTIVITY_TYPES)
-            with c2:
                 n = st.text_area(
-                    "重點備註（可簡短）",
-                    height=120,
+                    "重點備註",
+                    height=100,
                     placeholder="客戶名 / 下一步 / 結果…",
                 )
+            else:
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    d = st.date_input("日期", value=datetime.date.today())
+                    t = st.selectbox("活動種類", ACTIVITY_TYPES)
+                with c2:
+                    n = st.text_area(
+                        "重點備註（可簡短）",
+                        height=120,
+                        placeholder="客戶名 / 下一步 / 結果…",
+                    )
             if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
                 if n.strip():
                     add_act(user, d, t, n.strip())
@@ -1050,27 +1149,49 @@ def page_ammo():
 
 def page_profile():
     st.markdown("## 個人設定")
-    col1, col2 = st.columns([1, 2])
-    with col1:
+    if MOBILE:
         if st.session_state.get("avatar"):
-            st.image(st.session_state["avatar"], width=150)
-    with col2:
+            st.image(st.session_state["avatar"], width=96)
         st.markdown(f"### {st.session_state['user']}")
-        st.markdown(f"**Role:** {st.session_state['role']}")
+        st.caption(st.session_state["role"])
+        render_install_guide(compact=False)
         with st.expander("更改密碼"):
             new_pw = st.text_input("新密碼", type="password")
-            if st.button("更新密碼"):
+            if st.button("更新密碼", use_container_width=True):
                 update_pw(st.session_state["user"], new_pw)
                 st.toast("Password Updated!", icon="✅")
         with st.expander("更改頭像"):
             uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
-            if uploaded_file is not None and st.button("Upload"):
+            if uploaded_file is not None and st.button("Upload", use_container_width=True):
                 img_str = proc_img(uploaded_file)
                 if img_str:
                     update_avt(st.session_state["user"], img_str)
                     st.session_state["avatar"] = img_str
                     st.toast("Avatar Updated!", icon="✅")
                     st.rerun()
+    else:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.session_state.get("avatar"):
+                st.image(st.session_state["avatar"], width=150)
+        with col2:
+            st.markdown(f"### {st.session_state['user']}")
+            st.markdown(f"**Role:** {st.session_state['role']}")
+            render_install_guide(compact=True)
+            with st.expander("更改密碼"):
+                new_pw = st.text_input("新密碼", type="password")
+                if st.button("更新密碼"):
+                    update_pw(st.session_state["user"], new_pw)
+                    st.toast("Password Updated!", icon="✅")
+            with st.expander("更改頭像"):
+                uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
+                if uploaded_file is not None and st.button("Upload"):
+                    img_str = proc_img(uploaded_file)
+                    if img_str:
+                        update_avt(st.session_state["user"], img_str)
+                        st.session_state["avatar"] = img_str
+                        st.toast("Avatar Updated!", icon="✅")
+                        st.rerun()
 
 
 # ─── Router ──────────────────────────────────────────────────────────────────
