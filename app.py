@@ -46,13 +46,63 @@ from tt_core.data import (
     update_avt,
     update_pw,
 )
-from tt_core.team_sc import get_team_sc, set_team_sc
 from tt_core.db import (
     connection_banner_state,
     init_db_gs,
     read_data,
+    run_query_gs,
     warm_cache,
 )
+
+
+def get_team_sc(fallback: float = 0.0) -> float:
+    """Leader Team SC from system_settings — no extra module imports at call time."""
+    try:
+        df = read_data("system_settings")
+        if df is None or df.empty or "key" not in df.columns:
+            return float(fallback or 0)
+        hit = df[df["key"].astype(str) == "team_sc"]
+        if hit.empty:
+            return float(fallback or 0)
+        raw = str(hit.iloc[0].get("value", "") or "").strip()
+        if not raw:
+            return float(fallback or 0)
+        return float(
+            raw.replace(",", "").replace("$", "").replace("HK$", "").replace(" ", "")
+        )
+    except Exception:
+        return float(fallback or 0)
+
+
+def set_team_sc(amount: float) -> bool:
+    try:
+        value = str(float(amount))
+        now = str(datetime.datetime.now())
+        df = read_data("system_settings")
+        if df is not None and not df.empty and "key" in df.columns:
+            hit = df[df["key"].astype(str) == "team_sc"]
+            if (
+                not hit.empty
+                and "id" in df.columns
+                and str(hit.iloc[0].get("id", "")).strip()
+            ):
+                return bool(
+                    run_query_gs(
+                        "UPDATE",
+                        "system_settings",
+                        {"value": value, "updated_at": now},
+                        row_id=hit.iloc[0]["id"],
+                    )
+                )
+        return bool(
+            run_query_gs(
+                "INSERT",
+                "system_settings",
+                {"key": "team_sc", "value": value, "updated_at": now},
+            )
+        )
+    except Exception:
+        return False
 from tt_core.iris import (
     apply_sync,
     auto_build_preview,
@@ -347,10 +397,11 @@ def page_home():
                 )
     else:
         # Admin / Leader home: 2 metrics on phone, 3 on desktop
+        calc = float(team["fyc"].sum()) if not team.empty else 0.0
+        team_sc_home = get_team_sc(calc)
         if MOBILE:
             c1, c2 = st.columns(2)
-            calc = float(team["fyc"].sum()) if not team.empty else 0.0
-            c1.metric("Team SC", f"${get_team_sc(calc):,.0f}")
+            c1.metric("Team SC", f"${team_sc_home:,.0f}")
             c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
             st.metric(
                 "Activities",
@@ -358,8 +409,7 @@ def page_home():
             )
         else:
             c1, c2, c3 = st.columns(3)
-            calc = float(team["fyc"].sum()) if not team.empty else 0.0
-            c1.metric("Team SC", f"${get_team_sc(calc):,.0f}")
+            c1.metric("Team SC", f"${team_sc_home:,.0f}")
             c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
             c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
 
