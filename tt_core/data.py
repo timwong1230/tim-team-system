@@ -136,6 +136,8 @@ def get_all_act() -> pd.DataFrame:
 
 
 def get_data(month=None) -> pd.DataFrame:
+    from tt_core.constants import IRIS_YTD_MONTH_KEY
+
     base_columns = ["username", "team", "recruit", "avatar", "fyc", "Total_Score"]
     users = get_clean_users()
     users = users[users["role"] == "Member"][["username", "team", "recruit", "avatar"]]
@@ -148,12 +150,24 @@ def get_data(month=None) -> pd.DataFrame:
         fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
         fyc_df["amount"] = pd.to_numeric(fyc_df["amount"], errors="coerce").fillna(0)
         if month == "Yearly":
-            fyc = (
-                fyc_df.groupby("username")["amount"]
-                .sum()
-                .reset_index()
-                .rename(columns={"amount": "fyc"})
-            )
+            # Prefer Iris YTD Completion rows for Team FYC / MDRT progress
+            ytd = fyc_df[fyc_df["month"] == IRIS_YTD_MONTH_KEY]
+            if not ytd.empty:
+                fyc = (
+                    ytd.groupby("username")["amount"]
+                    .max()
+                    .reset_index()
+                    .rename(columns={"amount": "fyc"})
+                )
+            else:
+                # Fallback: sum monthly completions (exclude YTD key)
+                months_only = fyc_df[fyc_df["month"] != IRIS_YTD_MONTH_KEY]
+                fyc = (
+                    months_only.groupby("username")["amount"]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={"amount": "fyc"})
+                )
         else:
             fyc = fyc_df[fyc_df["month"] == str(month)][["username", "amount"]].rename(
                 columns={"amount": "fyc"}
@@ -186,11 +200,16 @@ def get_q1_data() -> pd.DataFrame:
     if users.empty:
         return pd.DataFrame(columns=["username", "q1_total"])
 
+    from tt_core.constants import IRIS_YTD_MONTH_KEY
+
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
         fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
         fyc_df["amount"] = pd.to_numeric(fyc_df["amount"], errors="coerce").fillna(0)
-        q1 = fyc_df[fyc_df["month"].isin(["2026-01", "2026-02", "2026-03"])]
+        q1 = fyc_df[
+            fyc_df["month"].isin(["2026-01", "2026-02", "2026-03"])
+            & (fyc_df["month"] != IRIS_YTD_MONTH_KEY)
+        ]
         q1_sum = (
             q1.groupby("username")["amount"]
             .sum()

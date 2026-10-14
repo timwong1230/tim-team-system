@@ -90,6 +90,36 @@ IRIS_CODE_ALIASES = [
     "producer code",
 ]
 
+# Prefer Monthly Completion — NEVER Monthly Submission
+IRIS_MONTHLY_COMPLETION_ALIASES = [
+    "monthly completion",
+    "month completion",
+    "mtd completion",
+    "completion monthly",
+    "monthly complete",
+    "本月完成",
+    "當月完成",
+    "每月完成",
+    "月度完成",
+    "本月 completion",
+    "當月 completion",
+]
+
+# YTD Completion → Team FYC / yearly MDRT progress
+IRIS_YTD_COMPLETION_ALIASES = [
+    "ytd completion",
+    "year to date completion",
+    "ytd complete",
+    "yearly completion",
+    "ytd",
+    "year-to-date completion",
+    "累積完成",
+    "全年完成",
+    "年累完成",
+    "ytd 完成",
+]
+
+# Fallback FYC aliases (still reject submission columns)
 IRIS_FYC_ALIASES = [
     "fyc",
     "first year commission",
@@ -104,6 +134,17 @@ IRIS_FYC_ALIASES = [
     "業績",
     "amount",
     "total fyc",
+    "completion",
+]
+
+# Columns that must not be used as FYC / completion
+IRIS_FYC_REJECT_SUBSTR = [
+    "submission",
+    "submit",
+    "submitted",
+    "呈報",
+    "提交",
+    "報送",
 ]
 
 IRIS_MONTH_ALIASES = [
@@ -115,6 +156,9 @@ IRIS_MONTH_ALIASES = [
     "yr mo",
     "year month",
 ]
+
+# Special month key storing Iris YTD Completion per agent
+IRIS_YTD_MONTH_KEY = "YTD"
 
 SHEET_SCHEMAS = {
     "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],

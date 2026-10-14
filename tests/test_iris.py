@@ -36,7 +36,8 @@ def test_detect_columns_english():
     cols = detect_columns(df)
     assert cols["agent"] == "Agent Name"
     assert cols["code"] == "Agent Code"
-    assert cols["fyc"] == "FYC"
+    assert cols["fyc"] == "Monthly Completion"
+    assert cols["ytd"] == "YTD Completion"
     assert cols["month"] == "Month"
 
 
