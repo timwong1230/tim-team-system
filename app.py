@@ -34,7 +34,6 @@ from tt_core.data import (
     get_clean_users,
     get_data,
     get_last_week_data,
-    get_mdrt_progress_map,
     get_member_snapshot,
     get_note_template,
     get_q1_data,
@@ -42,7 +41,6 @@ from tt_core.data import (
     last_iris_sync,
     login,
     proc_img,
-    set_mdrt_progress,
     upd_fyc,
     upd_rec,
     update_avt,
@@ -105,6 +103,34 @@ def set_team_sc(amount: float) -> bool:
         )
     except Exception:
         return False
+
+
+# Inline key — avoid late ImportError if Cloud caches an older constants.py
+_MDRT_PROGRESS_MONTH = "MDRT_2027"
+
+
+def get_mdrt_progress_map() -> dict[str, float]:
+    """Per-member 2027 MDRT temporary progress (plan bonus + other credit)."""
+    try:
+        fyc_df = read_data("monthly_fyc")
+        if fyc_df is None or fyc_df.empty or "amount" not in fyc_df.columns:
+            return {}
+        fyc_df = fyc_df.copy()
+        fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
+        fyc_df["amount"] = pd.to_numeric(fyc_df["amount"], errors="coerce").fillna(0)
+        rows = fyc_df[fyc_df["month"] == _MDRT_PROGRESS_MONTH]
+        if rows.empty:
+            return {}
+        grouped = rows.groupby("username")["amount"].max()
+        return {str(k): float(v) for k, v in grouped.items()}
+    except Exception:
+        return {}
+
+
+def set_mdrt_progress(username: str, amount: float) -> None:
+    upd_fyc(username, _MDRT_PROGRESS_MONTH, float(amount), source="mdrt_progress")
+
+
 from tt_core.iris import (
     apply_sync,
     auto_build_preview,

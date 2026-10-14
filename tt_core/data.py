@@ -136,7 +136,16 @@ def get_all_act() -> pd.DataFrame:
 
 
 def get_data(month=None) -> pd.DataFrame:
-    from tt_core.constants import IRIS_YTD_MONTH_KEY, MDRT_PROGRESS_MONTH_KEY
+    # Literals first so a stale constants.py on Streamlit Cloud cannot break import/runtime
+    iris_ytd_key = "YTD"
+    mdrt_progress_key = "MDRT_2027"
+    try:
+        from tt_core.constants import IRIS_YTD_MONTH_KEY, MDRT_PROGRESS_MONTH_KEY
+
+        iris_ytd_key = IRIS_YTD_MONTH_KEY
+        mdrt_progress_key = MDRT_PROGRESS_MONTH_KEY
+    except Exception:
+        pass
 
     base_columns = ["username", "team", "recruit", "avatar", "fyc", "Total_Score"]
     users = get_clean_users()
@@ -145,14 +154,14 @@ def get_data(month=None) -> pd.DataFrame:
         return pd.DataFrame(columns=base_columns)
 
     fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
-    special_months = {IRIS_YTD_MONTH_KEY, MDRT_PROGRESS_MONTH_KEY}
+    special_months = {iris_ytd_key, mdrt_progress_key}
 
     if not fyc_df.empty and "amount" in fyc_df.columns:
         fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
         fyc_df["amount"] = pd.to_numeric(fyc_df["amount"], errors="coerce").fillna(0)
         if month == "Yearly":
             # Prefer Iris YTD Completion rows for member FYC reference
-            ytd = fyc_df[fyc_df["month"] == IRIS_YTD_MONTH_KEY]
+            ytd = fyc_df[fyc_df["month"] == iris_ytd_key]
             if not ytd.empty:
                 fyc = (
                     ytd.groupby("username")["amount"]
@@ -197,15 +206,13 @@ def get_data(month=None) -> pd.DataFrame:
 
 def get_mdrt_progress_map() -> dict[str, float]:
     """Per-member 2027 MDRT temporary progress (plan bonus + other credit)."""
-    from tt_core.constants import MDRT_PROGRESS_MONTH_KEY
-
     fyc_df = read_data("monthly_fyc")
     if fyc_df.empty or "amount" not in fyc_df.columns:
         return {}
     fyc_df = fyc_df.copy()
     fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
     fyc_df["amount"] = pd.to_numeric(fyc_df["amount"], errors="coerce").fillna(0)
-    rows = fyc_df[fyc_df["month"] == MDRT_PROGRESS_MONTH_KEY]
+    rows = fyc_df[fyc_df["month"] == "MDRT_2027"]
     if rows.empty:
         return {}
     grouped = rows.groupby("username")["amount"].max()
@@ -213,9 +220,7 @@ def get_mdrt_progress_map() -> dict[str, float]:
 
 
 def set_mdrt_progress(username: str, amount: float) -> None:
-    from tt_core.constants import MDRT_PROGRESS_MONTH_KEY
-
-    upd_fyc(username, MDRT_PROGRESS_MONTH_KEY, float(amount), source="mdrt_progress")
+    upd_fyc(username, "MDRT_2027", float(amount), source="mdrt_progress")
 
 
 def get_q1_data() -> pd.DataFrame:
@@ -224,15 +229,13 @@ def get_q1_data() -> pd.DataFrame:
     if users.empty:
         return pd.DataFrame(columns=["username", "q1_total"])
 
-    from tt_core.constants import IRIS_YTD_MONTH_KEY, MDRT_PROGRESS_MONTH_KEY
-
     fyc_df = read_data("monthly_fyc")
     if not fyc_df.empty:
         fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
         fyc_df["amount"] = pd.to_numeric(fyc_df["amount"], errors="coerce").fillna(0)
         q1 = fyc_df[
             fyc_df["month"].isin(["2026-01", "2026-02", "2026-03"])
-            & (~fyc_df["month"].isin({IRIS_YTD_MONTH_KEY, MDRT_PROGRESS_MONTH_KEY}))
+            & (~fyc_df["month"].isin({"YTD", "MDRT_2027"}))
         ]
         q1_sum = (
             q1.groupby("username")["amount"]
