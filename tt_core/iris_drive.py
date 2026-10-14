@@ -63,6 +63,12 @@ def _settings_df():
 
 def get_setting(key: str, default: str = "") -> str:
     try:
+        ss = st.session_state.get(f"_setting_{key}")
+        if ss is not None and str(ss).strip():
+            return str(ss).strip()
+    except Exception:
+        pass
+    try:
         if "iris" in st.secrets and key.replace("iris_", "") in st.secrets["iris"]:
             short = key.replace("iris_", "")
             return str(st.secrets["iris"][short])
@@ -85,25 +91,54 @@ def set_setting(key: str, value: str) -> bool:
 
     df = _settings_df()
     value = str(value or "").strip()
+    if not value:
+        return False
     now = str(_dt.datetime.now())
-    if not df.empty and "key" in df.columns:
-        hit = df[df["key"].astype(str) == key]
-        if not hit.empty and "id" in df.columns and str(hit.iloc[0].get("id", "")).strip():
-            return bool(
+    try:
+        st.session_state[f"_setting_{key}"] = value
+    except Exception:
+        pass
+
+    sheets_ok = False
+    try:
+        if not df.empty and "key" in df.columns:
+            hit = df[df["key"].astype(str) == key]
+            if (
+                not hit.empty
+                and "id" in df.columns
+                and str(hit.iloc[0].get("id", "")).strip()
+            ):
+                sheets_ok = bool(
+                    run_query_gs(
+                        "UPDATE",
+                        SETTINGS_SHEET,
+                        {"value": value, "updated_at": now},
+                        row_id=hit.iloc[0]["id"],
+                    )
+                )
+            else:
+                sheets_ok = bool(
+                    run_query_gs(
+                        "INSERT",
+                        SETTINGS_SHEET,
+                        {"key": key, "value": value, "updated_at": now},
+                    )
+                )
+        else:
+            sheets_ok = bool(
                 run_query_gs(
-                    "UPDATE",
+                    "INSERT",
                     SETTINGS_SHEET,
-                    {"value": value, "updated_at": now},
-                    row_id=hit.iloc[0]["id"],
+                    {"key": key, "value": value, "updated_at": now},
                 )
             )
-    return bool(
-        run_query_gs(
-            "INSERT",
-            SETTINGS_SHEET,
-            {"key": key, "value": value, "updated_at": now},
-        )
-    )
+    except Exception:
+        sheets_ok = False
+
+    # Local cache/session is enough for the app to keep working when Sheets is slow
+    if sheets_ok:
+        return True
+    return get_setting(key, "") == value
 
 
 def _normalize_folder_id(folder_id: str) -> str:
