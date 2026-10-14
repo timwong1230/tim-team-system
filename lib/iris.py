@@ -71,6 +71,33 @@ def load_iris_file(uploaded_file) -> pd.DataFrame:
     return load_iris_bytes(raw, name)
 
 
+def _mostly_agent_codes(series: pd.Series, threshold: float = 0.7) -> bool:
+    """True when values look like Iris agent numbers (e.g. 30947)."""
+    s = series.dropna().astype(str).str.strip()
+    s = s[s != ""]
+    if s.empty:
+        return False
+    return bool(s.str.match(r"^\d{4,}$").mean() >= threshold)
+
+
+def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
+    cols = [str(c) for c in df.columns]
+    agent = _find_col(cols, IRIS_AGENT_ALIASES)
+    code = _find_col(cols, IRIS_CODE_ALIASES)
+    fyc = _find_col(cols, IRIS_FYC_ALIASES)
+    month = _find_col(cols, IRIS_MONTH_ALIASES)
+
+    # Many Iris team exports put Agent Code in a "name"/first column.
+    # If "agent" values are mostly digits and code is missing, treat as code.
+    if agent and not code and agent in df.columns and _mostly_agent_codes(df[agent]):
+        code, agent = agent, None
+    elif agent and code and agent in df.columns and _mostly_agent_codes(df[agent]) and not _mostly_agent_codes(df[code]):
+        # Swapped headers — flip
+        agent, code = code, agent
+
+    return {"agent": agent, "code": code, "fyc": fyc, "month": month}
+
+
 def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFrame, dict]:
     """Detect columns and build sync preview in one step."""
     detected = detect_columns(df)
@@ -90,13 +117,30 @@ def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFra
     return preview, detected
 
 
-def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
-    cols = [str(c) for c in df.columns]
+def unmapped_agents(preview: pd.DataFrame) -> pd.DataFrame:
+    """Unique unmatched Iris agents (for mapping UI)."""
+    if preview is None or preview.empty:
+        return pd.DataFrame(columns=["iris_name", "iris_code", "amount"])
+    u = preview[~preview["matched"]].copy()
+    if u.empty:
+        return pd.DataFrame(columns=["iris_name", "iris_code", "amount"])
+    return (
+        u.groupby(["iris_name", "iris_code"], dropna=False)["amount"]
+        .sum()
+        .reset_index()
+        .sort_values(by="amount", ascending=False)
+    )
+
+
+def preview_summary(preview: pd.DataFrame) -> dict[str, Any]:
+    if preview is None or preview.empty:
+        return {"matched_rows": 0, "unmatched_rows": 0, "matched_users": 0, "unmapped_agents": 0}
+    matched = preview[preview["matched"]]
     return {
-        "agent": _find_col(cols, IRIS_AGENT_ALIASES),
-        "code": _find_col(cols, IRIS_CODE_ALIASES),
-        "fyc": _find_col(cols, IRIS_FYC_ALIASES),
-        "month": _find_col(cols, IRIS_MONTH_ALIASES),
+        "matched_rows": int(len(matched)),
+        "unmatched_rows": int((~preview["matched"]).sum()),
+        "matched_users": int(matched["username"].nunique()) if not matched.empty else 0,
+        "unmapped_agents": int(len(unmapped_agents(preview))),
     }
 
 
@@ -191,25 +235,36 @@ def resolve_username(iris_name: str, iris_code: str, agent_map: pd.DataFrame, us
     name = str(iris_name or "").strip()
     code = str(iris_code or "").strip()
 
+    # If "name" is actually a numeric agent code, treat it as code too
+    if name and re.fullmatch(r"\d{4,}", name) and not code:
+        code = name
+
     if not agent_map.empty:
         if code:
             hit = agent_map[agent_map["iris_code"].astype(str).str.strip() == code]
             if not hit.empty and str(hit.iloc[0]["username"]).strip():
                 return str(hit.iloc[0]["username"]).strip()
-        if name:
+            # Also allow code stored in iris_name column of the map
+            hit = agent_map[agent_map["iris_name"].astype(str).str.strip() == code]
+            if not hit.empty and str(hit.iloc[0]["username"]).strip():
+                return str(hit.iloc[0]["username"]).strip()
+        if name and not re.fullmatch(r"\d{4,}", name):
             hit = agent_map[
                 agent_map["iris_name"].astype(str).str.strip().str.lower() == name.lower()
             ]
             if not hit.empty and str(hit.iloc[0]["username"]).strip():
                 return str(hit.iloc[0]["username"]).strip()
 
-    if not users.empty and name:
-        # Direct username match
+    if not users.empty and name and not re.fullmatch(r"\d{4,}", name):
         hit = users[users["username"].astype(str).str.lower() == name.lower()]
         if not hit.empty:
             return str(hit.iloc[0]["username"])
-        # Partial contains
-        hit = users[users["username"].astype(str).str.lower().apply(lambda u: u in name.lower() or name.lower() in u)]
+        hit = users[
+            users["username"]
+            .astype(str)
+            .str.lower()
+            .apply(lambda u: u in name.lower() or name.lower() in u)
+        ]
         if len(hit) == 1:
             return str(hit.iloc[0]["username"])
     return None
@@ -230,16 +285,23 @@ def build_sync_preview(
 
     rows = []
     for _, r in df.iterrows():
-        agent = r[col_agent] if col_agent else ""
-        code = r[col_code] if col_code else ""
+        agent = str(r[col_agent]).strip() if col_agent else ""
+        code = str(r[col_code]).strip() if col_code else ""
+        if agent in {"nan", "None"}:
+            agent = ""
+        if code in {"nan", "None"}:
+            code = ""
+        # Normalize numeric-only "name" into code for cleaner mapping UI
+        if agent and re.fullmatch(r"\d{4,}", agent) and not code:
+            code, agent = agent, ""
         amount = parse_amount(r[col_fyc])
         month_raw = r[col_month] if col_month else default_month
         month = normalize_month(month_raw, default_month)
         username = resolve_username(agent, code, agent_map, users)
         rows.append(
             {
-                "iris_name": str(agent).strip(),
-                "iris_code": str(code).strip(),
+                "iris_name": agent,
+                "iris_code": code,
                 "username": username or "",
                 "month": month,
                 "amount": amount,
