@@ -337,10 +337,19 @@ def page_home():
                     unsafe_allow_html=True,
                 )
     else:
-        c1, c2, c3 = st.columns(2 if MOBILE else 3)
-        c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
-        c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
-        if not MOBILE:
+        # Admin / Leader home: 2 metrics on phone, 3 on desktop
+        if MOBILE:
+            c1, c2 = st.columns(2)
+            c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
+            c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
+            st.metric(
+                "Activities",
+                int(team["Total_Score"].sum()) if not team.empty else 0,
+            )
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
+            c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
             c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
 
     st.markdown("### 快速打卡")
