@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import datetime
 import re
+import sys
 import urllib.parse
+from pathlib import Path
+
+# Streamlit Cloud: ensure project root is on sys.path
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import pandas as pd
 import streamlit as st
@@ -31,16 +38,15 @@ from tt_core.data import (
     get_note_template,
     get_q1_data,
     get_weekly_data,
-    get_team_sc,
     last_iris_sync,
     login,
     proc_img,
-    set_team_sc,
     upd_fyc,
     upd_rec,
     update_avt,
     update_pw,
 )
+from tt_core.team_sc import get_team_sc, set_team_sc
 from tt_core.db import (
     connection_banner_state,
     init_db_gs,

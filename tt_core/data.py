@@ -99,27 +99,6 @@ def add_ammo(u, d, cat, title, knowledge, story_context, nightmare, dream, scena
     )
 
 
-def get_team_sc(fallback: float | None = None) -> float:
-    """Team SC shown on Dashboard — manual value, else optional fallback."""
-    from tt_core.constants import TEAM_SC_SETTING_KEY
-    from tt_core.iris_drive import get_setting
-
-    raw = str(get_setting(TEAM_SC_SETTING_KEY, "") or "").strip()
-    if raw:
-        try:
-            return float(str(raw).replace(",", "").replace("$", "").replace("HK$", ""))
-        except ValueError:
-            pass
-    return float(fallback or 0)
-
-
-def set_team_sc(amount: float) -> bool:
-    from tt_core.constants import TEAM_SC_SETTING_KEY
-    from tt_core.iris_drive import set_setting
-
-    return bool(set_setting(TEAM_SC_SETTING_KEY, str(float(amount))))
-
-
 def upd_fyc(u, m, a, source: str = "manual"):
     df = read_data("monthly_fyc")
     now = str(datetime.datetime.now())
