@@ -1,774 +1,858 @@
-import streamlit as st
-import pandas as pd
+"""TIM TEAM System — activity + performance hub."""
+
+from __future__ import annotations
+
 import datetime
-import base64
-import json
-import gspread
-import os
-import io
-import time
 import urllib.parse
-from PIL import Image
-from google.oauth2.service_account import Credentials
-from gspread.exceptions import WorksheetNotFound, APIError
 
-# --- 1. 系統設定 ---
-st.set_page_config(page_title="TIM TEAM 2026", page_icon="🦁", layout="wide", initial_sidebar_state="expanded")
-
-# --- Custom CSS ---
-st.markdown("""
-<style>
-    [data-testid="stAppViewContainer"] { background-color: #f8f9fa !important; } 
-    [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e9ecef; }
-    [data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; }
-    h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown, .stText { color: #2c3e50 !important; font-family: 'Helvetica Neue', sans-serif; }
-    h1, h2, h3 { color: #C5A028 !important; font-weight: 800 !important; letter-spacing: 0.5px; }
-
-    div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] label {
-        background-color: #ffffff !important; padding: 12px 15px !important; margin-bottom: 8px !important;
-        border-radius: 10px !important; border: 1px solid #e9ecef !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important; transition: all 0.3s ease !important; width: 100% !important;
-    }
-    div[role="radiogroup"] label:hover {
-        border-color: #D4AF37 !important; background-color: #FFF8E1 !important;
-        transform: translateX(5px); box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2) !important;
-    }
-
-    div[data-testid="stMetric"], div.css-1r6slb0, .stContainer, div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e0e0e0 !important; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s ease; }
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stDateInput > div > div > input, .stSelectbox > div > div { background-color: #fdfdfd !important; border: 1px solid #dce4ec !important; border-radius: 8px; }
-    div.stButton > button { background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important; color: #FFFFFF !important; border: none; border-radius: 8px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); width: 100%;}
-    img { border-radius: 50%; }
-
-    .admin-edit-box { border: 2px dashed #C5A028; padding: 15px; border-radius: 10px; background-color: #fffdf0; margin-top: 15px; }
-
-    .activity-card { background-color: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 5px solid #e9ecef; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s;}
-    .activity-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-    .card-signed { border-left-color: #D4AF37 !important; } 
-    .card-meeting { border-left-color: #3498db !important; }
-    .card-recruit { border-left-color: #9b59b6 !important; } 
-    .card-admin { border-left-color: #95a5a6 !important; }
-    .act-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .act-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px; border: 2px solid #f0f0f0;}
-    .act-name { font-weight: bold; color: #2c3e50; }
-    .act-time { font-size: 0.85em; color: #95a5a6; }
-    .act-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.5px; }
-    .badge-signed { background-color: #FFF8E1; color: #D4AF37; border: 1px solid #D4AF37; }
-    .badge-meeting { background-color: #ebf5fb; color: #3498db; border: 1px solid #3498db; }
-    .badge-recruit { background-color: #f4ecf7; color: #9b59b6; border: 1px solid #9b59b6; }
-    .badge-default { background-color: #f8f9fa; color: #7f8c8d; border: 1px solid #bdc3c7; }
-    .act-content { background-color: #f8f9fa; padding: 10px; border-radius: 8px; color: #555; font-size: 0.95em; line-height: 1.5; margin-top: 5px;}
-
-    .reward-card-premium { 
-        background: linear-gradient(145deg, #ffffff, #fffdf5); 
-        border: 2px solid #D4AF37; 
-        border-radius: 16px; padding: 25px 20px; text-align: center; 
-        box-shadow: 0 10px 25px rgba(212, 175, 55, 0.15); 
-        transition: all 0.3s ease; height: 100%; position: relative; overflow: hidden; 
-    }
-    .reward-card-premium::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 8px; background: linear-gradient(90deg, #D4AF37, #FDC830, #D4AF37); }
-    .reward-card-premium:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(212, 175, 55, 0.3); }
-    .reward-icon { font-size: 3em; margin-bottom: 15px; display: block; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
-    .reward-title-p { color: #D4AF37; font-size: 1.3em; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; }
-    .reward-prize-p { color: #c0392b; font-size: 1.6em; font-weight: 900; margin-bottom: 10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.05); }
-    .reward-desc-p { color: #7f8c8d; font-size: 0.9em; line-height: 1.4; font-weight: 500; }
-    .challenge-header-box { background: linear-gradient(to right, #FFF8E1, #FFFFFF); border-left: 6px solid #D4AF37; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; }
-    
-    /* 彈藥庫專用標籤 */
-    .ammo-nightmare { background-color: #fdedec; border-left: 4px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
-    .ammo-dream { background-color: #eafaf1; border-left: 4px solid #2ecc71; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
-</style>
-""", unsafe_allow_html=True)
-
-# 離職成員黑名單
-INACTIVE_MEMBERS = ['Wilson', 'Catherine', 'Maggie']
-
-# Google Sheets 設定
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-
-@st.cache_resource
-def get_gs_client():
-    try:
-        if "service_account" in st.secrets:
-            json_str = st.secrets["service_account"]["key_content"]
-            key_dict = json.loads(json_str)
-        elif "GSPREAD_KEY" in os.environ:
-            json_str = os.environ["GSPREAD_KEY"]
-            key_dict = json.loads(json_str)
-        else: return None
-        creds = Credentials.from_service_account_info(key_dict, scopes=SCOPES)
-        return gspread.authorize(creds)
-    except Exception: return None
-
-def get_sheet(sheet_name):
-    client = get_gs_client()
-    if client:
-        try:
-            sh = client.open("tim_team_db")
-            try: return sh.worksheet(sheet_name)
-            except WorksheetNotFound:
-                ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=11) # 增加 cols
-                return ws
-        except Exception: return None
-    return None
-
-# 防斷線緩存機制
-@st.cache_data(ttl=30)
-def read_data(sheet_name):
-    ws = get_sheet(sheet_name)
-    schemas = {
-        "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
-        "monthly_fyc": ["id", "username", "month", "amount"],
-        "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
-        # 🔥 全新 Schema 結構
-        "story_ammo": ["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"]
-    }
-    expected_cols = schemas.get(sheet_name, [])
-    
-    for attempt in range(3): 
-        if ws:
-            try:
-                data = ws.get_all_records()
-                df = pd.DataFrame(data)
-                if df.empty or not set(expected_cols).issubset(df.columns):
-                    for col in expected_cols:
-                        if col not in df.columns: df[col] = "" 
-                    df = df[expected_cols] 
-                
-                if not df.empty:
-                    st.session_state[f'backup_{sheet_name}'] = df 
-                return df
-            except Exception:
-                time.sleep(1) 
-                pass
-                
-    if f'backup_{sheet_name}' in st.session_state:
-        return st.session_state[f'backup_{sheet_name}']
-        
-    return pd.DataFrame(columns=expected_cols)
-
-def clear_cache(): st.cache_data.clear()
-
-def run_query_gs(action, sheet_name, data_dict=None, row_id=None):
-    ws = get_sheet(sheet_name)
-    if not ws: return
-    try:
-        if action == "INSERT":
-            if sheet_name in ["activities", "monthly_fyc", "story_ammo"]:
-                records = ws.get_all_records()
-                new_id = 1
-                if records:
-                    ids = [int(r['id']) for r in records if str(r['id']).isdigit()]
-                    if ids: new_id = max(ids) + 1
-                data_dict['id'] = new_id
-            
-            headers = ws.row_values(1)
-            if not headers: 
-                schemas = {
-                    "monthly_fyc": ["id", "username", "month", "amount"],
-                    "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
-                    "story_ammo": ["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"],
-                    "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"]
-                }
-                headers = schemas.get(sheet_name, [])
-                if headers: ws.append_row(headers)
-            
-            row_to_add = [str(data_dict.get(h, "")) for h in headers]
-            ws.append_row(row_to_add)
-
-        elif action == "UPDATE":
-            cell = ws.find(str(row_id))
-            if cell:
-                headers = ws.row_values(1)
-                for col, val in data_dict.items():
-                    if col in headers: ws.update_cell(cell.row, headers.index(col) + 1, val)
-        elif action == "DELETE":
-            cell = ws.find(str(row_id))
-            if cell: ws.delete_rows(cell.row)
-        clear_cache()
-    except Exception as e: st.error(f"操作失敗: {e}")
-
-def init_db_gs():
-
-    try:
-
-        ws = get_sheet("users")
-
-        if ws:
-
-            try: existing = ws.col_values(1)
-
-            except Exception: existing = []
-
-            if not existing: 
-
-                ws.append_row(["username", "password", "role", "team", "recruit", "avatar", "last_read"])
-
-                existing = ["username"]
-
-            defaults = [('Admin', 'admin123', 'Leader'), ('Tim', '1234', 'Member'), ('Oscar', '1234', 'Member')]
-
-            for u in defaults:
-
-                if u[0] not in existing:
-
-                    url = f"https://ui-avatars.com/api/?name={u[0]}&background=d4af37&color=fff&size=128"
-
-                    ws.append_row([u[0], u[1], u[2], "Tim Team", 0, url, ""])
-
-                    clear_cache()
-
-        for sn in ["monthly_fyc", "activities", "story_ammo"]:
-
-            ws_tmp = get_sheet(sn)
-
-            if ws_tmp:
-
-                try:
-
-                    if not ws_tmp.row_values(1):
-
-                        if sn == "monthly_fyc": ws_tmp.append_row(["id", "username", "month", "amount"])
-
-                        if sn == "activities": ws_tmp.append_row(["id", "username", "date", "type", "points", "note", "timestamp"])
-
-                        # 🔥 全新 Headers
-
-                        if sn == "story_ammo": ws_tmp.append_row(["id", "username", "date", "category", "title", "knowledge", "story_context", "nightmare", "dream", "scenario", "timestamp"])
-
-                except Exception: pass
-
-    except Exception: pass
-
-
-
-init_db_gs() 
-
-# --- 4. 核心邏輯 ---
-
-def get_clean_users():
-    df = read_data("users")
-    if df.empty: return pd.DataFrame(columns=["username", "password", "role", "team", "recruit", "avatar", "last_read"])
-    df = df.drop_duplicates(subset=['username'], keep='first')
-    return df[~df['username'].isin(INACTIVE_MEMBERS)]
-
-def login(u, p):
-    df = get_clean_users()
-    if df.empty: return []
-    df['password'] = df['password'].astype(str)
-    user = df[(df['username'] == u) & (df['password'] == str(p))]
-    return user.values.tolist() if not user.empty else []
-
-def proc_img(f):
-    try:
-        image = Image.open(f)
-        if image.mode in ("RGBA", "P"): image = image.convert("RGB")
-        image = image.resize((100, 100))
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=80)
-        return f"data:image/jpeg;base64,{base64.b64encode(img_byte_arr.getvalue()).decode()}"
-    except Exception: return None
-
-def update_avt(u, i): 
-    ws = get_sheet("users"); cell = ws.find(u)
-    if cell: ws.update_cell(cell.row, ws.row_values(1).index("avatar") + 1, i); clear_cache()
-
-def update_pw(u, p):
-    ws = get_sheet("users"); cell = ws.find(u)
-    if cell: ws.update_cell(cell.row, ws.row_values(1).index("password") + 1, p); clear_cache()
-
-def add_act(u, d, t, n):
-    pts = 8 if "出code" in t else 5 if "簽單" in t else 3 if "報考試" in t else 2 if "傾" in t else 1
-    run_query_gs("INSERT", "activities", {"username": u, "date": str(d), "type": t, "points": pts, "note": n, "timestamp": str(datetime.datetime.now())})
-
-# 🔥 更新傳入參數
-def add_ammo(u, d, cat, title, knowledge, story_context, nightmare, dream, scenario):
-    run_query_gs("INSERT", "story_ammo", {
-        "username": u, "date": str(d), "category": cat, 
-        "title": title, "knowledge": knowledge, "story_context": story_context, 
-        "nightmare": nightmare, "dream": dream, "scenario": scenario, 
-        "timestamp": str(datetime.datetime.now())
-    })
-
-def upd_fyc(u, m, a):
-    df = read_data("monthly_fyc")
-    if not df.empty: df['month'] = df['month'].astype(str).str.strip()
-    exist = df[(df['username'] == u) & (df['month'] == str(m))]
-    if not exist.empty: run_query_gs("UPDATE", "monthly_fyc", {"amount": a}, row_id=exist.iloc[0]['id'])
-    else: run_query_gs("INSERT", "monthly_fyc", {"username": u, "month": str(m), "amount": a})
-
-def upd_rec(u, a):
-    ws = get_sheet("users"); cell = ws.find(u)
-    if cell: ws.update_cell(cell.row, ws.row_values(1).index("recruit") + 1, a); clear_cache()
-
-def del_act(id): run_query_gs("DELETE", "activities", row_id=id)
-
-def get_all_act():
-    df = read_data("activities")
-    if df.empty: return pd.DataFrame(columns=["id", "username", "date", "type", "points", "note", "timestamp"])
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.drop_duplicates(subset=['username', 'date', 'type', 'note'], keep='first')
-    return df[~df['username'].isin(INACTIVE_MEMBERS)].sort_values(by='date', ascending=False)
-
-def get_data(month=None):
-    base_columns = ['username', 'team', 'recruit', 'avatar', 'fyc', 'Total_Score']
-    users = get_clean_users()
-    users = users[users['role'] == 'Member'][['username', 'team', 'recruit', 'avatar']]
-    if users.empty: return pd.DataFrame(columns=base_columns)
-
-    fyc_df, act_df = read_data("monthly_fyc"), read_data("activities")
-    
-    if not fyc_df.empty and 'amount' in fyc_df.columns:
-        fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
-        fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
-        if month == "Yearly": fyc = fyc_df.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'fyc'})
-        else: fyc = fyc_df[fyc_df['month'] == str(month)][['username', 'amount']].rename(columns={'amount': 'fyc'})
-    else: fyc = pd.DataFrame(columns=['username', 'fyc'])
-
-    if not act_df.empty and 'points' in act_df.columns:
-        act_df['points'] = pd.to_numeric(act_df['points'], errors='coerce').fillna(0)
-        act = act_df.groupby('username')['points'].sum().reset_index().rename(columns={'points': 'Total_Score'})
-    else: act = pd.DataFrame(columns=['username', 'Total_Score'])
-    
-    df = pd.merge(users, fyc, on='username', how='left').fillna(0)
-    df = pd.merge(df, act, on='username', how='left').fillna(0)
-    
-    df['fyc'] = pd.to_numeric(df['fyc'], errors='coerce').fillna(0).astype(float)
-    df['Total_Score'] = pd.to_numeric(df['Total_Score'], errors='coerce').fillna(0).astype(int)
-    df['recruit'] = pd.to_numeric(df['recruit'], errors='coerce').fillna(0).astype(int)
-    return df
-
-def get_q1_data():
-    users = get_clean_users()
-    users = users[users['role'] == 'Member'][['username', 'avatar']]
-    if users.empty: return pd.DataFrame(columns=['username', 'q1_total'])
-    
-    fyc_df = read_data("monthly_fyc")
-    if not fyc_df.empty:
-        fyc_df['month'] = fyc_df['month'].astype(str).str.strip()
-        fyc_df['amount'] = pd.to_numeric(fyc_df['amount'], errors='coerce').fillna(0)
-        q1 = fyc_df[fyc_df['month'].isin(['2026-01', '2026-02', '2026-03'])]
-        q1_sum = q1.groupby('username')['amount'].sum().reset_index().rename(columns={'amount': 'q1_total'})
-        return pd.merge(users, q1_sum, on='username', how='left').fillna(0)
-    return pd.DataFrame(columns=['username', 'q1_total'])
-
-def get_last_week_data():
-    today = datetime.date.today()
-    current_week_monday = today - datetime.timedelta(days=today.weekday())
-    start = current_week_monday - datetime.timedelta(days=7) 
-    end = start + datetime.timedelta(days=6) 
-    
-    users = get_clean_users()
-    users = users[users['role'] == 'Member'][['username', 'avatar']]
-    if users.empty: return pd.DataFrame(columns=['username', 'wk_score', 'wk_count']), start, end
-    
-    act_df = read_data("activities")
-    stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
-    
-    if not act_df.empty:
-        act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
-        act_df['points'] = pd.to_numeric(act_df['points'], errors='coerce').fillna(0).astype(int)
-        
-        last_week_acts = act_df[(act_df['date'] >= start) & (act_df['date'] <= end)]
-        if not last_week_acts.empty:
-            stats = last_week_acts.groupby('username').agg(
-                wk_score=('points', 'sum'),
-                wk_count=('points', 'count')
-            ).reset_index()
-            
-    return pd.merge(users, stats, on='username', how='left').fillna(0), start, end
-
-def get_weekly_data():
-    today = datetime.date.today()
-    start = today - datetime.timedelta(days=today.weekday())
-    users = get_clean_users()
-    users = users[users['role'] == 'Member'][['username', 'avatar']]
-    if users.empty: return pd.DataFrame(columns=['username', 'wk_score', 'wk_count']), start, today
-    
-    act_df = read_data("activities")
-    stats = pd.DataFrame(columns=['username', 'wk_score', 'wk_count'])
-    
-    if not act_df.empty:
-        act_df['date'] = pd.to_datetime(act_df['date'], errors='coerce').dt.date
-        act_df['points'] = pd.to_numeric(act_df['points'], errors='coerce').fillna(0).astype(int)
-        this_week = act_df[act_df['date'] >= start]
-        if not this_week.empty:
-            stats = this_week.groupby('username').agg(
-                wk_score=('points', 'sum'),
-                wk_count=('points', 'count')
-            ).reset_index()
-            
-    return pd.merge(users, stats, on='username', how='left').fillna(0), start, today
-
-def update_last_read_time(username):
-    try:
-        ws = get_sheet("users"); cell = ws.find(username)
-        if cell:
-            headers = ws.row_values(1)
-            if "last_read" in headers: ws.update_cell(cell.row, headers.index("last_read") + 1, str(datetime.datetime.now())); clear_cache()
-    except Exception: pass
-
-@st.dialog("🔥 團隊最新戰報 🔥")
-def show_notification_modal(new_activities, current_user):
-    st.markdown(f"**Hi {current_user}，你不在的時候，團隊發生了以下動態：**")
-    for index, row in new_activities.iterrows():
-        act_time = pd.to_datetime(row['timestamp']).strftime('%m/%d %H:%M') if row['timestamp'] else row['date']
-        st.info(f"**👤 {row['username']}** - {row['type']}\n\n📄 {row['note']}\n\n🕒 *{act_time}*")
-    st.markdown("---")
-    if st.button("收到 / OK (我知道了)", type="primary", use_container_width=True):
-        update_last_read_time(current_user); st.rerun()
-
-def check_notifications(current_user):
-    users_df = get_clean_users()
-    act_df = read_data("activities")
-    if users_df.empty or act_df.empty: return
-    user_record = users_df[users_df['username'] == current_user]
-    if user_record.empty: return
-    last_read_str = str(user_record.iloc[0]['last_read'])
-    try: last_read = pd.to_datetime(last_read_str) if last_read_str and last_read_str != "" else pd.to_datetime("2020-01-01")
-    except Exception: last_read = pd.to_datetime("2020-01-01")
-    if 'timestamp' not in act_df.columns: return
-    act_df['timestamp_dt'] = pd.to_datetime(act_df['timestamp'], errors='coerce')
-    new_activities = act_df[(act_df['timestamp_dt'] > last_read) & (act_df['username'] != current_user) & (~act_df['username'].isin(INACTIVE_MEMBERS))]
-    if not new_activities.empty: show_notification_modal(new_activities, current_user)
-
-TEMPLATE_SALES = "【客戶資料】\nName: \n講左3Q? 有咩feedback? \nFact Find 重點: \n\n【面談內容】\nSell左咩Plan? \n客戶反應/抗拒點: \n\n【下一步】\n下次見面日期: \nAction Items: "
-TEMPLATE_RECRUIT = "【準增員資料】\nName: \n背景/現職: \n對現狀不滿 (Pain Points): \n對行業最大顧慮: \n\n【面談內容】\nSell 左咩 Vision?: \n有無邀請去Team Dinner / Recruitment Talk? \n\n【下一步】\n下次跟進日期: \nAction Items: "
-TEMPLATE_NEWBIE = "【新人跟進】\n新人 Name: \n今日進度 (考牌/Training/出Code): \n遇到咩困難?: \nLeader 俾左咩建議?: \n\n【下一步】\nTarget: \n下次 Review 日期: "
-ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "傾招募 (2分)", "新人報考試 (3分)", "簽單 (5分)", "新人出code (8分)"]
-
-def get_activity_style(act_type):
-    if "簽單" in act_type: return "card-signed", "badge-signed"
-    if "見面" in act_type or "傾" in act_type: return "card-meeting", "badge-meeting"
-    if "招募" in act_type or "新人" in act_type: return "card-recruit", "badge-recruit"
-    return "card-admin", "badge-default"
-
-# --- 5. UI 渲染 ---
-if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
-
-if not st.session_state['logged_in']:
-    c1, c2, c3 = st.columns([1,1.5,1])
+import pandas as pd
+import streamlit as st
+
+from lib.constants import (
+    ACTIVITY_TYPES,
+    AMMO_CATEGORIES,
+    MDRT_TARGET,
+    Q1_TARGET,
+    WEEKLY_MIN_ACTS,
+    WEEKLY_PENALTY,
+)
+from lib.data import (
+    add_act,
+    add_ammo,
+    check_notifications,
+    get_activity_style,
+    get_all_act,
+    get_clean_users,
+    get_data,
+    get_last_week_data,
+    get_member_snapshot,
+    get_note_template,
+    get_q1_data,
+    get_weekly_data,
+    last_iris_sync,
+    login,
+    proc_img,
+    upd_fyc,
+    upd_rec,
+    update_avt,
+    update_pw,
+)
+from lib.db import init_db_gs, read_data
+from lib.iris import (
+    apply_sync,
+    build_sync_preview,
+    detect_columns,
+    get_agent_map,
+    load_iris_file,
+    sample_template_csv,
+    save_agent_mapping,
+)
+from lib.styles import CUSTOM_CSS
+
+st.set_page_config(
+    page_title="TIM TEAM System",
+    page_icon="🦁",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+init_db_gs()
+
+
+# ─── Auth ────────────────────────────────────────────────────────────────────
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    c1, c2, c3 = st.columns([1, 1.4, 1])
     with c2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        with st.container():
-            st.markdown("<div style='text-align: center;'><h1>🦁 TIM TEAM 2026</h1></div>", unsafe_allow_html=True)
-            st.markdown("""<div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #C5A028; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'><h2 style='color: #C5A028 !important; margin:0;'>M + 2</h2><h3 style='color: #4A4A4A !important; margin:5px 0 15px 0;'>= 百萬年薪之路 💰</h3><div style='margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ddd;'><span style='color: #666; font-size: 0.9em;'>2027 MDRT Requirement:</span><br><strong style='color: #D4AF37; font-size: 1.3em;'>HK$ 512,800</strong></div></div>""", unsafe_allow_html=True)
-            u = st.text_input("Username", placeholder="e.g., Tim")
-            p = st.text_input("Password", type="password", placeholder="••••••")
-            if st.button("🚀 LOGIN", use_container_width=True):
-                d = login(u, p)
-                if d:
-                    st.session_state.update({'logged_in':True, 'user':d[0][0], 'role':d[0][2], 'avatar':d[0][5]})
-                    st.toast(f"Welcome back, {d[0][0]}!", icon="🦁"); st.rerun()
-                else: st.toast("Login Failed", icon="❌")
-else:
-    check_notifications(st.session_state['user'])
-    with st.sidebar:
         st.markdown("<br>", unsafe_allow_html=True)
-        c_avt, c_txt = st.columns([1, 2])
-        with c_avt: st.image(st.session_state.get('avatar',''), width=80)
-        with c_txt: 
-            st.markdown(f"<h3 style='margin:0; color:#C5A028 !important;'>{st.session_state['user']}</h3>", unsafe_allow_html=True)
-            st.caption(f"{st.session_state['role']} | TIM TEAM")
-        st.divider()
-        menu = st.radio("MAIN MENU", ["📊 Dashboard 團隊報表", "📝 Check-in 打卡", "📚 Story Depot 彈藥庫", "⚖️ Challenge 獎罰", "🏆 Year Goal 年度挑戰", "🤝 Recruit 招募龍虎榜", "📅 Monthly 業績表", "👤 Profile 設定"], label_visibility="collapsed")
-        st.markdown("<br>"*3, unsafe_allow_html=True)
-        if st.button("🔒 Logout", use_container_width=True, type="secondary"): st.session_state['logged_in'] = False; st.rerun()
+        st.markdown(
+            """
+            <div class="login-panel">
+              <div class="tt-kicker" style="color:#C5A028 !important;">TIM TEAM SYSTEM</div>
+              <h1 style="margin:0 0 6px 0;">活動量 · 業績 · 一站管理</h1>
+              <p style="color:#6B7280; margin:0 0 18px 0;">打卡更快 · 戰報更清晰 · Iris 業績自動同步</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        u = st.text_input("Username", placeholder="e.g. Tim")
+        p = st.text_input("Password", type="password", placeholder="••••••")
+        if st.button("登入系統", use_container_width=True):
+            d = login(u, p)
+            if d:
+                st.session_state.update(
+                    {
+                        "logged_in": True,
+                        "user": d[0][0],
+                        "role": d[0][2],
+                        "avatar": d[0][5],
+                    }
+                )
+                st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
+                st.rerun()
+            else:
+                st.toast("登入失敗，請檢查帳密", icon="❌")
+        st.caption("2026 MDRT 目標：$512,800  ·  M + 2 = 百萬年薪之路")
+    st.stop()
 
-    if "Dashboard" in menu:
-        st.markdown(f"## 📊 {st.session_state['user']}, Let's Go MDRT!")
-        if st.session_state['role'] == 'Leader':
-            with st.container(border=True):
-                st.markdown("### 📢 每週戰報生成器 (Admin Only)")
-                if st.button("📝 生成上週結算戰報"):
-                    wk_df, start, end = get_last_week_data()
-                    max_score = wk_df['wk_score'].max() if not wk_df.empty else 0
-                    winners = wk_df[wk_df['wk_score'] == max_score] if not wk_df.empty and max_score > 0 else pd.DataFrame()
-                    losers = wk_df[wk_df['wk_count'] < 3] if not wk_df.empty else pd.DataFrame()
-                    penalty_total = len(losers) * 100
-                    prize_per_winner = penalty_total / len(winners) if penalty_total > 0 and not winners.empty else 100 / len(winners) if not winners.empty else 0
-                    
-                    report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】* 🦁\n\n"
-                    if max_score > 0 and not winners.empty:
-                        report += f"🏆 *上週 MVP (獨得獎金 ${int(prize_per_winner)}):*\n"
-                        for i, w in winners.iterrows(): report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
-                        report += f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n" if penalty_total > 0 else "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
-                    else: report += "⚠️ *上週全軍覆沒？* 無人開工？\n\n"
-                    
-                    if not losers.empty:
-                        report += f"💸 *【罰款名單 - 每人 $100】*\n_活動量不足 3 次，請自覺 PayMe 俾 Winner！_\n"
-                        for i, l in losers.iterrows(): report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
-                    else: report += "✅ *上週無人罰款！Excellent！*\n"
-                    
-                    report += "\n📊 *詳細戰況：*\n"
-                    if not wk_df.empty:
-                        for i, row in wk_df.sort_values(by='wk_score', ascending=False).iterrows():
-                            report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
-                    report += "\n🚀 *新一週由零開始，大家加油！*"
-                    st.code(report)
-                    st.link_button("📤 Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
 
-        df = get_data("Yearly")
+# ─── Logged-in shell ─────────────────────────────────────────────────────────
+check_notifications(st.session_state["user"])
+is_leader = st.session_state["role"] == "Leader"
+
+with st.sidebar:
+    st.markdown("<br>", unsafe_allow_html=True)
+    c_avt, c_txt = st.columns([1, 2])
+    with c_avt:
+        if st.session_state.get("avatar"):
+            st.image(st.session_state["avatar"], width=72)
+    with c_txt:
+        st.markdown(
+            f"<h3 style='margin:0'>{st.session_state['user']}</h3>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"{st.session_state['role']} · TIM TEAM")
+
+    sync = last_iris_sync()
+    if sync:
+        st.caption(f"Iris 上次同步：{str(sync.get('synced_at', ''))[:16]}")
+    else:
+        st.caption("Iris 尚未同步業績")
+
+    st.divider()
+    menu_items = [
+        "🏠 我的主頁",
+        "📝 打卡 Check-in",
+        "📊 團隊 Dashboard",
+        "📅 每月業績",
+        "🏆 年度挑戰",
+        "⚖️ 每週挑戰",
+        "🤝 招募龍虎榜",
+        "📚 彈藥庫",
+    ]
+    if is_leader:
+        menu_items.insert(4, "🔄 Iris 業績同步")
+    menu_items.append("👤 設定")
+
+    menu = st.radio("MAIN MENU", menu_items, label_visibility="collapsed")
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("登出", use_container_width=True, type="secondary"):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
+
+# ─── Pages ───────────────────────────────────────────────────────────────────
+def page_home():
+    user = st.session_state["user"]
+    snap = get_member_snapshot(user) if st.session_state["role"] == "Member" else None
+    team = get_data("Yearly")
+
+    st.markdown(
+        f"""
+        <div class="tt-hero">
+          <div class="tt-kicker">TIM TEAM SYSTEM</div>
+          <h1 style="margin:0;">你好，{user}</h1>
+          <p class="tt-sub">今日目標：完成活動打卡 · 睇清楚自己同團隊進度</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if snap:
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown(
+                f"""<div class="tt-card"><div class="tt-label">本週活動</div>
+                <div class="tt-value">{snap['wk_count']} / {WEEKLY_MIN_ACTS}</div>
+                <div class="tt-hint">分數 {snap['wk_score']} · {snap['wk_start']} 起</div></div>""",
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                f"""<div class="tt-card"><div class="tt-label">我的 FYC</div>
+                <div class="tt-value">${snap['fyc']:,.0f}</div>
+                <div class="tt-hint">MDRT {snap['mdrt_pct']:.1f}%</div>
+                <div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{snap['mdrt_pct']}%"></div></div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+        with c3:
+            st.markdown(
+                f"""<div class="tt-card"><div class="tt-label">活動分數</div>
+                <div class="tt-value">{snap['score']}</div>
+                <div class="tt-hint">全年累積</div></div>""",
+                unsafe_allow_html=True,
+            )
+        with c4:
+            st.markdown(
+                f"""<div class="tt-card"><div class="tt-label">招募</div>
+                <div class="tt-value">{snap['recruit']}</div>
+                <div class="tt-hint">Team FYC ${snap['team_fyc']:,.0f}</div></div>""",
+                unsafe_allow_html=True,
+            )
+    else:
         c1, c2, c3 = st.columns(3)
-        c1.metric("💰 Team FYC", f"${df['fyc'].sum():,.0f}"); c2.metric("👥 Recruits", int(df['recruit'].sum())); c3.metric("🔥 Activities", int(df['Total_Score'].sum()))
-        st.markdown("### 🏆 Leaderboard")
-        mdrt_target = 512800
-        df['mdrt_fraction'] = df['fyc'].apply(lambda x: f"${x:,.0f} / ${mdrt_target:,.0f}")
-        df['mdrt_percent'] = (df['fyc'] / mdrt_target) * 100
-        df_sorted = df.sort_values(by='fyc', ascending=False)
-        st.dataframe(df_sorted[['avatar', 'username', 'mdrt_fraction', 'mdrt_percent', 'recruit', 'Total_Score']],
+        c1.metric("Team FYC", f"${team['fyc'].sum():,.0f}" if not team.empty else "$0")
+        c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
+        c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
+
+    st.markdown("### 快速打卡")
+    with st.form("quick_checkin", clear_on_submit=True):
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            d = st.date_input("日期", value=datetime.date.today())
+            t = st.selectbox("活動種類", ACTIVITY_TYPES)
+        with c2:
+            n = st.text_area(
+                "重點備註（可簡短）",
+                height=120,
+                placeholder="客戶名 / 下一步 / 結果…",
+            )
+        if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
+            if n.strip():
+                add_act(user, d, t, n.strip())
+                st.toast("打卡成功！", icon="✅")
+                st.rerun()
+            else:
+                st.error("請寫至少一句備註")
+
+    st.markdown("### 團隊最新動態")
+    acts = get_all_act().head(5)
+    users_df = get_clean_users()
+    if acts.empty:
+        st.info("暫時未有動態 — 去「打卡」寫第一筆啦。")
+    else:
+        acts = pd.merge(acts, users_df[["username", "avatar"]], on="username", how="left")
+        for _, row in acts.iterrows():
+            act_date = pd.to_datetime(row["date"]).strftime("%Y-%m-%d")
+            avatar_url = (
+                row["avatar"]
+                if isinstance(row.get("avatar"), str) and str(row["avatar"]).startswith("http")
+                else f"https://ui-avatars.com/api/?background=d4af37&color=fff&name={row['username']}"
+            )
+            card_class, badge_class = get_activity_style(row["type"])
+            note_html = str(row["note"]).replace("\n", "<br>")
+            st.markdown(
+                f"""
+                <div class="activity-card {card_class}">
+                  <div class="act-header">
+                    <div style="display:flex;align-items:center;">
+                      <img src="{avatar_url}" class="act-avatar">
+                      <div><div class="act-name">{row['username']}</div>
+                      <div class="act-time">{act_date}</div></div>
+                    </div>
+                    <div class="act-badge {badge_class}">{row['type']}</div>
+                  </div>
+                  <div class="act-content">{note_html}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def page_checkin():
+    st.markdown("## 打卡中心")
+    st.caption("用範本記面談重點，提交後即時出現喺團隊動態。")
+    tab_new, tab_hist = st.tabs(["立即打卡", "團隊動態"])
+
+    with tab_new:
+        t = st.selectbox("活動種類", ACTIVITY_TYPES, key="ci_type")
+        default_note = get_note_template(t)
+        with st.form("checkin_form", clear_on_submit=True):
+            d = st.date_input("日期", value=datetime.date.today())
+            n = st.text_area("內容詳情", value=default_note, height=200)
+            if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
+                add_act(st.session_state["user"], d, t, n)
+                st.toast("提交成功！", icon="✅")
+
+    with tab_hist:
+        users_df = get_clean_users()
+        filter_user = st.multiselect(
+            "篩選同事", options=users_df["username"].unique().tolist() if not users_df.empty else []
+        )
+        all_acts = get_all_act()
+        if all_acts.empty:
+            st.info("暫無動態")
+            return
+        all_acts = pd.merge(all_acts, users_df[["username", "avatar"]], on="username", how="left")
+        display_df = all_acts[all_acts["username"].isin(filter_user)] if filter_user else all_acts
+        for _, row in display_df.iterrows():
+            act_date = pd.to_datetime(row["date"]).strftime("%Y-%m-%d")
+            act_time = (
+                pd.to_datetime(row["timestamp"]).strftime("%H:%M") if row.get("timestamp") else ""
+            )
+            avatar_url = (
+                row["avatar"]
+                if isinstance(row.get("avatar"), str) and str(row["avatar"]).startswith("http")
+                else f"https://ui-avatars.com/api/?background=random&color=fff&name={row['username']}"
+            )
+            card_class, badge_class = get_activity_style(row["type"])
+            st.markdown(
+                f"""
+                <div class="activity-card {card_class}">
+                  <div class="act-header">
+                    <div style="display:flex;align-items:center;">
+                      <img src="{avatar_url}" class="act-avatar">
+                      <div><div class="act-name">{row['username']}</div>
+                      <div class="act-time">{act_date} {act_time}</div></div>
+                    </div>
+                    <div class="act-badge {badge_class}">{row['type']}</div>
+                  </div>
+                  <div class="act-content">{str(row['note']).replace(chr(10), '<br>')}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def page_dashboard():
+    st.markdown(f"## Dashboard · {st.session_state['user']}")
+    if is_leader:
+        with st.expander("每週戰報生成器（Leader）", expanded=False):
+            if st.button("生成上週結算戰報"):
+                wk_df, start, end = get_last_week_data()
+                max_score = wk_df["wk_score"].max() if not wk_df.empty else 0
+                winners = (
+                    wk_df[wk_df["wk_score"] == max_score]
+                    if not wk_df.empty and max_score > 0
+                    else pd.DataFrame()
+                )
+                losers = wk_df[wk_df["wk_count"] < WEEKLY_MIN_ACTS] if not wk_df.empty else pd.DataFrame()
+                penalty_total = len(losers) * WEEKLY_PENALTY
+                prize = (
+                    penalty_total / len(winners)
+                    if penalty_total > 0 and not winners.empty
+                    else (WEEKLY_PENALTY / len(winners) if not winners.empty else 0)
+                )
+                report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】*\n\n"
+                if max_score > 0 and not winners.empty:
+                    report += f"🏆 *上週 MVP (獨得獎金 ${int(prize)}):*\n"
+                    for _, w in winners.iterrows():
+                        report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
+                    report += (
+                        f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n"
+                        if penalty_total > 0
+                        else "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
+                    )
+                else:
+                    report += "⚠️ *上週全軍覆沒？* 無人開工？\n\n"
+                if not losers.empty:
+                    report += f"💸 *【罰款名單 - 每人 ${WEEKLY_PENALTY}】*\n"
+                    for _, l in losers.iterrows():
+                        report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
+                else:
+                    report += "✅ *上週無人罰款！Excellent！*\n"
+                report += "\n📊 *詳細戰況：*\n"
+                if not wk_df.empty:
+                    for _, row in wk_df.sort_values(by="wk_score", ascending=False).iterrows():
+                        report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
+                report += "\n🚀 *新一週由零開始，大家加油！*"
+                st.code(report)
+                st.link_button("Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
+
+    df = get_data("Yearly")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Team FYC", f"${df['fyc'].sum():,.0f}" if not df.empty else "$0")
+    c2.metric("Recruits", int(df["recruit"].sum()) if not df.empty else 0)
+    c3.metric("Activities", int(df["Total_Score"].sum()) if not df.empty else 0)
+
+    st.markdown("### Leaderboard")
+    if df.empty:
+        st.info("暫無成員數據")
+    else:
+        df = df.copy()
+        df["mdrt_fraction"] = df["fyc"].apply(lambda x: f"${x:,.0f} / ${MDRT_TARGET:,.0f}")
+        df["mdrt_percent"] = (df["fyc"] / MDRT_TARGET) * 100
+        st.dataframe(
+            df.sort_values(by="fyc", ascending=False)[
+                ["avatar", "username", "mdrt_fraction", "mdrt_percent", "recruit", "Total_Score"]
+            ],
             column_config={
                 "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                "username": st.column_config.TextColumn("Name"),
-                "mdrt_fraction": st.column_config.TextColumn("MDRT 進度 (實數)"),
-                "mdrt_percent": st.column_config.ProgressColumn("MDRT %", format="%.1f%%", min_value=0, max_value=100),
+                "username": "Name",
+                "mdrt_fraction": "MDRT 進度",
+                "mdrt_percent": st.column_config.ProgressColumn(
+                    "MDRT %", format="%.1f%%", min_value=0, max_value=100
+                ),
                 "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
-                "Total_Score": st.column_config.NumberColumn("Activity", format="%d")
-            }, use_container_width=True, hide_index=True)
+                "Total_Score": st.column_config.NumberColumn("Activity", format="%d"),
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
 
-        if st.session_state['role'] == 'Leader':
-            with st.expander("⚙️ 業績/招募管理 (Admin Only)"):
-                c_a, c_b, c_c = st.columns(3)
-                user_list = df['username'].unique().tolist()
-                tgt = c_a.selectbox("User", user_list); mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)]); amt = c_c.number_input("Amount", step=1000)
-                if st.button("Save FYC"): upd_fyc(tgt, mth, amt); st.toast("Saved!", icon="✅"); st.rerun()
-                st.divider()
-                c_d, c_e = st.columns(2)
-                tgt_r = c_d.selectbox("User", user_list, key="r1"); rec = c_e.number_input("Recruits", step=1)
-                if st.button("Save Recruit"): upd_rec(tgt_r, rec); st.toast("Saved!", icon="✅"); st.rerun()
+    if is_leader:
+        with st.expander("手動調整業績 / 招募（備用）"):
+            st.caption("日常請用「Iris 業績同步」。呢度只係後備人手修正。")
+            c_a, c_b, c_c = st.columns(3)
+            user_list = df["username"].unique().tolist() if not df.empty else []
+            tgt = c_a.selectbox("User", user_list)
+            mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1, 13)])
+            amt = c_c.number_input("Amount", step=1000)
+            if st.button("Save FYC"):
+                upd_fyc(tgt, mth, amt, source="manual")
+                st.toast("Saved!", icon="✅")
+                st.rerun()
+            st.divider()
+            c_d, c_e = st.columns(2)
+            tgt_r = c_d.selectbox("User", user_list, key="r1")
+            rec = c_e.number_input("Recruits", step=1)
+            if st.button("Save Recruit"):
+                upd_rec(tgt_r, rec)
+                st.toast("Saved!", icon="✅")
+                st.rerun()
 
-    elif "Story Depot" in menu:
-        st.markdown("## 📚 逢星期四 Drill Training 素材庫")
-        st.caption("「將客觀數據轉化為真實故事，極端對比出無保障嘅噩夢 vs 有保障嘅美夢」")
-        
-        active_pool_df = get_clean_users()
-        roster_pool = active_pool_df[~active_pool_df['username'].isin(['Admin', 'Tim'])]['username'].dropna().unique().tolist()
-        roster_pool.sort() 
-        
-        if not roster_pool: roster_pool = [u for u in active_pool_df['username'].unique() if u != 'Admin']
-        if not roster_pool: roster_pool = ['本週負責同事']
-        
-        curr_week_num = datetime.date.today().isocalendar()[1]
-        this_week_duty = roster_pool[curr_week_num % len(roster_pool)]
-        
-        st.markdown(f"""
-        <div class="challenge-header-box" style="border-left-color: #9b59b6; background: linear-gradient(to right, #f4ecf7, #ffffff);">
-            <div style="font-size: 1.1em; font-weight: 800; color: #9b59b6; margin-bottom: 5px;">📢 本週 Drill Training (Week {curr_week_num}) 任務分配</div>
-            <div style="font-size: 1.1em; color: #333;">
-                🎯 輪值主講同事： <strong style="color: #9b59b6; font-size:1.25em;">【 {this_week_duty} 】</strong><br>
-                👑 固定主講底子： <strong style="color: #D4AF37; font-size:1.25em;">【 Tim 】</strong>
-            </div>
-            <p style="margin: 8px 0 0 0; font-size: 0.9em; color: #666;">
-                玩法：提交「專業知識點」同「真實故事背景」。Training 時全隊一齊腦力激盪，畫出客戶不作為嘅「噩夢畫面」同擁有方案嘅「美夢畫面」！
-            </p>
+
+def page_iris_sync():
+    st.markdown("## Iris 業績同步")
+    st.markdown(
+        """
+        <div class="iris-banner">
+          <strong>點樣用（約 1 分鐘）</strong><br>
+          1. 喺 FWD Iris / Agent Assist 匯出團隊業績報表（Excel 或 CSV）<br>
+          2. 第一次先做好「顧問對應」：Iris 姓名／編號 → 系統 Username<br>
+          3. 上傳檔案 → 預覽 → 一鍵同步到每月 FYC
         </div>
-        """, unsafe_allow_html=True)
-        
-        tab_submit, tab_library = st.tabs(["📥 1. 提交知識素材 (Drill 前)", "📖 2. 團隊武器庫 (天堂與地獄對照)"])
-        
-        with tab_submit:
-            with st.form("ammo_form", clear_on_submit=True):
-                st.markdown("### ✍️ 準備 Heaven & Hell 銷售素材")
-                c_cat, c_date = st.columns(2)
-                with c_cat:
-                    cat = st.selectbox("📌 知識點範疇", [
-                        "行為金融學 (理智漏洞)", 
-                        "醫療理賠 (危機感)", 
-                        "財富傳承 (家族案例)", 
-                        "資產配置 (觀念導正)", 
-                        "市場熱話 / 政策解讀"
-                    ])
-                with c_date:
-                    d = st.date_input("📅 提交日期", value=datetime.date.today())
-                
-                title = st.text_input("🏷️ 知識點主題 (Hook)", placeholder="e.g., 隱形醫療通脹")
-                knowledge = st.text_area("📚 專業知識點 (客觀事實)", height=80, placeholder="e.g., 過去十年香港醫療通脹率平均每年8-10%...")
-                story_context = st.text_area("🗣️ 真實故事背景 (引起共鳴)", height=80, placeholder="e.g., 一位IT中層，突然確診，公司保險3個月就打爆咗...")
-                
-                st.markdown("---")
-                st.markdown("*(以下欄位可於 Training 討論後再完整補上)*")
-                c_night, c_dream = st.columns(2)
-                with c_night:
-                    nightmare = st.text_area("💔 噩夢畫面 (無保障嘅慘況)", height=150, placeholder="e.g., 太太喊到崩潰，要賣樓賣車籌醫藥費...")
-                with c_dream:
-                    dream = st.text_area("✨ 美夢畫面 (擁有保障嘅安心)", height=150, placeholder="e.g., 唯一任務就係專心養病，唔使愁下個月供樓啲錢...")
-                
-                scenario = st.text_input("🎯 實戰場景 (幾時對客講？)", placeholder="e.g., 當客戶嫌醫療保險貴，覺得有公司醫保就夠嗰陣")
-                
-                if st.form_submit_button("🚀 儲存知識素材"):
-                    if title and knowledge and story_context:
-                        add_ammo(st.session_state['user'], d, cat, title, knowledge, story_context, nightmare, dream, scenario)
-                        st.toast("知識點提交成功！", icon="💥")
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "FWD Iris 未有對外公開 API，所以用官方匯出檔同步係最穩陣、合規嘅做法。"
+        "同步後 Dashboard / 每月業績 / 年度挑戰會即時更新。"
+    )
+
+    tab_map, tab_sync, tab_log = st.tabs(["① 顧問對應", "② 上傳同步", "③ 同步紀錄"])
+
+    users = get_clean_users()
+    member_names = users[users["role"] == "Member"]["username"].tolist() if not users.empty else []
+
+    with tab_map:
+        st.markdown("#### 將 Iris 顧問對應到系統帳號")
+        with st.form("map_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            iris_name = c1.text_input("Iris 姓名", placeholder="報表上嘅 Agent Name")
+            iris_code = c2.text_input("Iris 編號（可選）", placeholder="Agent Code")
+            username = c3.selectbox("系統 Username", member_names)
+            notes = st.text_input("備註（可選）")
+            if st.form_submit_button("儲存對應", type="primary"):
+                if iris_name or iris_code:
+                    save_agent_mapping(iris_name, iris_code, username, notes)
+                    st.toast("對應已儲存", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("請至少填 Iris 姓名或編號")
+
+        amap = get_agent_map()
+        if amap.empty:
+            st.info("未有對應。第一次同步前建議先加齊團隊成員。")
+        else:
+            st.dataframe(amap, use_container_width=True, hide_index=True)
+
+    with tab_sync:
+        st.download_button(
+            "下載範本 CSV",
+            data=sample_template_csv(),
+            file_name="iris_fyc_template.csv",
+            mime="text/csv",
+        )
+        uploaded = st.file_uploader(
+            "上傳 Iris 匯出檔",
+            type=["xlsx", "xls", "csv"],
+            help="支援常見欄位：Agent Name / Agent Code / FYC / Month",
+        )
+        default_month = datetime.date.today().strftime("%Y-%m")
+        month_choice = st.selectbox(
+            "若檔案無月份欄，使用此月份",
+            [f"2026-{i:02d}" for i in range(1, 13)],
+            index=max(0, datetime.date.today().month - 1),
+        )
+
+        if uploaded:
+            try:
+                raw_df = load_iris_file(uploaded)
+            except Exception as e:
+                st.error(f"無法讀取檔案：{e}")
+                return
+
+            st.markdown("#### 原始預覽")
+            st.dataframe(raw_df.head(20), use_container_width=True)
+
+            detected = detect_columns(raw_df)
+            cols = [str(c) for c in raw_df.columns]
+            c1, c2, c3, c4 = st.columns(4)
+            col_agent = c1.selectbox(
+                "姓名欄",
+                ["（無）"] + cols,
+                index=(cols.index(detected["agent"]) + 1) if detected["agent"] in cols else 0,
+            )
+            col_code = c2.selectbox(
+                "編號欄",
+                ["（無）"] + cols,
+                index=(cols.index(detected["code"]) + 1) if detected["code"] in cols else 0,
+            )
+            fyc_default = cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
+            col_fyc = c3.selectbox("FYC / 業績欄", cols, index=fyc_default)
+            col_month = c4.selectbox(
+                "月份欄",
+                ["（用上方選擇）"] + cols,
+                index=(cols.index(detected["month"]) + 1) if detected["month"] in cols else 0,
+            )
+
+            preview = build_sync_preview(
+                raw_df,
+                None if col_agent == "（無）" else col_agent,
+                None if col_code == "（無）" else col_code,
+                col_fyc,
+                None if col_month == "（用上方選擇）" else col_month,
+                month_choice or default_month,
+            )
+            st.markdown("#### 對應結果")
+            matched_n = int(preview["matched"].sum()) if not preview.empty else 0
+            st.write(f"可同步：**{matched_n}** 列 · 未對應：**{len(preview) - matched_n}** 列")
+            st.dataframe(
+                preview,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "amount": st.column_config.NumberColumn("FYC", format="$%.0f"),
+                    "matched": "已對應",
+                },
+            )
+            unmatched = preview[~preview["matched"]] if not preview.empty else preview
+            if not unmatched.empty:
+                st.warning("以下 Iris 顧問未對應到系統帳號 — 請返去「顧問對應」補返：")
+                st.dataframe(
+                    unmatched[["iris_name", "iris_code", "amount", "month"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            if st.button("確認同步到系統", type="primary", disabled=matched_n == 0):
+                result = apply_sync(preview, st.session_state["user"], uploaded.name)
+                st.success(
+                    f"同步完成：更新 {result['updated']} 筆 · "
+                    f"涵蓋 {result['matched_users']} 位成員 · 月份 {', '.join(result['months']) or '—'}"
+                )
+                st.balloons()
+                st.rerun()
+
+    with tab_log:
+        log = read_data("iris_sync_log")
+        if log.empty:
+            st.info("未有同步紀錄")
+        else:
+            st.dataframe(
+                log.sort_values(by="id", ascending=False),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+def page_monthly():
+    st.markdown("## 每月 FYC")
+    m = st.selectbox("月份", [f"2026-{i:02d}" for i in range(1, 13)], index=datetime.date.today().month - 1)
+    df = get_data(month=m)
+    if df.empty:
+        st.info("本月暫無數據 — Leader 可用 Iris 同步匯入。")
+        return
+    max_fyc = df["fyc"].max() if df["fyc"].max() > 0 else 50000
+    st.dataframe(
+        df[["avatar", "username", "fyc"]].sort_values(by="fyc", ascending=False),
+        column_config={
+            "avatar": st.column_config.ImageColumn("Avatar", width="small"),
+            "username": "Agent",
+            "fyc": st.column_config.ProgressColumn(
+                "FYC", format="$%d", min_value=0, max_value=max_fyc
+            ),
+        },
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def page_year_goal():
+    st.markdown("## 2026 年度挑戰")
+    q1_df = get_q1_data()
+    st.markdown(
+        f"""
+        <div class="challenge-header-box">
+          <strong>Q1 {Q1_TARGET:,} Challenge（1/1 – 31/3）</strong><br>
+          第一季累積 FYC 達 HK$ {Q1_TARGET:,} — MDRT 入場券。
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if not q1_df.empty:
+        for _, r in q1_df.sort_values(by="q1_total", ascending=False).iterrows():
+            progress = min(r["q1_total"] / Q1_TARGET, 1.0) if Q1_TARGET else 0
+            st.markdown(
+                f"""
+                <div class="tt-card" style="margin-bottom:10px;display:flex;gap:14px;align-items:center;">
+                  <img src="{r['avatar']}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;">
+                  <div style="flex:1;">
+                    <div style="font-weight:700;">{r['username']}</div>
+                    <div>${r['q1_total']:,.0f}</div>
+                    <div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{progress*100}%;"></div></div>
+                    <div class="tt-hint">Target: ${Q1_TARGET:,} ({progress*100:.1f}%)</div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("暫無 Q1 業績數據")
+
+    st.markdown("### 年度獎賞")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            '<div class="reward-card-premium"><span class="reward-icon">🚀</span>'
+            '<p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p>'
+            '<p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>',
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            '<div class="reward-card-premium"><span class="reward-icon">👑</span>'
+            '<p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p>'
+            '<p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>',
+            unsafe_allow_html=True,
+        )
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown(
+            '<div class="reward-card-premium"><span class="reward-icon">✈️</span>'
+            '<p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p>'
+            '<p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>',
+            unsafe_allow_html=True,
+        )
+    with c4:
+        st.markdown(
+            '<div class="reward-card-premium"><span class="reward-icon">🍽️</span>'
+            '<p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p>'
+            '<p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>',
+            unsafe_allow_html=True,
+        )
+
+
+def page_challenge():
+    df, start, end = get_weekly_data()
+    st.markdown(f"## 每週挑戰 · {start} ~ {end}")
+    st.markdown(
+        f"""
+        <div class="challenge-header-box">
+          <strong>遊戲規則</strong>
+          <ul>
+            <li>結算：逢星期日晚 23:59</li>
+            <li>每週活動少於 <strong>{WEEKLY_MIN_ACTS} 次</strong> → 罰款 ${WEEKLY_PENALTY}</li>
+            <li>罰款注入獎金池，由最高分者獨得</li>
+          </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if df.empty:
+        st.info("本週暫無數據")
+        return
+    max_score = df["wk_score"].max()
+    winners = df[df["wk_score"] == max_score] if max_score > 0 else pd.DataFrame()
+    pool = len(df[df["wk_count"] < WEEKLY_MIN_ACTS]) * WEEKLY_PENALTY
+    st.markdown(
+        f"### Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else WEEKLY_PENALTY}</span>",
+        unsafe_allow_html=True,
+    )
+    if not winners.empty:
+        cols = st.columns(len(winners))
+        for idx, row in winners.reset_index().iterrows():
+            cols[idx].image(row["avatar"], width=60)
+            cols[idx].caption(f"👑 {row['username']}")
+    st.dataframe(
+        df[["avatar", "username", "wk_score", "wk_count"]].sort_values(
+            by="wk_score", ascending=False
+        ),
+        column_config={
+            "avatar": st.column_config.ImageColumn("", width="small"),
+            "wk_score": st.column_config.ProgressColumn(
+                "Score", format="%d", max_value=max(10, int(max_score) if max_score else 10)
+            ),
+        },
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def page_recruit():
+    st.markdown("## 招募龍虎榜")
+    df = get_data("Yearly")
+    if df.empty:
+        st.info("暫無招募數據")
+        return
+    st.dataframe(
+        df[["avatar", "username", "recruit"]].sort_values(by="recruit", ascending=False),
+        column_config={
+            "avatar": st.column_config.ImageColumn("Avatar", width="small"),
+            "username": "Agent",
+            "recruit": st.column_config.ProgressColumn(
+                "Recruits", format="%d", min_value=0, max_value=10
+            ),
+        },
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def page_ammo():
+    st.markdown("## Story Depot 彈藥庫")
+    st.caption("將客觀數據轉成真實故事：噩夢 vs 美夢")
+
+    active_pool_df = get_clean_users()
+    roster_pool = (
+        active_pool_df[~active_pool_df["username"].isin(["Admin", "Tim"])]["username"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    roster_pool.sort()
+    if not roster_pool:
+        roster_pool = [u for u in active_pool_df["username"].unique() if u != "Admin"] or ["本週負責同事"]
+    curr_week_num = datetime.date.today().isocalendar()[1]
+    this_week_duty = roster_pool[curr_week_num % len(roster_pool)]
+
+    st.markdown(
+        f"""
+        <div class="challenge-header-box" style="border-left-color:#9b59b6;background:linear-gradient(to right,#f4ecf7,#ffffff);">
+          <div style="font-weight:800;color:#9b59b6;">本週 Drill Training（Week {curr_week_num}）</div>
+          輪值主講：<strong style="color:#9b59b6;">【 {this_week_duty} 】</strong><br>
+          固定主講：<strong style="color:#D4AF37;">【 Tim 】</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab_submit, tab_library = st.tabs(["提交知識素材", "團隊武器庫"])
+    with tab_submit:
+        with st.form("ammo_form", clear_on_submit=True):
+            c_cat, c_date = st.columns(2)
+            cat = c_cat.selectbox("知識點範疇", AMMO_CATEGORIES)
+            d = c_date.date_input("提交日期", value=datetime.date.today())
+            title = st.text_input("知識點主題 (Hook)", placeholder="e.g. 隱形醫療通脹")
+            knowledge = st.text_area("專業知識點", height=80)
+            story_context = st.text_area("真實故事背景", height=80)
+            c_night, c_dream = st.columns(2)
+            nightmare = c_night.text_area("噩夢畫面", height=140)
+            dream = c_dream.text_area("美夢畫面", height=140)
+            scenario = st.text_input("實戰場景")
+            if st.form_submit_button("儲存知識素材", type="primary"):
+                if title and knowledge and story_context:
+                    add_ammo(
+                        st.session_state["user"],
+                        d,
+                        cat,
+                        title,
+                        knowledge,
+                        story_context,
+                        nightmare,
+                        dream,
+                        scenario,
+                    )
+                    st.toast("知識點提交成功！", icon="💥")
+                else:
+                    st.error("「標題」「知識點」「真實故事」必填")
+
+    with tab_library:
+        df_ammo = read_data("story_ammo")
+        if df_ammo.empty or "knowledge" not in df_ammo.columns:
+            st.info("武器庫仲係空 — 提交第一批素材啦。")
+            return
+        df_ammo = df_ammo.drop_duplicates(subset=["id"], keep="first").sort_values(
+            by="id", ascending=False
+        )
+        col_s, col_f = st.columns([2, 1])
+        search_kw = col_s.text_input("關鍵字搜尋", placeholder="標題或故事…")
+        filter_cat = col_f.selectbox("分類", ["全部"] + df_ammo["category"].unique().tolist())
+        filtered = df_ammo
+        if filter_cat != "全部":
+            filtered = filtered[filtered["category"] == filter_cat]
+        if search_kw:
+            filtered = filtered[
+                filtered["title"].str.contains(search_kw, na=False)
+                | filtered["knowledge"].str.contains(search_kw, na=False)
+                | filtered["story_context"].str.contains(search_kw, na=False)
+            ]
+        st.caption(f"武器庫存量：{len(filtered)}")
+        for _, row in filtered.iterrows():
+            with st.expander(f"[{row['category']}] {row['title']}  ·  {row['username']}"):
+                st.markdown(f"**專業知識點：**\n{row['knowledge']}")
+                st.markdown(f"**真實故事：**\n{row['story_context']}")
+                c_n, c_d = st.columns(2)
+                with c_n:
+                    if row.get("nightmare"):
+                        st.markdown(
+                            f"<div class='ammo-nightmare'><strong>噩夢：</strong><br>{row['nightmare']}</div>",
+                            unsafe_allow_html=True,
+                        )
                     else:
-                        st.error("「標題」、「知識點」同「真實故事」係必填架！噩夢/美夢可以留空。")
+                        st.warning("噩夢畫面待 Training 討論")
+                with c_d:
+                    if row.get("dream"):
+                        st.markdown(
+                            f"<div class='ammo-dream'><strong>美夢：</strong><br>{row['dream']}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.warning("美夢畫面待 Training 討論")
+                st.caption(f"場景：{row.get('scenario','')} · {row.get('date','')}")
 
-        with tab_library:
-            df_ammo = read_data("story_ammo")
-            if not df_ammo.empty and 'knowledge' in df_ammo.columns:
-                df_ammo = df_ammo.drop_duplicates(subset=['id'], keep='first').sort_values(by='id', ascending=False)
-                
-                col_s, col_f = st.columns([2, 1])
-                with col_s: search_kw = st.text_input("🔍 關鍵字搜尋", placeholder="搜尋標題或故事內容...")
-                with col_f: filter_cat = st.selectbox("📂 分類篩選", ["全部"] + df_ammo['category'].unique().tolist())
-                
-                filtered_df = df_ammo
-                if filter_cat != "全部": filtered_df = filtered_df[filtered_df['category'] == filter_cat]
-                if search_kw:
-                    filtered_df = filtered_df[
-                        filtered_df['title'].str.contains(search_kw, na=False) | 
-                        filtered_df['knowledge'].str.contains(search_kw, na=False) |
-                        filtered_df['story_context'].str.contains(search_kw, na=False)
-                    ]
-                
-                st.markdown(f"**武器庫總存量： {len(filtered_df)} 個 Script**")
-                
-                for idx, row in filtered_df.iterrows():
-                    with st.expander(f"[{row['category']}] {row['title']}  (✍️ 提交人: {row['username']})"):
-                        
-                        st.markdown(f"**📚 專業知識點：**\n{row['knowledge']}")
-                        st.markdown(f"**🗣️ 真實故事背景：**\n{row['story_context']}")
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        
-                        c_night, c_dream = st.columns(2)
-                        with c_night:
-                            if row['nightmare']:
-                                st.markdown(f"<div class='ammo-nightmare'><strong>💔 噩夢畫面 (無買/買錯的代價)：</strong><br><br>{row['nightmare']}</div>", unsafe_allow_html=True)
-                            else:
-                                st.warning("⏳ 噩夢畫面等待 Training 討論...")
-                        with c_dream:
-                            if row['dream']:
-                                st.markdown(f"<div class='ammo-dream'><strong>✨ 美夢畫面 (擁有方案的結果)：</strong><br><br>{row['dream']}</div>", unsafe_allow_html=True)
-                            else:
-                                st.warning("⏳ 美夢畫面等待 Training 討論...")
-                                
-                        st.caption(f"🎯 應用場景：{row['scenario']}  •  📅 記錄日期：{row['date']}")
-            else:
-                st.info("武器庫仲係吉架，快啲提交第一批素材！(請確保已刪除 Google Sheet 舊有嘅 story_ammo)")
 
-    elif "Check-in" in menu:
-        st.markdown("## 📝 Activity Center")
-        tab_new, tab_hist = st.tabs(["✍️ 立即打卡 (Check-in)", "👀 團隊動態 (Team Feed)"])
-        
-        with tab_new:
-            with st.form("checkin_form", clear_on_submit=True):
-                with st.container(border=True):
-                    c_date, c_type = st.columns([1, 1])
-                    with c_date: d = st.date_input("📅 日期", value=datetime.date.today())
-                    with c_type: t = st.selectbox("📌 活動種類", ACTIVITY_TYPES)
-                    note_val = TEMPLATE_RECRUIT if "招募" in t else TEMPLATE_NEWBIE if "新人" in t else TEMPLATE_SALES
-                    n = st.text_area("📝 內容詳情 / 備註", value=note_val, height=180, help="請詳細記錄客戶反應或下一步行動")
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    submitted = st.form_submit_button("🚀 提交打卡 (Submit)", type="primary")
-                    if submitted: 
-                        add_act(st.session_state['user'], d, t, n)
-                        st.toast("提交成功！", icon="✅")
+def page_profile():
+    st.markdown("## 個人設定")
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if st.session_state.get("avatar"):
+            st.image(st.session_state["avatar"], width=150)
+    with col2:
+        st.markdown(f"### {st.session_state['user']}")
+        st.markdown(f"**Role:** {st.session_state['role']}")
+        with st.expander("更改密碼"):
+            new_pw = st.text_input("新密碼", type="password")
+            if st.button("更新密碼"):
+                update_pw(st.session_state["user"], new_pw)
+                st.toast("Password Updated!", icon="✅")
+        with st.expander("更改頭像"):
+            uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
+            if uploaded_file is not None and st.button("Upload"):
+                img_str = proc_img(uploaded_file)
+                if img_str:
+                    update_avt(st.session_state["user"], img_str)
+                    st.session_state["avatar"] = img_str
+                    st.toast("Avatar Updated!", icon="✅")
+                    st.rerun()
 
-        with tab_hist:
-            st.markdown("### 📜 Timeline")
-            users_df = get_clean_users()
-            user_options = users_df['username'].unique() if not users_df.empty else []
-            filter_user = st.multiselect("🔍 篩選同事 (Filter)", options=user_options)
-            
-            all_acts = get_all_act()
-            if not all_acts.empty:
-                users_mini = users_df[['username', 'avatar']]
-                all_acts = pd.merge(all_acts, users_mini, on='username', how='left')
-                display_df = all_acts[all_acts['username'].isin(filter_user)] if filter_user else all_acts
-                
-                for idx, row in display_df.iterrows():
-                    act_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
-                    act_time = pd.to_datetime(row['timestamp']).strftime('%H:%M') if row['timestamp'] else ""
-                    avatar_url = row['avatar'] if isinstance(row['avatar'], str) and row['avatar'].startswith('http') else "https://ui-avatars.com/api/?background=random&color=fff&name=" + row['username']
-                    card_class, badge_class = get_activity_style(row['type'])
-                    
-                    st.markdown(f"""
-                    <div class="activity-card {card_class}">
-                        <div class="act-header">
-                            <div class="act-user-info">
-                                <img src="{avatar_url}" class="act-avatar">
-                                <div><div class="act-name">{row['username']}</div><div class="act-time">{act_date} {act_time}</div></div>
-                            </div>
-                            <div class="act-badge {badge_class}">{row['type']}</div>
-                        </div>
-                        <div class="act-content">{row['note'].replace(chr(10), '<br>')}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("暫無動態，快啲去 Check-in！")
 
-    elif "Challenge" in menu:
-        df, start, end = get_weekly_data()
-        st.markdown(f"## ⚖️ Winner Takes All ({start} ~ {end})")
-        st.markdown("""<div class="challenge-header-box"><div class="challenge-title">📜 詳細遊戲規則 (Game Rules)：</div><ul class="challenge-rules"><li><strong>結算時間：</strong> 逢星期日晚 23:59 系統自動結算。</li><li><strong>罰款準則：</strong> 每週活動量 (Count) <strong>少於 3 次</strong> 者，需罰款 <strong>$100</strong>。</li><li><strong>獎金歸屬：</strong> 所有罰款注入獎金池，由 <strong>最高分 (Score)</strong> 者獨得。</li></ul></div>""", unsafe_allow_html=True)
-        if not df.empty:
-            max_score = df['wk_score'].max(); winners = df[df['wk_score'] == max_score] if max_score > 0 else pd.DataFrame()
-            pool = len(df[df['wk_count'] < 3]) * 100
-            st.markdown(f"### 🏆 Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else 100}</span>", unsafe_allow_html=True)
-            if not winners.empty:
-                cols = st.columns(len(winners)); 
-                for idx, row in winners.reset_index().iterrows(): cols[idx].image(row['avatar'], width=60); cols[idx].caption(f"👑 {row['username']}")
-            st.dataframe(df[['avatar', 'username', 'wk_score', 'wk_count']].sort_values(by='wk_score', ascending=False),
-                         column_config={"avatar": st.column_config.ImageColumn("", width="small"), "wk_score": st.column_config.ProgressColumn("Score", format="%d", max_value=max(10, max_score))}, use_container_width=True, hide_index=True)
-
-    elif "Year Goal" in menu:
-        st.markdown("## 🏆 2026 年度挑戰")
-        q1_df = get_q1_data(); q1_target = 88000
-        st.markdown("""<div class="challenge-header-box"><div class="challenge-title">🔥 Q1 88000 Challenge (1/1 - 31/3)</div><p class="challenge-rules"><strong>目標：</strong> 第一季 (Q1) 累積 FYC 達 <strong>HK$ 88,000</strong>。<br>這是通往 MDRT 的第一張入場券，必須拿下！</p></div>""", unsafe_allow_html=True)
-        if not q1_df.empty:
-            for i, r in q1_df.sort_values(by='q1_total', ascending=False).iterrows():
-                progress = min(r['q1_total'] / q1_target, 1.0)
-                st.markdown(f"""<div class="q1-player-card"><div class="q1-avatar-box"><img src="{r['avatar']}"></div><div class="q1-info-box"><div class="q1-name">{r['username']}</div><div class="q1-amount">${r['q1_total']:,.0f}</div><div class="q1-progress-container"><div class="q1-progress-bar" style="width: {progress*100}%;"></div></div><div class="q1-target-label">Target: $88,000 ({progress*100:.1f}%)</div></div></div>""", unsafe_allow_html=True)
-        else: st.info("暫無 Q1 業績數據，加油！")
-        st.divider(); st.markdown("### 🎁 年度獎賞計劃")
-        c1, c2 = st.columns(2)
-        with c1: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🚀</span><p class="reward-title-p">1st MDRT</p><p class="reward-prize-p">$20,000 Cash</p><p class="reward-desc-p">首位完成 $512,800 FYC 者獨得</p></div>', unsafe_allow_html=True)
-        with c2: st.markdown('<div class="reward-card-premium"><span class="reward-icon">👑</span><p class="reward-title-p">Top FYC 冠軍</p><p class="reward-prize-p">$10,000 Cash</p><p class="reward-desc-p">全年業績最高者 (需 Min. 180,000 FYC)</p></div>', unsafe_allow_html=True)
-        st.write(""); c3, c4 = st.columns(2)
-        with c3: st.markdown('<div class="reward-card-premium"><span class="reward-icon">✈️</span><p class="reward-title-p">招募冠軍</p><p class="reward-prize-p">雙人來回機票</p><p class="reward-desc-p">全年招募人數最多者 (需 Min. 2人)</p></div>', unsafe_allow_html=True)
-        with c4: st.markdown('<div class="reward-card-premium"><span class="reward-icon">🍽️</span><p class="reward-title-p">Monthly Star</p><p class="reward-prize-p">Tim 請食飯</p><p class="reward-desc-p">單月 FYC 最高者 (需 Min. $20k)</p></div>', unsafe_allow_html=True)
-
-    elif "Recruit" in menu:
-        st.markdown("## 🤝 Recruit 龍虎榜")
-        df = get_data("Yearly")
-        if not df.empty:
-            st.dataframe(
-                df[['avatar', 'username', 'recruit']].sort_values(by='recruit', ascending=False),
-                column_config={
-                    "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                    "username": st.column_config.TextColumn("Agent"),
-                    "recruit": st.column_config.ProgressColumn("Recruits (Headcount)", format="%d", min_value=0, max_value=10)
-                }, use_container_width=True, hide_index=True
-            )
-        else: st.info("暫無招募數據，大家加油！")
-
-    elif "Monthly" in menu:
-        st.markdown("## 📅 Monthly FYC 龍虎榜")
-        m = st.selectbox("Month", [f"2026-{i:02d}" for i in range(1,13)])
-        df = get_data(month=m)
-        if not df.empty:
-            max_fyc = df['fyc'].max() if df['fyc'].max() > 0 else 50000
-            st.dataframe(
-                df[['avatar', 'username', 'fyc']].sort_values(by='fyc', ascending=False),
-                column_config={
-                    "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                    "username": st.column_config.TextColumn("Agent"),
-                    "fyc": st.column_config.ProgressColumn("FYC Achievement", format="$%d", min_value=0, max_value=max_fyc)
-                }, use_container_width=True, hide_index=True
-            )
-        else: st.info("本月暫無數據")
-
-    elif "Profile" in menu:
-        st.markdown("## 👤 User Profile")
-        col1, col2 = st.columns([1, 2])
-        with col1: st.image(st.session_state.get('avatar'), width=150)
-        with col2:
-            st.markdown(f"### {st.session_state['user']}"); st.markdown(f"**Role:** {st.session_state['role']}")
-            with st.expander("🔐 Change Password"):
-                new_pw = st.text_input("New Password", type="password")
-                if st.button("Update Password"): update_pw(st.session_state['user'], new_pw); st.toast("Password Updated!", icon="✅")
-            with st.expander("🖼️ Change Avatar"):
-                uploaded_file = st.file_uploader("Upload Image", type=['jpg', 'png', 'jpeg'])
-                if uploaded_file is not None:
-                    if st.button("Upload"):
-                        img_str = proc_img(uploaded_file)
-                        if img_str: update_avt(st.session_state['user'], img_str); st.session_state['avatar'] = img_str; st.toast("Avatar Updated!", icon="✅"); st.rerun()
+# ─── Router ──────────────────────────────────────────────────────────────────
+if "我的主頁" in menu:
+    page_home()
+elif "打卡" in menu:
+    page_checkin()
+elif "Dashboard" in menu:
+    page_dashboard()
+elif "Iris" in menu:
+    if is_leader:
+        page_iris_sync()
+    else:
+        st.warning("只有 Leader 可以同步 Iris 業績")
+elif "每月" in menu:
+    page_monthly()
+elif "年度" in menu:
+    page_year_goal()
+elif "每週" in menu:
+    page_challenge()
+elif "招募" in menu:
+    page_recruit()
+elif "彈藥庫" in menu:
+    page_ammo()
+elif "設定" in menu:
+    page_profile()
