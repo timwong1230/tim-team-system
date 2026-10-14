@@ -174,7 +174,7 @@ def save_folder_id(folder_id: str) -> bool:
 
 
 def list_inbox_files(folder_id: str | None = None, limit: int = 15) -> list[dict[str, Any]]:
-    """List recent Excel/CSV files in a Drive folder."""
+    """List recent Excel/CSV/PDF files in a Drive folder."""
     service = get_drive_service()
     folder_id = (folder_id or get_daily_folder_id()).strip()
     if not service or not folder_id:
@@ -185,7 +185,9 @@ def list_inbox_files(folder_id: str | None = None, limit: int = 15) -> list[dict
         "mimeType='text/csv' or "
         "mimeType='application/vnd.ms-excel' or "
         "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or "
-        "name contains '.csv' or name contains '.xlsx' or name contains '.xls'"
+        "mimeType='application/pdf' or "
+        "name contains '.csv' or name contains '.xlsx' or name contains '.xls' or "
+        "name contains '.pdf'"
         ")"
     )
     try:

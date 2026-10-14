@@ -140,13 +140,39 @@ def _iris():
 
 def _iris_call(name: str, *args, **kwargs):
     """Call an iris helper; raise a clear error if Cloud still has a stale module."""
+    import inspect
+
     m = _iris()
     fn = getattr(m, name, None)
     if fn is None:
         raise AttributeError(
             f"系統未更新完（缺少 {name}）。請去 Streamlit Manage app → Reboot 後再試。"
         )
-    return fn(*args, **kwargs)
+    try:
+        sig = inspect.signature(fn)
+        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            return fn(*args, **kwargs)
+        allowed = set(sig.parameters)
+        # drop bound 'self' if present
+        allowed.discard("self")
+        filtered = {k: v for k, v in kwargs.items() if k in allowed}
+        # positional overflow if old signature is shorter
+        params = [
+            p
+            for p in sig.parameters.values()
+            if p.kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        ]
+        max_pos = len(params)
+        if max_pos and len(args) > max_pos:
+            args = args[:max_pos]
+        return fn(*args, **filtered)
+    except (TypeError, ValueError):
+        # Last resort: positional-only for very old helpers
+        return fn(*args)
 
 
 
@@ -1052,7 +1078,10 @@ def _render_drive_report_box(
             "常見原因：未將資料夾共用俾 service account，或 Folder ID 錯。"
         )
     if not files:
-        st.warning("資料夾未見 Excel/CSV。請將對應 report 放進去再試。")
+        st.warning(
+            "資料夾未見 Excel/CSV/PDF。請將對應 report 放進去再試。"
+            + ("（MDRT Progress 支援 PDF）" if report_kind == "mdrt" else "")
+        )
         return
 
     st.dataframe(
@@ -1176,7 +1205,7 @@ def page_iris_sync():
 2. 兩個資料夾都共用俾呢個電郵（編輯者）：  
    `{sa or "（讀唔到 service account，請檢查 Streamlit secrets）"}`
 3. 分別複製 Folder ID（或完整 folders/ 連結）貼下面儲存
-4. 之後：Daily report 放第一個資料夾；MDRT Progress Report 放第二個
+4. 之後：Daily report（Excel/CSV）放第一個資料夾；MDRT Progress Report（**PDF 或 Excel**）放第二個
             """
         )
         d1, d2 = st.columns(2)
@@ -1331,8 +1360,8 @@ def page_iris_sync():
             )
         uploaded = st.file_uploader(
             "上傳報告檔",
-            type=["xlsx", "xls", "csv"],
-            help="Daily：MTD-COMPLETION；MDRT：Total Credit eligible for MDRT",
+            type=["xlsx", "xls", "csv", "pdf"],
+            help="Daily：Excel/CSV（MTD-COMPLETION）；MDRT：Excel/CSV/PDF（Total Credit eligible for MDRT）",
         )
         default_month = datetime.date.today().strftime("%Y-%m")
         month_choice = st.selectbox(
