@@ -870,7 +870,8 @@ def page_iris_sync():
                                 mark_file_synced(latest["id"])
                                 st.success(
                                     f"已同步「{latest.get('name')}」： "
-                                    f"更新 {result['updated']} 筆 · "
+                                    f"Monthly Completion {result['updated']} 筆 · "
+                                    f"YTD Completion {result.get('ytd_updated', 0)} 筆 · "
                                     f"{result['matched_users']} 位團隊成員 "
                                     f"（另忽略 {result['unmatched']} 列非團隊）"
                                 )
