@@ -37,7 +37,12 @@ from lib.data import (
     update_avt,
     update_pw,
 )
-from lib.db import init_db_gs, read_data
+from lib.db import (
+    connection_banner_state,
+    init_db_gs,
+    read_data,
+    warm_cache,
+)
 from lib.iris import (
     apply_sync,
     build_sync_preview,
@@ -56,7 +61,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-init_db_gs()
+init_db_gs()  # cached once per server process — no longer hits Sheets every rerun
 
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
@@ -100,8 +105,14 @@ if not st.session_state["logged_in"]:
 
 
 # ─── Logged-in shell ─────────────────────────────────────────────────────────
+# Warm disk cache once per browser session so pages read locally (fast + offline-safe)
+if not st.session_state.get("_warmed_at"):
+    with st.spinner("正在載入團隊數據（首次會稍慢，之後會用快取）…"):
+        warm_cache(force=False)
+
 check_notifications(st.session_state["user"])
 is_leader = st.session_state["role"] == "Leader"
+conn = connection_banner_state()
 
 with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
@@ -115,6 +126,19 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
         st.caption(f"{st.session_state['role']} · TIM TEAM")
+
+    if conn["level"] == "ok":
+        st.success(conn["label"], icon="⚡")
+    elif conn["level"] == "degraded":
+        st.warning(conn["label"], icon="📡")
+    else:
+        st.info(conn["label"])
+
+    if st.button("重新整理數據", use_container_width=True, help="強制向 Google Sheets 拉最新數據"):
+        with st.spinner("同步雲端…"):
+            warm_cache(force=True)
+        st.toast("數據已更新", icon="✅")
+        st.rerun()
 
     sync = last_iris_sync()
     if sync:
@@ -142,6 +166,13 @@ with st.sidebar:
     if st.button("登出", use_container_width=True, type="secondary"):
         st.session_state["logged_in"] = False
         st.rerun()
+
+if conn["level"] == "degraded":
+    st.warning(
+        "雲端 Sheets 暫時慢／斷線，而家顯示離線快取數據。"
+        "你可以繼續打卡（會先存本機）；連線恢復後按側欄「重新整理數據」。",
+        icon="📡",
+    )
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
@@ -200,24 +231,29 @@ def page_home():
         c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
 
     st.markdown("### 快速打卡")
-    with st.form("quick_checkin", clear_on_submit=True):
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            d = st.date_input("日期", value=datetime.date.today())
-            t = st.selectbox("活動種類", ACTIVITY_TYPES)
-        with c2:
-            n = st.text_area(
-                "重點備註（可簡短）",
-                height=120,
-                placeholder="客戶名 / 下一步 / 結果…",
-            )
-        if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
-            if n.strip():
-                add_act(user, d, t, n.strip())
-                st.toast("打卡成功！", icon="✅")
-                st.rerun()
-            else:
-                st.error("請寫至少一句備註")
+
+    @st.fragment
+    def _quick_checkin():
+        with st.form("quick_checkin", clear_on_submit=True):
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                d = st.date_input("日期", value=datetime.date.today())
+                t = st.selectbox("活動種類", ACTIVITY_TYPES)
+            with c2:
+                n = st.text_area(
+                    "重點備註（可簡短）",
+                    height=120,
+                    placeholder="客戶名 / 下一步 / 結果…",
+                )
+            if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
+                if n.strip():
+                    add_act(user, d, t, n.strip())
+                    st.toast("打卡成功！", icon="✅")
+                    st.rerun(scope="app")
+                else:
+                    st.error("請寫至少一句備註")
+
+    _quick_checkin()
 
     st.markdown("### 團隊最新動態")
     acts = get_all_act().head(5)
