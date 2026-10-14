@@ -1,7 +1,10 @@
-"""FWD Iris production report import & sync.
+"""TIM TEAM report import & sync.
 
-Uses Monthly Completion for that month's FYC, and YTD Completion for
-year-to-date / Team FYC totals. Never uses Monthly Submission.
+Two report kinds:
+1. Daily production → MTD-COMPLETION FYC → monthly_fyc[YYYY-MM]
+2. MDRT Progress → Total Credit eligible for MDRT → monthly_fyc[MDRT_2027]
+
+Team SC stays manual on the Dashboard. Never uses Monthly Submission as FYC.
 """
 
 from __future__ import annotations
@@ -21,10 +24,25 @@ from tt_core.constants import (
     IRIS_MONTH_ALIASES,
     IRIS_MONTHLY_COMPLETION_ALIASES,
     IRIS_YTD_COMPLETION_ALIASES,
-    IRIS_YTD_MONTH_KEY,
 )
 from tt_core.data import get_clean_users, upd_fyc
 from tt_core.db import read_data, run_query_gs
+
+# Inline fallbacks — Streamlit Cloud sometimes caches an older constants.py
+try:
+    from tt_core.constants import MDRT_CREDIT_ALIASES, MDRT_PROGRESS_MONTH_KEY
+except Exception:  # pragma: no cover
+    MDRT_CREDIT_ALIASES = [
+        "total credit eligible for mdrt",
+        "credit eligible for mdrt",
+        "total credit eligible",
+        "eligible for mdrt",
+        "mdrt credit",
+        "total mdrt credit",
+        "mdrt total credit",
+        "total credit",
+    ]
+    MDRT_PROGRESS_MONTH_KEY = "MDRT_2027"
 
 
 def _norm(s: Any) -> str:
@@ -97,16 +115,19 @@ def _mostly_agent_codes(series: pd.Series, threshold: float = 0.7) -> bool:
 
 def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
     """
-    Detect Iris columns.
-    - fyc / monthly: Monthly Completion (never Submission)
-    - ytd: YTD Completion
+    Detect report columns.
+    - fyc / monthly: MTD-COMPLETION / Monthly Completion (never Submission)
+    - mdrt_credit: Total Credit eligible for MDRT
+    - ytd: optional legacy YTD Completion (not used for Leaderboard)
     """
     cols = [str(c) for c in df.columns]
     agent = _find_col(cols, IRIS_AGENT_ALIASES)
     code = _find_col(cols, IRIS_CODE_ALIASES)
     month = _find_col(cols, IRIS_MONTH_ALIASES)
 
-    # 1) Prefer explicit Monthly Completion
+    mdrt_credit = _find_col(cols, MDRT_CREDIT_ALIASES, reject=IRIS_FYC_REJECT_SUBSTR)
+
+    # 1) Prefer explicit MTD / Monthly Completion
     monthly = _find_col(
         cols,
         IRIS_MONTHLY_COMPLETION_ALIASES,
@@ -121,10 +142,7 @@ def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
         IRIS_YTD_COMPLETION_ALIASES,
         reject=IRIS_FYC_REJECT_SUBSTR,
     )
-    # Don't use the same column for both
     if ytd and monthly and ytd == monthly:
-        # If only one completion-like column matched both lists, keep monthly
-        # and try a stricter YTD-only pass excluding that column
         other_cols = [c for c in cols if c != monthly]
         ytd = _find_col(
             other_cols,
@@ -132,7 +150,7 @@ def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
             reject=IRIS_FYC_REJECT_SUBSTR,
         )
 
-    # Many Iris team exports put Agent Code in a "name"/first column.
+    # Many exports put Agent Code in a "name"/first column.
     if agent and not code and agent in df.columns and _mostly_agent_codes(df[agent]):
         code, agent = agent, None
     elif (
@@ -147,25 +165,59 @@ def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
     return {
         "agent": agent,
         "code": code,
-        "fyc": monthly,  # monthly completion → that month's FYC
-        "ytd": ytd,  # ytd completion → Team FYC / yearly
+        "fyc": monthly,  # MTD-COMPLETION → that month's FYC
+        "mdrt_credit": mdrt_credit,  # Total Credit eligible for MDRT
+        "ytd": ytd,
         "month": month,
     }
 
 
-def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFrame, dict]:
-    """Detect columns and build sync preview in one step."""
+def detect_report_kind(df: pd.DataFrame, filename: str = "") -> str:
+    """Return 'mdrt', 'daily', or 'unknown' from columns / filename hints."""
     detected = detect_columns(df)
-    if not detected.get("fyc") and not detected.get("ytd"):
-        raise ValueError(
-            "搵唔到 Monthly Completion / YTD Completion 欄。"
-            "請確認檔案有呢兩欄（唔好用 Monthly Submission），"
-            "或改用手動上傳並自己揀欄。"
+    if detected.get("mdrt_credit"):
+        return "mdrt"
+    if detected.get("fyc"):
+        return "daily"
+    name = (filename or "").lower()
+    if "mdrt" in name and "progress" in name:
+        return "mdrt"
+    if "daily" in name or "production" in name or "mtd" in name:
+        return "daily"
+    return "unknown"
+
+
+def auto_build_preview(
+    df: pd.DataFrame,
+    default_month: str,
+    *,
+    filename: str = "",
+    report_kind: str | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Detect columns/report kind and build sync preview."""
+    detected = detect_columns(df)
+    kind = (report_kind or detect_report_kind(df, filename)).lower()
+    detected["report_kind"] = kind
+
+    if kind == "mdrt":
+        if not detected.get("mdrt_credit"):
+            raise ValueError(
+                "搵唔到「Total Credit eligible for MDRT」欄。"
+                "請確認呢份係 MDRT Progress Report。"
+            )
+        preview = build_mdrt_preview(
+            df,
+            detected.get("agent"),
+            detected.get("code"),
+            detected["mdrt_credit"],
         )
+        return preview, detected
+
+    # daily (default)
     if not detected.get("fyc"):
         raise ValueError(
-            "搵唔到 Monthly Completion 欄（當月 FYC）。"
-            "系統唔會用 Monthly Submission。"
+            "搵唔到 MTD-COMPLETION / Monthly Completion 欄（當月 FYC）。"
+            "請確認呢份係 Daily production report；系統唔會用 Monthly Submission。"
         )
     preview = build_sync_preview(
         df,
@@ -174,7 +226,7 @@ def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFra
         detected["fyc"],
         detected.get("month"),
         default_month,
-        col_ytd=detected.get("ytd"),
+        col_ytd=None,  # Leaderboard MDRT progress comes from MDRT report, not YTD
     )
     return preview, detected
 
@@ -390,37 +442,82 @@ def build_sync_preview(
     return grouped.sort_values(by=["matched", "amount"], ascending=[False, False])
 
 
+def build_mdrt_preview(
+    df: pd.DataFrame,
+    col_agent: str | None,
+    col_code: str | None,
+    col_credit: str,
+) -> pd.DataFrame:
+    """Preview MDRT Progress Report → temporary progress amounts."""
+    agent_map = get_agent_map()
+    users = get_clean_users()
+    users = users[users["role"] == "Member"]
+
+    rows = []
+    for _, r in df.iterrows():
+        agent = str(r[col_agent]).strip() if col_agent else ""
+        code = str(r[col_code]).strip() if col_code else ""
+        if agent in {"nan", "None"}:
+            agent = ""
+        if code in {"nan", "None"}:
+            code = ""
+        if agent and re.fullmatch(r"\d{4,}", agent) and not code:
+            code, agent = agent, ""
+        amount = parse_amount(r[col_credit]) if col_credit else 0.0
+        username = resolve_username(agent, code, agent_map, users)
+        rows.append(
+            {
+                "iris_name": agent,
+                "iris_code": code,
+                "username": username or "",
+                "month": MDRT_PROGRESS_MONTH_KEY,
+                "amount": amount,
+                "ytd_amount": 0.0,
+                "matched": bool(username),
+                "report_kind": "mdrt",
+            }
+        )
+
+    preview = pd.DataFrame(rows)
+    if preview.empty:
+        return preview
+
+    grouped = (
+        preview.groupby(
+            ["iris_name", "iris_code", "username", "month", "matched", "report_kind"],
+            dropna=False,
+        )
+        .agg(amount=("amount", "max"), ytd_amount=("ytd_amount", "max"))
+        .reset_index()
+    )
+    return grouped.sort_values(by=["matched", "amount"], ascending=[False, False])
+
+
 def apply_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str, Any]:
     """
-    Write:
-    - monthly completion → monthly_fyc[selected month]
-    - ytd completion → monthly_fyc[YTD]  (used for Team FYC / yearly)
+    Write Daily production MTD-COMPLETION → monthly_fyc[YYYY-MM].
+    Does not touch Leaderboard MDRT progress or Team SC.
     """
     matched = preview[preview["matched"] & (preview["username"] != "")].copy()
     updated = 0
-    ytd_updated = 0
-    has_ytd = "ytd_amount" in matched.columns
     for _, row in matched.iterrows():
-        upd_fyc(row["username"], row["month"], float(row["amount"]), source="iris")
+        month = str(row.get("month") or "")
+        if month == MDRT_PROGRESS_MONTH_KEY:
+            continue
+        upd_fyc(row["username"], month, float(row["amount"]), source="daily_production")
         updated += 1
-        if has_ytd:
-            upd_fyc(
-                row["username"],
-                IRIS_YTD_MONTH_KEY,
-                float(row["ytd_amount"] or 0),
-                source="iris_ytd",
-            )
-            ytd_updated += 1
 
-    months = sorted(matched["month"].unique().tolist()) if not matched.empty else []
-    note = f"months={','.join(months)}; monthly=completion; ytd_rows={ytd_updated}"
+    months = sorted(
+        m for m in matched["month"].astype(str).unique().tolist() if m != MDRT_PROGRESS_MONTH_KEY
+    ) if not matched.empty else []
+    note = f"kind=daily; months={','.join(months)}; col=MTD-COMPLETION"
     run_query_gs(
         "INSERT",
         "iris_sync_log",
         {
             "synced_at": str(datetime.datetime.now()),
             "synced_by": synced_by,
-            "month": months[0] if len(months) == 1 else "multi",
+            "month": months[0] if len(months) == 1 else ("multi" if months else ""),
             "filename": filename,
             "rows_total": int(len(preview)),
             "rows_matched": int(matched["username"].nunique()) if not matched.empty else 0,
@@ -431,16 +528,86 @@ def apply_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str
     )
     return {
         "updated": updated,
-        "ytd_updated": ytd_updated,
+        "ytd_updated": 0,
+        "mdrt_updated": 0,
+        "report_kind": "daily",
         "matched_users": int(matched["username"].nunique()) if not matched.empty else 0,
         "unmatched": int((~preview["matched"]).sum()) if not preview.empty else 0,
         "months": months,
     }
 
 
+def apply_mdrt_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str, Any]:
+    """Write MDRT Total Credit eligible → monthly_fyc[MDRT_2027] (Leaderboard progress)."""
+    matched = preview[preview["matched"] & (preview["username"] != "")].copy()
+    updated = 0
+    for _, row in matched.iterrows():
+        upd_fyc(
+            row["username"],
+            MDRT_PROGRESS_MONTH_KEY,
+            float(row["amount"]),
+            source="mdrt_progress",
+        )
+        updated += 1
+
+    note = f"kind=mdrt; key={MDRT_PROGRESS_MONTH_KEY}; col=Total Credit eligible for MDRT"
+    run_query_gs(
+        "INSERT",
+        "iris_sync_log",
+        {
+            "synced_at": str(datetime.datetime.now()),
+            "synced_by": synced_by,
+            "month": MDRT_PROGRESS_MONTH_KEY,
+            "filename": filename,
+            "rows_total": int(len(preview)),
+            "rows_matched": int(matched["username"].nunique()) if not matched.empty else 0,
+            "rows_updated": updated,
+            "status": "ok" if updated else "no_match",
+            "note": note,
+        },
+    )
+    return {
+        "updated": updated,
+        "ytd_updated": 0,
+        "mdrt_updated": updated,
+        "report_kind": "mdrt",
+        "matched_users": int(matched["username"].nunique()) if not matched.empty else 0,
+        "unmatched": int((~preview["matched"]).sum()) if not preview.empty else 0,
+        "months": [MDRT_PROGRESS_MONTH_KEY] if updated else [],
+    }
+
+
+def apply_report_sync(
+    preview: pd.DataFrame,
+    synced_by: str,
+    filename: str,
+    report_kind: str | None = None,
+) -> dict[str, Any]:
+    """Dispatch sync by report kind."""
+    kind = (report_kind or "").lower()
+    if not kind and not preview.empty and "report_kind" in preview.columns:
+        kind = str(preview.iloc[0].get("report_kind") or "").lower()
+    if not kind and not preview.empty and "month" in preview.columns:
+        if str(preview.iloc[0].get("month")) == MDRT_PROGRESS_MONTH_KEY:
+            kind = "mdrt"
+    if kind == "mdrt":
+        return apply_mdrt_sync(preview, synced_by, filename)
+    return apply_sync(preview, synced_by, filename)
+
+
 def sample_template_csv() -> str:
+    """Daily production template (MTD-COMPLETION → monthly FYC)."""
     return (
-        "Agent Name,Agent Code,Monthly Submission,Monthly Completion,YTD Completion,Month\n"
-        "Tim,A001,60000,52000,397457,2026-10\n"
-        "Oscar,A002,40000,38000,162848,2026-10\n"
+        "Agent Name,Agent Code,Monthly Submission,MTD-COMPLETION,Month\n"
+        "Tim,30947,60000,52000,2026-10\n"
+        "Oscar,59164,40000,10000,2026-10\n"
+    )
+
+
+def sample_mdrt_template_csv() -> str:
+    """MDRT Progress template (Total Credit eligible for MDRT)."""
+    return (
+        "Agent Name,Agent Code,Total Credit eligible for MDRT\n"
+        "Tim,30947,398944\n"
+        "Oscar,59164,162848\n"
     )

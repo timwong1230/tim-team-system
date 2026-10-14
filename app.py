@@ -132,25 +132,31 @@ def set_mdrt_progress(username: str, amount: float) -> None:
 
 
 from tt_core.iris import (
-    apply_sync,
+    apply_report_sync,
     auto_build_preview,
+    build_mdrt_preview,
     build_sync_preview,
     detect_columns,
+    detect_report_kind,
     get_agent_map,
     load_iris_bytes,
     load_iris_file,
     preview_summary,
+    sample_mdrt_template_csv,
     sample_template_csv,
     save_agent_mapping,
     unmapped_agents,
 )
 from tt_core.iris_drive import (
     download_file,
-    get_folder_id,
+    get_daily_folder_id,
+    get_mdrt_folder_id,
     has_new_inbox_file,
     list_inbox_files,
-    mark_file_synced,
-    save_folder_id,
+    mark_daily_file_synced,
+    mark_mdrt_file_synced,
+    save_daily_folder_id,
+    save_mdrt_folder_id,
     service_account_email,
 )
 from tt_core.mobile import (
@@ -277,7 +283,7 @@ menu_items = [
     "📚 彈藥庫",
 ]
 if is_leader:
-    menu_items.insert(4, "🔄 Iris 業績同步")
+    menu_items.insert(4, "🔄 業績報告同步")
 menu_items.append("👤 設定")
 
 with st.sidebar:
@@ -341,12 +347,14 @@ if conn["level"] == "degraded":
         icon="📡",
     )
 
-if is_leader and get_folder_id():
+if is_leader and (get_daily_folder_id() or get_mdrt_folder_id()):
     new_iris = has_new_inbox_file()
     if new_iris:
+        kind = new_iris.get("report_kind") or "daily"
+        kind_label = "MDRT Progress" if kind == "mdrt" else "Daily Production"
         st.info(
-            f"Drive Iris Inbox 有新檔：**{new_iris.get('name')}** — "
-            "去側欄「Iris 業績同步」撳「同步最新檔」即可更新業績。",
+            f"Drive {kind_label} 有新檔：**{new_iris.get('name')}** — "
+            "去側欄「業績報告同步」撳對應「同步最新檔」。",
             icon="📥",
         )
 
@@ -833,7 +841,7 @@ def page_dashboard():
                     st.rerun()
 
         with st.expander("手動調整個人業績 / 招募（備用）"):
-            st.caption("日常請用「Iris 業績同步」。呢度只係後備人手修正個人數。")
+            st.caption("日常請用「業績報告同步」上傳 Daily / MDRT report。呢度只係後備人手修正。")
             c_a, c_b, c_c = st.columns(3)
             tgt = c_a.selectbox("User", user_list)
             mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1, 13)])
@@ -852,15 +860,133 @@ def page_dashboard():
                 st.rerun()
 
 
+def _render_drive_report_box(
+    *,
+    title: str,
+    report_kind: str,
+    folder_id: str,
+    month_fallback: str,
+    amount_label: str,
+    key_prefix: str,
+) -> None:
+    """Preview / sync newest file from one Drive inbox."""
+    st.markdown(f"##### {title}")
+    if not folder_id:
+        st.info("請先儲存呢個資料夾 ID。")
+        return
+
+    files = list_inbox_files(folder_id=folder_id, limit=6)
+    err = st.session_state.get("_iris_drive_error")
+    if err:
+        st.error(
+            f"讀取 Drive 失敗：{err}\n\n"
+            "常見原因：未將資料夾共用俾 service account，或 Folder ID 錯。"
+        )
+    if not files:
+        st.warning("資料夾未見 Excel/CSV。請將對應 report 放進去再試。")
+        return
+
+    st.dataframe(
+        [
+            {
+                "檔名": f.get("name"),
+                "更新時間": str(f.get("modifiedTime", ""))[:19].replace("T", " "),
+            }
+            for f in files
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+    latest = files[0]
+    c1, c2 = st.columns(2)
+    do_preview = c1.button("預覽最新檔", use_container_width=True, key=f"{key_prefix}_preview")
+    do_sync = c2.button(
+        "同步最新檔到系統",
+        type="primary",
+        use_container_width=True,
+        key=f"{key_prefix}_sync",
+    )
+    if not (do_preview or do_sync):
+        return
+
+    try:
+        raw = download_file(latest["id"])
+        raw_df = load_iris_bytes(raw, latest.get("name", "report.xlsx"))
+        preview, detected = auto_build_preview(
+            raw_df,
+            month_fallback,
+            filename=latest.get("name", ""),
+            report_kind=report_kind,
+        )
+        st.session_state["_iris_last_preview"] = preview
+        st.caption(
+            f"報告類型={detected.get('report_kind') or report_kind} · "
+            f"姓名={detected.get('agent') or '—'} · "
+            f"編號={detected.get('code') or '—'} · "
+            f"金額欄={detected.get('mdrt_credit') or detected.get('fyc') or '—'} · "
+            f"月份={detected.get('month') or month_fallback}"
+        )
+        summary = preview_summary(preview)
+        st.write(
+            f"團隊可同步：**{summary['matched_rows']}** 列 "
+            f"（{summary['matched_users']} 人）· "
+            f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
+        )
+        show_all = st.checkbox(
+            "顯示全部（含非團隊）", value=False, key=f"{key_prefix}_show_all"
+        )
+        matched_view = preview[preview["matched"]]
+        view = preview if show_all else matched_view
+        if matched_view.empty:
+            st.info("而家未對應到任何團隊成員。請去「② 顧問對應」只加你團隊。")
+        st.dataframe(
+            view if not view.empty else preview.head(20),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "amount": st.column_config.NumberColumn(amount_label, format="$%.0f"),
+                "matched": "團隊成員",
+            },
+        )
+        if do_sync:
+            if summary["matched_rows"] == 0:
+                st.error("未有團隊成員可同步。請先完成顧問對應。")
+            else:
+                result = apply_report_sync(
+                    preview,
+                    st.session_state["user"],
+                    latest.get("name", "drive.xlsx"),
+                    report_kind=report_kind,
+                )
+                if report_kind == "mdrt":
+                    mark_mdrt_file_synced(latest["id"])
+                    st.success(
+                        f"已同步 MDRT Progress「{latest.get('name')}」： "
+                        f"暫時進度 {result.get('mdrt_updated', result['updated'])} 筆 · "
+                        f"{result['matched_users']} 位團隊成員"
+                    )
+                else:
+                    mark_daily_file_synced(latest["id"])
+                    st.success(
+                        f"已同步 Daily Production「{latest.get('name')}」： "
+                        f"MTD-COMPLETION FYC {result['updated']} 筆 · "
+                        f"{result['matched_users']} 位團隊成員 · "
+                        f"月份 {', '.join(result.get('months') or []) or '—'}"
+                    )
+                st.balloons()
+    except Exception as e:
+        st.error(f"處理失敗：{e}")
+
+
 def page_iris_sync():
-    st.markdown("## Iris 業績同步")
+    st.markdown("## 業績報告同步")
     st.markdown(
         """
         <div class="iris-banner">
-          <strong>業績欄位規則</strong><br>
-          當月 FYC = <b>Monthly Completion</b>（唔用 Monthly Submission）<br>
-          Leaderboard <b>2027 MDRT 暫時進度</b> = 計劃 bonus & other credit（Dashboard 人手輸入）<br>
-          <b>Team SC</b> 喺 Dashboard 由 Leader 人手輸入（Year to date）<br>
+          <strong>兩份報告 → 兩個數字</strong><br>
+          <b>Daily production report</b> → 讀 <b>MTD-COMPLETION</b> → 每月業績 FYC<br>
+          <b>MDRT Progress Report</b> → 讀 <b>Total Credit eligible for MDRT</b> → Leaderboard 暫時進度<br>
+          <b>Team SC</b> 仍然喺 Dashboard 人手輸入<br>
           只需對應 TIM TEAM 成員；其他同事會自動忽略。
         </div>
         """,
@@ -873,150 +999,70 @@ def page_iris_sync():
 
     with tab_drive:
         sa = service_account_email()
-        st.markdown("#### 一次性設定（約 2 分鐘）")
+        st.markdown("#### 一次性設定（兩個 Drive 資料夾）")
         st.markdown(
             f"""
-1. Google Drive 開一個資料夾，例如 **`TIM TEAM Iris Inbox`**
-2. 右鍵資料夾 → 共用 → 加入呢個電郵（編輯者權限）：  
+1. Google Drive 開 **兩個** 資料夾，例如  
+   **`TIM TEAM Daily Production`** 同 **`TIM TEAM MDRT Progress`**
+2. 兩個資料夾都共用俾呢個電郵（編輯者）：  
    `{sa or "（讀唔到 service account，請檢查 Streamlit secrets）"}`
-3. 打開資料夾，從網址複製 Folder ID  
-   （`https://drive.google.com/drive/folders/`**`呢串ID`**）
-4. 貼下面儲存
+3. 分別複製 Folder ID（或完整 folders/ 連結）貼下面儲存
+4. 之後：Daily report 放第一個資料夾；MDRT Progress Report 放第二個
             """
         )
-        folder_now = get_folder_id()
-        folder_in = st.text_input(
-            "Drive Folder ID 或完整資料夾連結",
-            value=folder_now,
-            placeholder="例如 1AbCDef... 或完整 folders/ URL",
-        )
-        if st.button("儲存 Drive 資料夾", type="primary"):
-            if save_folder_id(folder_in):
-                st.toast("已儲存 Drive 資料夾", icon="✅")
-                st.rerun()
-            else:
-                st.error("儲存失敗，請檢查 Google Sheets 連線")
+        d1, d2 = st.columns(2)
+        with d1:
+            daily_in = st.text_input(
+                "Daily Production 資料夾",
+                value=get_daily_folder_id(),
+                placeholder="Folder ID 或完整 URL",
+                key="daily_folder_input",
+            )
+            if st.button("儲存 Daily 資料夾", type="primary", use_container_width=True):
+                if save_daily_folder_id(daily_in):
+                    st.toast("已儲存 Daily Production 資料夾", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("儲存失敗，請檢查 Google Sheets 連線")
+        with d2:
+            mdrt_in = st.text_input(
+                "MDRT Progress 資料夾",
+                value=get_mdrt_folder_id(),
+                placeholder="Folder ID 或完整 URL",
+                key="mdrt_folder_input",
+            )
+            if st.button("儲存 MDRT 資料夾", type="primary", use_container_width=True):
+                if save_mdrt_folder_id(mdrt_in):
+                    st.toast("已儲存 MDRT Progress 資料夾", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("儲存失敗，請檢查 Google Sheets 連線")
 
         st.divider()
-        st.markdown("#### 日常操作")
-        st.caption("喺 Iris 匯出業績檔 → 上傳／儲存去呢個 Drive 資料夾 → 返嚟撳同步。")
-
         month_drive = st.selectbox(
-            "若檔案無月份欄，使用此月份",
+            "Daily report 若無月份欄，使用此月份",
             [f"2026-{i:02d}" for i in range(1, 13)],
             index=max(0, datetime.date.today().month - 1),
             key="iris_drive_month",
         )
 
-        if not get_folder_id():
-            st.info("請先完成上面嘅 Drive 資料夾設定。")
-        else:
-            files = list_inbox_files(limit=8)
-            err = st.session_state.get("_iris_drive_error")
-            if err:
-                st.error(
-                    f"讀取 Drive 失敗：{err}\n\n"
-                    "常見原因：未將資料夾共用俾 service account，或 Folder ID 錯。"
-                )
-            if not files:
-                st.warning("資料夾未見 Excel/CSV。請將 Iris 匯出檔放進去再試。")
-            else:
-                st.markdown("**資料夾最新檔案**")
-                st.dataframe(
-                    [
-                        {
-                            "檔名": f.get("name"),
-                            "更新時間": str(f.get("modifiedTime", ""))[:19].replace("T", " "),
-                            "大小": f.get("size", ""),
-                        }
-                        for f in files
-                    ],
-                    use_container_width=True,
-                    hide_index=True,
-                )
-                latest = files[0]
-                c1, c2 = st.columns(2)
-                with c1:
-                    do_preview = st.button("預覽最新檔", use_container_width=True)
-                with c2:
-                    do_sync = st.button(
-                        "同步最新檔到系統",
-                        type="primary",
-                        use_container_width=True,
-                    )
-
-                if do_preview or do_sync:
-                    try:
-                        raw = download_file(latest["id"])
-                        raw_df = load_iris_bytes(raw, latest.get("name", "iris.xlsx"))
-                        preview, detected = auto_build_preview(raw_df, month_drive)
-                        st.session_state["_iris_last_preview"] = preview
-                        st.caption(
-                            f"自動欄位：姓名={detected.get('agent') or '—'} · "
-                            f"編號={detected.get('code') or '—'} · "
-                            f"Monthly Completion={detected.get('fyc') or '—'} · "
-                            f"YTD Completion={detected.get('ytd') or '—'} · "
-                            f"月份={detected.get('month') or month_drive}"
-                        )
-                        st.caption(
-                            "當月 FYC 用 Monthly Completion（唔用 Submission）；"
-                            "Iris 同步每月／YTD Completion；Leaderboard MDRT 暫時進度請喺 Dashboard 人手輸入。"
-                        )
-                        summary = preview_summary(preview)
-                        st.write(
-                            f"團隊可同步：**{summary['matched_rows']}** 列 "
-                            f"（{summary['matched_users']} 人）· "
-                            f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
-                        )
-                        show_all = st.checkbox("顯示全部（含非團隊）", value=False, key="drv_show_all")
-                        matched_view = preview[preview["matched"]]
-                        view = preview if show_all else matched_view
-                        if matched_view.empty:
-                            st.info("而家未對應到任何團隊成員。請去「② 顧問對應」只加你團隊。")
-                        st.dataframe(
-                            view if not view.empty else preview.head(20),
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "amount": st.column_config.NumberColumn(
-                                    "Monthly Completion", format="$%.0f"
-                                ),
-                                "ytd_amount": st.column_config.NumberColumn(
-                                    "YTD Completion", format="$%.0f"
-                                ),
-                                "matched": "團隊成員",
-                            },
-                        )
-                        if summary["matched_rows"] == 0:
-                            st.warning(
-                                "未對應到 TIM TEAM 成員。請去「② 顧問對應」，"
-                                "用 Iris 編號（例如 30947）對應你團隊 Username。"
-                                "其他同事唔使加。"
-                            )
-                        elif summary["unmapped_agents"] > 0:
-                            st.caption(
-                                f"有 {summary['unmapped_agents']} 個非團隊編號會自動略過 — 正常。"
-                            )
-                        if do_sync:
-                            if summary["matched_rows"] == 0:
-                                st.error("未有團隊成員可同步。請先完成顧問對應。")
-                            else:
-                                result = apply_sync(
-                                    preview,
-                                    st.session_state["user"],
-                                    latest.get("name", "drive.xlsx"),
-                                )
-                                mark_file_synced(latest["id"])
-                                st.success(
-                                    f"已同步「{latest.get('name')}」： "
-                                    f"Monthly Completion {result['updated']} 筆 · "
-                                    f"YTD Completion {result.get('ytd_updated', 0)} 筆 · "
-                                    f"{result['matched_users']} 位團隊成員 "
-                                    f"（另忽略 {result['unmatched']} 列非團隊）"
-                                )
-                                st.balloons()
-                    except Exception as e:
-                        st.error(f"處理失敗：{e}")
+        _render_drive_report_box(
+            title="A. Daily production → 每月 FYC（MTD-COMPLETION）",
+            report_kind="daily",
+            folder_id=get_daily_folder_id(),
+            month_fallback=month_drive,
+            amount_label="MTD-COMPLETION FYC",
+            key_prefix="drv_daily",
+        )
+        st.divider()
+        _render_drive_report_box(
+            title="B. MDRT Progress → Leaderboard 暫時進度",
+            report_kind="mdrt",
+            folder_id=get_mdrt_folder_id(),
+            month_fallback=month_drive,
+            amount_label="Total Credit eligible for MDRT",
+            key_prefix="drv_mdrt",
+        )
 
     users = get_clean_users()
     member_names = (
@@ -1038,7 +1084,7 @@ def page_iris_sync():
                 pending.head(30),
                 use_container_width=True,
                 hide_index=True,
-                column_config={"amount": st.column_config.NumberColumn("FYC", format="$%.0f")},
+                column_config={"amount": st.column_config.NumberColumn("金額", format="$%.0f")},
             )
             with st.form("quick_map_form", clear_on_submit=True):
                 options = []
@@ -1082,22 +1128,43 @@ def page_iris_sync():
             st.dataframe(amap, use_container_width=True, hide_index=True)
 
     with tab_sync:
-        st.download_button(
-            "下載範本 CSV",
-            data=sample_template_csv(),
-            file_name="iris_fyc_template.csv",
-            mime="text/csv",
+        report_kind_manual = st.radio(
+            "報告類型",
+            ["daily", "mdrt"],
+            format_func=lambda k: (
+                "Daily production（MTD-COMPLETION → 每月 FYC）"
+                if k == "daily"
+                else "MDRT Progress（Total Credit eligible for MDRT → 暫時進度）"
+            ),
+            horizontal=False,
+            key="manual_report_kind",
         )
+        c_dl1, c_dl2 = st.columns(2)
+        with c_dl1:
+            st.download_button(
+                "下載 Daily 範本 CSV",
+                data=sample_template_csv(),
+                file_name="daily_production_template.csv",
+                mime="text/csv",
+            )
+        with c_dl2:
+            st.download_button(
+                "下載 MDRT 範本 CSV",
+                data=sample_mdrt_template_csv(),
+                file_name="mdrt_progress_template.csv",
+                mime="text/csv",
+            )
         uploaded = st.file_uploader(
-            "上傳 Iris 匯出檔",
+            "上傳報告檔",
             type=["xlsx", "xls", "csv"],
-            help="支援常見欄位：Agent Name / Agent Code / FYC / Month",
+            help="Daily：MTD-COMPLETION；MDRT：Total Credit eligible for MDRT",
         )
         default_month = datetime.date.today().strftime("%Y-%m")
         month_choice = st.selectbox(
-            "若檔案無月份欄，使用此月份",
+            "Daily report 若無月份欄，使用此月份",
             [f"2026-{i:02d}" for i in range(1, 13)],
             index=max(0, datetime.date.today().month - 1),
+            key="manual_month_choice",
         )
 
         if uploaded:
@@ -1111,10 +1178,15 @@ def page_iris_sync():
             st.dataframe(raw_df.head(20), use_container_width=True)
 
             detected = detect_columns(raw_df)
+            auto_kind = detect_report_kind(raw_df, uploaded.name)
+            if auto_kind in {"daily", "mdrt"} and auto_kind != report_kind_manual:
+                st.warning(
+                    f"檔案欄位較似 **{auto_kind}** report；你揀咗 **{report_kind_manual}**。"
+                    "如果預覽金額唔對，請改上面報告類型。"
+                )
             cols = [str(c) for c in raw_df.columns]
             c1, c2 = st.columns(2)
             c3, c4 = st.columns(2)
-            c5, c6 = st.columns(2)
             col_agent = c1.selectbox(
                 "姓名欄",
                 ["（無）"] + cols,
@@ -1125,40 +1197,54 @@ def page_iris_sync():
                 ["（無）"] + cols,
                 index=(cols.index(detected["code"]) + 1) if detected["code"] in cols else 0,
             )
-            fyc_default = cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
-            col_fyc = c3.selectbox(
-                "當月 FYC 欄（Monthly Completion）",
-                cols,
-                index=fyc_default,
-                help="唔好揀 Monthly Submission",
-            )
-            ytd_opts = ["（無）"] + cols
-            ytd_default = (
-                (cols.index(detected["ytd"]) + 1) if detected.get("ytd") in cols else 0
-            )
-            col_ytd = c4.selectbox(
-                "YTD Completion 欄（個人年度）",
-                ytd_opts,
-                index=ytd_default,
-            )
-            col_month = c5.selectbox(
-                "月份欄",
-                ["（用上方選擇）"] + cols,
-                index=(cols.index(detected["month"]) + 1) if detected["month"] in cols else 0,
-            )
-            st.caption(
-                "當月用 Monthly Completion；個人年度用 YTD Completion；Team SC 喺 Dashboard 輸入。"
-            )
 
-            preview = build_sync_preview(
-                raw_df,
-                None if col_agent == "（無）" else col_agent,
-                None if col_code == "（無）" else col_code,
-                col_fyc,
-                None if col_month == "（用上方選擇）" else col_month,
-                month_choice or default_month,
-                col_ytd=None if col_ytd == "（無）" else col_ytd,
-            )
+            if report_kind_manual == "mdrt":
+                credit_default = (
+                    cols.index(detected["mdrt_credit"])
+                    if detected.get("mdrt_credit") in cols
+                    else 0
+                )
+                col_amount = c3.selectbox(
+                    "暫時進度欄（Total Credit eligible for MDRT）",
+                    cols,
+                    index=credit_default,
+                )
+                col_month = None
+                st.caption("會寫入 Leaderboard 2027 MDRT 暫時進度。Team SC 仍要人手入。")
+                preview = build_mdrt_preview(
+                    raw_df,
+                    None if col_agent == "（無）" else col_agent,
+                    None if col_code == "（無）" else col_code,
+                    col_amount,
+                )
+                amount_label = "Total Credit eligible for MDRT"
+            else:
+                fyc_default = cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
+                col_amount = c3.selectbox(
+                    "當月 FYC 欄（MTD-COMPLETION）",
+                    cols,
+                    index=fyc_default,
+                    help="唔好揀 Monthly Submission",
+                )
+                col_month = c4.selectbox(
+                    "月份欄",
+                    ["（用上方選擇）"] + cols,
+                    index=(cols.index(detected["month"]) + 1)
+                    if detected["month"] in cols
+                    else 0,
+                )
+                st.caption("會寫入每月業績 FYC。唔會改 Leaderboard 暫時進度／Team SC。")
+                preview = build_sync_preview(
+                    raw_df,
+                    None if col_agent == "（無）" else col_agent,
+                    None if col_code == "（無）" else col_code,
+                    col_amount,
+                    None if col_month == "（用上方選擇）" else col_month,
+                    month_choice or default_month,
+                    col_ytd=None,
+                )
+                amount_label = "MTD-COMPLETION FYC"
+
             st.session_state["_iris_last_preview"] = preview
             st.markdown("#### 對應結果")
             summary = preview_summary(preview)
@@ -1171,12 +1257,7 @@ def page_iris_sync():
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "amount": st.column_config.NumberColumn(
-                        "Monthly Completion", format="$%.0f"
-                    ),
-                    "ytd_amount": st.column_config.NumberColumn(
-                        "YTD Completion", format="$%.0f"
-                    ),
+                    "amount": st.column_config.NumberColumn(amount_label, format="$%.0f"),
                     "matched": "團隊成員",
                 },
             )
@@ -1194,13 +1275,23 @@ def page_iris_sync():
                 type="primary",
                 disabled=summary["matched_rows"] == 0,
             ):
-                result = apply_sync(preview, st.session_state["user"], uploaded.name)
-                st.success(
-                    f"同步完成：更新 {result['updated']} 筆 · "
-                    f"涵蓋 {result['matched_users']} 位團隊成員 · "
-                    f"忽略 {result['unmatched']} 列非團隊 · "
-                    f"月份 {', '.join(result['months']) or '—'}"
+                result = apply_report_sync(
+                    preview,
+                    st.session_state["user"],
+                    uploaded.name,
+                    report_kind=report_kind_manual,
                 )
+                if report_kind_manual == "mdrt":
+                    st.success(
+                        f"MDRT 暫時進度已更新：{result.get('mdrt_updated', result['updated'])} 筆 · "
+                        f"{result['matched_users']} 位團隊成員"
+                    )
+                else:
+                    st.success(
+                        f"每月 FYC 已更新：{result['updated']} 筆 · "
+                        f"{result['matched_users']} 位團隊成員 · "
+                        f"月份 {', '.join(result['months']) or '—'}"
+                    )
                 st.balloons()
                 st.rerun()
 
@@ -1225,7 +1316,7 @@ def page_monthly():
     )
     df = get_data(month=m)
     if df.empty:
-        st.info("本月暫無數據 — Leader 可用 Iris 同步匯入。")
+        st.info("本月暫無數據 — Leader 可用「業績報告同步」匯入 Daily production。")
         return
 
     month_total = float(df["fyc"].sum())
@@ -1545,11 +1636,11 @@ elif "打卡" in menu:
     page_checkin()
 elif "Dashboard" in menu:
     page_dashboard()
-elif "Iris" in menu:
+elif "業績報告" in menu or "Iris" in menu:
     if is_leader:
         page_iris_sync()
     else:
-        st.warning("只有 Leader 可以同步 Iris 業績")
+        st.warning("只有 Leader 可以同步業績報告")
 elif "每月" in menu:
     page_monthly()
 elif "年度" in menu:

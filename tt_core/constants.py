@@ -90,11 +90,19 @@ IRIS_CODE_ALIASES = [
     "producer code",
 ]
 
-# Prefer Monthly Completion — NEVER Monthly Submission
+# Prefer Monthly / MTD Completion — NEVER Monthly Submission
+# Daily production report: MTD-COMPLETION (FYC)
 IRIS_MONTHLY_COMPLETION_ALIASES = [
+    "mtd-completion",
+    "mtd completion",
+    "mtd_completion",
+    "mtd completion fyc",
+    "mtd-completion fyc",
+    "fyc mtd completion",
+    "mtd fyc completion",
+    "mtd fyc",
     "monthly completion",
     "month completion",
-    "mtd completion",
     "completion monthly",
     "monthly complete",
     "本月完成",
@@ -103,6 +111,18 @@ IRIS_MONTHLY_COMPLETION_ALIASES = [
     "月度完成",
     "本月 completion",
     "當月 completion",
+]
+
+# MDRT Progress Report: Total Credit eligible for MDRT
+MDRT_CREDIT_ALIASES = [
+    "total credit eligible for mdrt",
+    "credit eligible for mdrt",
+    "total credit eligible",
+    "eligible for mdrt",
+    "mdrt credit",
+    "total mdrt credit",
+    "mdrt total credit",
+    "total credit",
 ]
 
 # YTD Completion → Team FYC / yearly MDRT progress
