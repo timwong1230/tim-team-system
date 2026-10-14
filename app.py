@@ -8,6 +8,7 @@ import urllib.parse
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from tt_core.constants import (
     ACTIVITY_TYPES,
@@ -493,45 +494,111 @@ def _avatar_url(row) -> str:
     return f"https://ui-avatars.com/api/?name={urllib.parse.quote(name)}&background=d4af37&color=fff&size=128"
 
 
+def render_dashboard_kpis(team_fyc: float, team_rec: int, team_act: int) -> None:
+    """KPI tiles via components.html (Streamlit markdown drops custom CSS)."""
+    html = f"""
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif; background:transparent; }}
+  .wrap {{ display:grid; grid-template-columns:1fr; gap:8px; }}
+  @media(min-width:720px) {{ .wrap {{ grid-template-columns:repeat(3,1fr); gap:10px; }} }}
+  .kpi {{ background:#fff; border:1px solid #E6E8EC; border-radius:14px; padding:12px 14px;
+          box-shadow:0 6px 18px rgba(28,36,48,.05); }}
+  .k {{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#6B7280; }}
+  .v {{ font-family:Georgia,'Instrument Serif',serif; font-size:28px; color:#1C2430; margin-top:4px; line-height:1.1; }}
+</style></head><body>
+<div class="wrap">
+  <div class="kpi"><div class="k">Team FYC</div><div class="v">${team_fyc:,.0f}</div></div>
+  <div class="kpi"><div class="k">Recruits</div><div class="v">{team_rec}</div></div>
+  <div class="kpi"><div class="k">Activities</div><div class="v">{team_act}</div></div>
+</div>
+</body></html>
+"""
+    components.html(html, height=220 if MOBILE else 110, scrolling=False)
+
+
 def render_leaderboard(df: pd.DataFrame) -> None:
-    """Card-style MDRT leaderboard (mobile-first)."""
+    """Card-style MDRT leaderboard rendered in an HTML component (reliable on mobile)."""
     ranked = df.sort_values(by="fyc", ascending=False).reset_index(drop=True)
-    cards = ['<div class="lb-list">']
+    parts = []
     for i, row in ranked.iterrows():
         rank = i + 1
         pct = min(max(float(row["fyc"]) / MDRT_TARGET * 100, 0), 100) if MDRT_TARGET else 0
-        rank_cls = "gold" if rank == 1 else "silver" if rank == 2 else "bronze" if rank == 3 else ""
-        top_cls = " lb-top1" if rank == 1 else ""
-        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else str(rank)
+        rank_bg = (
+            "linear-gradient(135deg,#F0D078,#C5A028)"
+            if rank == 1
+            else "linear-gradient(135deg,#EEF1F4,#B8C0C8)"
+            if rank == 2
+            else "linear-gradient(135deg,#F0D3B8,#C4895A)"
+            if rank == 3
+            else "#F3F1EB"
+        )
+        border = "#E2C56A" if rank == 1 else "#E6E8EC"
+        bg = "linear-gradient(145deg,#FFFDF5 0%,#FFFFFF 55%)" if rank == 1 else "#FFFFFF"
+        medal = "1" if rank == 1 else "2" if rank == 2 else "3" if rank == 3 else str(rank)
         name = _esc(row["username"])
         av = _esc(_avatar_url(row))
         fyc = float(row["fyc"])
         recruit = int(row.get("recruit", 0) or 0)
         score = int(row.get("Total_Score", 0) or 0)
-        chip = '<span class="lb-chip">MDRT 達標</span>' if pct >= 100 else ""
-        cards.append(
-            f"""
-            <div class="lb-card{top_cls}">
-              <div class="lb-row">
-                <div class="lb-rank {rank_cls}">{medal}</div>
-                <img class="lb-avatar" src="{av}" alt="{name}">
-                <div class="lb-main">
-                  <div class="lb-name">{name} {chip}</div>
-                  <div class="lb-fyc">${fyc:,.0f}</div>
-                  <div class="lb-target">目標 ${MDRT_TARGET:,.0f}</div>
-                </div>
-                <div class="lb-pct">{pct:.0f}%</div>
-              </div>
-              <div class="lb-bar-wrap"><div class="lb-bar" style="width:{pct:.1f}%"></div></div>
-              <div class="lb-meta">
-                <span>招募 <strong>{recruit}</strong></span>
-                <span>活動分 <strong>{score}</strong></span>
-              </div>
-            </div>
-            """
+        chip = (
+            '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
+            'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">MDRT</span>'
+            if pct >= 100
+            else ""
         )
-    cards.append("</div>")
-    st.markdown("".join(cards), unsafe_allow_html=True)
+        top_bar = (
+            '<div style="position:absolute;left:0;top:0;right:0;height:4px;'
+            'background:linear-gradient(90deg,#D4AF37,#F0D078,#D4AF37);"></div>'
+            if rank == 1
+            else ""
+        )
+        parts.append(
+            "<div style='position:relative;background:"
+            + bg
+            + ";border:1px solid "
+            + border
+            + ";border-radius:16px;padding:14px 14px 12px;margin:0 0 12px 0;"
+            + "box-shadow:0 8px 22px rgba(28,36,48,.06);overflow:hidden;'>"
+            + top_bar
+            + "<div style='display:flex;align-items:center;gap:12px;'>"
+            + "<div style='width:34px;height:34px;border-radius:50%;display:flex;align-items:center;"
+            + "justify-content:center;font-weight:800;font-size:14px;background:"
+            + rank_bg
+            + ";color:#1C2430;flex-shrink:0;'>"
+            + medal
+            + "</div>"
+            + f"<img src='{av}' alt='{name}' style='width:48px;height:48px;border-radius:50%;"
+            + "object-fit:cover;border:2px solid #F0E6C4;flex-shrink:0;background:#eee;'>"
+            + "<div style='flex:1;min-width:0;'>"
+            + f"<div style='font-weight:700;font-size:16px;color:#1C2430;'>{name}{chip}</div>"
+            + f"<div style=\"font-family:Georgia,serif;font-size:22px;color:#1C2430;"
+            + f"line-height:1.15;margin-top:2px;\">${fyc:,.0f}</div>"
+            + f"<div style='color:#6B7280;font-size:12px;margin-top:2px;'>目標 ${MDRT_TARGET:,.0f}</div>"
+            + "</div>"
+            + f"<div style='flex-shrink:0;text-align:right;font-weight:800;font-size:17px;"
+            + f"color:#9A7B1A;min-width:52px;'>{pct:.0f}%</div>"
+            + "</div>"
+            + "<div style='margin-top:10px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
+            + f"<div style='height:100%;width:{pct:.1f}%;border-radius:999px;"
+            + "background:linear-gradient(90deg,#D4AF37,#F0D078);'></div></div>"
+            + "<div style='display:flex;gap:14px;margin-top:10px;color:#6B7280;font-size:13px;'>"
+            + f"<span>招募 <strong style='color:#1C2430;'>{recruit}</strong></span>"
+            + f"<span>活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
+            + "</div></div>"
+        )
+
+    n = max(len(parts), 1)
+    height = 24 + n * 148
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<style>body{margin:0;padding:2px 0;font-family:-apple-system,BlinkMacSystemFont,"
+        "'Segoe UI',sans-serif;background:transparent;}</style></head><body>"
+        + "".join(parts)
+        + "</body></html>"
+    )
+    components.html(html, height=height, scrolling=False)
 
 
 def page_dashboard():
@@ -583,16 +650,7 @@ def page_dashboard():
     team_fyc = float(df["fyc"].sum()) if not df.empty else 0.0
     team_rec = int(df["recruit"].sum()) if not df.empty else 0
     team_act = int(df["Total_Score"].sum()) if not df.empty else 0
-    st.markdown(
-        f"""
-        <div class="dash-kpis">
-          <div class="dash-kpi"><div class="k">Team FYC</div><div class="v">${team_fyc:,.0f}</div></div>
-          <div class="dash-kpi"><div class="k">Recruits</div><div class="v">{team_rec}</div></div>
-          <div class="dash-kpi"><div class="k">Activities</div><div class="v">{team_act}</div></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    render_dashboard_kpis(team_fyc, team_rec, team_act)
 
     st.markdown("### Leaderboard")
     st.caption("按全年 FYC 排名 · MDRT 目標 $512,800")
