@@ -296,9 +296,18 @@ def get_member_snapshot(username: str) -> dict:
     recruit = int(me_year.iloc[0]["recruit"]) if not me_year.empty else 0
     wk_score = int(me_week.iloc[0]["wk_score"]) if not me_week.empty else 0
     wk_count = int(me_week.iloc[0]["wk_count"]) if not me_week.empty else 0
+    # Prefer MDRT Progress Report credit; fall back to YTD FYC if not synced yet
+    progress_map = get_mdrt_progress_map()
+    mdrt_progress = float(progress_map.get(str(username), 0.0))
+    if mdrt_progress <= 0 and str(username) not in progress_map:
+        mdrt_progress = fyc
+    mdrt_pct = min(mdrt_progress / MDRT_TARGET * 100, 100) if MDRT_TARGET else 0.0
+    mdrt_remaining = max(float(MDRT_TARGET) - mdrt_progress, 0.0)
     return {
         "fyc": fyc,
-        "mdrt_pct": min(fyc / MDRT_TARGET * 100, 100) if MDRT_TARGET else 0,
+        "mdrt_progress": mdrt_progress,
+        "mdrt_pct": mdrt_pct,
+        "mdrt_remaining": mdrt_remaining,
         "score": score,
         "recruit": recruit,
         "wk_score": wk_score,

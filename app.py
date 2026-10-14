@@ -594,9 +594,13 @@ def page_home():
                 None,
             ),
             (
-                "我的 FYC",
-                f"${snap['fyc']:,.0f}",
-                f"MDRT {snap['mdrt_pct']:.1f}%",
+                "我的 MDRT 進度",
+                f"${float(snap.get('mdrt_progress', snap['fyc'])):,.0f}",
+                (
+                    f"MDRT {snap['mdrt_pct']:.1f}% · 已達標"
+                    if float(snap.get("mdrt_remaining", 0)) <= 0
+                    else f"MDRT {snap['mdrt_pct']:.1f}% · 尚欠 ${float(snap.get('mdrt_remaining', 0)):,.0f}"
+                ),
                 snap["mdrt_pct"],
             ),
             ("活動分數", f"{snap['score']}", "全年累積", None),
