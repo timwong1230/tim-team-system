@@ -358,7 +358,10 @@ from tt_core.mobile import (
 )
 from tt_core.styles import CUSTOM_CSS
 
-MOBILE = is_mobile()
+try:
+    MOBILE = is_mobile()
+except Exception:
+    MOBILE = False
 
 st.set_page_config(
     page_title="TIM TEAM",
@@ -366,9 +369,19 @@ st.set_page_config(
     layout="centered" if MOBILE else "wide",
     initial_sidebar_state="collapsed" if MOBILE else "expanded",
 )
-inject_pwa_head()
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-init_db_gs()  # cached once per server process — no longer hits Sheets every rerun
+try:
+    inject_pwa_head()
+except Exception:
+    pass
+try:
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+except Exception:
+    pass
+try:
+    init_db_gs()  # cached once per server process — no longer hits Sheets every rerun
+except Exception:
+    # Don't take down the whole app if Sheets/secrets are briefly unavailable
+    pass
 
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
