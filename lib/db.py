@@ -35,6 +35,7 @@ CORE_SHEETS = [
     "story_ammo",
     "iris_agent_map",
     "iris_sync_log",
+    "system_settings",
 ]
 
 
@@ -272,7 +273,13 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
 
     # --- Optimistic local update (UI stays fast even if Sheets lags) ---
     if action == "INSERT":
-        if sheet_name in {"activities", "monthly_fyc", "story_ammo", "iris_sync_log"}:
+        if sheet_name in {
+            "activities",
+            "monthly_fyc",
+            "story_ammo",
+            "iris_sync_log",
+            "system_settings",
+        }:
             if "id" not in data_dict or not data_dict["id"]:
                 data_dict["id"] = cache_store.next_id(sheet_name)
         cache_store.upsert_row_cache(sheet_name, data_dict)

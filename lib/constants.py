@@ -146,4 +146,5 @@ SHEET_SCHEMAS = {
         "status",
         "note",
     ],
+    "system_settings": ["id", "key", "value", "updated_at"],
 }
