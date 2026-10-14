@@ -25,8 +25,31 @@ from tt_core.constants import (
     IRIS_MONTHLY_COMPLETION_ALIASES,
     IRIS_YTD_COMPLETION_ALIASES,
 )
-from tt_core.data import get_clean_users, upd_fyc
-from tt_core.db import read_data, run_query_gs
+
+
+def _get_clean_users():
+    from tt_core.data import get_clean_users as _impl
+
+    return _impl()
+
+
+def _upd_fyc(*args, **kwargs):
+    from tt_core.data import upd_fyc as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def _read_data(*args, **kwargs):
+    from tt_core.db import read_data as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def _run_query_gs(*args, **kwargs):
+    from tt_core.db import run_query_gs as _impl
+
+    return _impl(*args, **kwargs)
+
 
 # Inline fallbacks — Streamlit Cloud sometimes caches an older constants.py
 try:
@@ -304,7 +327,7 @@ def parse_amount(value: Any) -> float:
 
 
 def get_agent_map() -> pd.DataFrame:
-    df = read_data("iris_agent_map")
+    df = _read_data("iris_agent_map")
     if df.empty:
         return pd.DataFrame(columns=["iris_name", "iris_code", "username", "notes"])
     return df.drop_duplicates(subset=["iris_name", "iris_code"], keep="last")
@@ -344,7 +367,7 @@ def save_agent_mapping(iris_name: str, iris_code: str, username: str, notes: str
                         ws.update_cell(cell.row, headers.index(col) + 1, val)
                 clear_cache()
                 return
-    run_query_gs("INSERT", "iris_agent_map", payload)
+    _run_query_gs("INSERT", "iris_agent_map", payload)
 
 
 def resolve_username(
@@ -397,7 +420,7 @@ def build_sync_preview(
 ) -> pd.DataFrame:
     """Preview with monthly completion (+ optional YTD completion)."""
     agent_map = get_agent_map()
-    users = get_clean_users()
+    users = _get_clean_users()
     users = users[users["role"] == "Member"]
 
     rows = []
@@ -450,7 +473,7 @@ def build_mdrt_preview(
 ) -> pd.DataFrame:
     """Preview MDRT Progress Report → temporary progress amounts."""
     agent_map = get_agent_map()
-    users = get_clean_users()
+    users = _get_clean_users()
     users = users[users["role"] == "Member"]
 
     rows = []
@@ -504,14 +527,14 @@ def apply_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str
         month = str(row.get("month") or "")
         if month == MDRT_PROGRESS_MONTH_KEY:
             continue
-        upd_fyc(row["username"], month, float(row["amount"]), source="daily_production")
+        _upd_fyc(row["username"], month, float(row["amount"]), source="daily_production")
         updated += 1
 
     months = sorted(
         m for m in matched["month"].astype(str).unique().tolist() if m != MDRT_PROGRESS_MONTH_KEY
     ) if not matched.empty else []
     note = f"kind=daily; months={','.join(months)}; col=MTD-COMPLETION"
-    run_query_gs(
+    _run_query_gs(
         "INSERT",
         "iris_sync_log",
         {
@@ -542,7 +565,7 @@ def apply_mdrt_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dic
     matched = preview[preview["matched"] & (preview["username"] != "")].copy()
     updated = 0
     for _, row in matched.iterrows():
-        upd_fyc(
+        _upd_fyc(
             row["username"],
             MDRT_PROGRESS_MONTH_KEY,
             float(row["amount"]),
@@ -551,7 +574,7 @@ def apply_mdrt_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dic
         updated += 1
 
     note = f"kind=mdrt; key={MDRT_PROGRESS_MONTH_KEY}; col=Total Credit eligible for MDRT"
-    run_query_gs(
+    _run_query_gs(
         "INSERT",
         "iris_sync_log",
         {
