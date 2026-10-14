@@ -203,5 +203,97 @@ div.stButton > button[kind="secondary"] {
   padding: 16px 18px;
   margin-bottom: 16px;
 }
+
+.tt-install-card {
+  background: linear-gradient(135deg, #FFF8E1, #FFFFFF);
+  border: 1px solid #E8D59A;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 10px 0 16px 0;
+}
+.tt-mobile-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(243,241,235,0.92);
+  backdrop-filter: blur(10px);
+  padding: 6px 0 10px;
+  margin-bottom: 8px;
+}
+
+/* ---- iPhone / iPad ---- */
+@media (max-width: 900px) {
+  h1 { font-size: 1.7rem !important; }
+  h2 { font-size: 1.4rem !important; }
+  h3 { font-size: 1.2rem !important; }
+
+  [data-testid="stAppViewContainer"] {
+    background:
+      radial-gradient(700px 280px at 0% 0%, #F8EFC8 0%, transparent 55%),
+      var(--bg) !important;
+  }
+
+  /* Comfortable thumb targets */
+  div.stButton > button {
+    min-height: 48px !important;
+    font-size: 1.02rem !important;
+    border-radius: 12px !important;
+  }
+  div[role="radiogroup"] label {
+    padding: 14px 14px !important;
+    min-height: 48px;
+  }
+  .stTextInput > div > div > input,
+  .stTextArea > div > div > textarea,
+  .stSelectbox > div > div {
+    min-height: 44px !important;
+    font-size: 16px !important; /* prevents iOS zoom-on-focus */
+  }
+
+  .tt-hero {
+    border-radius: 14px;
+    padding: 18px 16px 16px;
+    margin-bottom: 12px;
+  }
+  .tt-card {
+    padding: 14px;
+    margin-bottom: 8px;
+  }
+  .tt-value { font-size: 1.45rem; }
+  .login-panel {
+    padding: 20px 16px;
+    border-radius: 14px;
+  }
+  .activity-card { padding: 12px; }
+  .act-badge { font-size: 0.72em; max-width: 46%; text-align: right; }
+  .reward-card-premium { padding: 18px 14px; margin-bottom: 12px; }
+  .challenge-header-box { padding: 14px; }
+
+  /* Streamlit blocks: less side padding feel */
+  .block-container {
+    padding-top: 1rem !important;
+    padding-left: 0.9rem !important;
+    padding-right: 0.9rem !important;
+    padding-bottom: 5rem !important; /* space above iOS home indicator */
+  }
+
+  /* Dataframes scroll horizontally instead of crushing layout */
+  [data-testid="stDataFrame"] { overflow-x: auto; }
+}
+
+@media (max-width: 480px) {
+  h1 { font-size: 1.5rem !important; }
+  .tt-hero h1 { font-size: 1.45rem !important; }
+  .tt-kicker { font-size: 0.7rem; }
+}
+
+/* Standalone home-screen mode */
+html[data-tt-standalone="1"] header[data-testid="stHeader"] {
+  background: transparent !important;
+}
+html[data-tt-standalone="1"] .block-container {
+  padding-top: calc(0.75rem + env(safe-area-inset-top)) !important;
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)) !important;
+}
 </style>
 """
