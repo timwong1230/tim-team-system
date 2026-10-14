@@ -719,10 +719,10 @@ def page_iris_sync():
     st.markdown(
         """
         <div class="iris-banner">
-          <strong>點用先啱</strong><br>
-          Iris 團隊報表通常會連其他同事一齊出嚟 — <b>唔使全部入系統</b>。<br>
-          只需對應 <b>TIM TEAM 成員</b>；其他編號會自動忽略，唔會寫入業績。<br>
-          日常：Iris 匯出 → 丟 Drive → 撳「同步最新檔」。
+          <strong>業績欄位規則</strong><br>
+          當月 FYC = <b>Monthly Completion</b>（唔用 Monthly Submission）<br>
+          Team FYC / MDRT = 各人 <b>YTD Completion</b> 總和<br>
+          只需對應 TIM TEAM 成員；其他同事會自動忽略。
         </div>
         """,
         unsafe_allow_html=True,
@@ -815,8 +815,13 @@ def page_iris_sync():
                         st.caption(
                             f"自動欄位：姓名={detected.get('agent') or '—'} · "
                             f"編號={detected.get('code') or '—'} · "
-                            f"FYC={detected.get('fyc')} · "
+                            f"Monthly Completion={detected.get('fyc') or '—'} · "
+                            f"YTD Completion={detected.get('ytd') or '—'} · "
                             f"月份={detected.get('month') or month_drive}"
+                        )
+                        st.caption(
+                            "當月 FYC 用 Monthly Completion（唔用 Submission）；"
+                            "Team FYC / MDRT 用各人 YTD Completion 總和。"
                         )
                         summary = preview_summary(preview)
                         st.write(
@@ -834,7 +839,12 @@ def page_iris_sync():
                             use_container_width=True,
                             hide_index=True,
                             column_config={
-                                "amount": st.column_config.NumberColumn("FYC", format="$%.0f"),
+                                "amount": st.column_config.NumberColumn(
+                                    "Monthly Completion", format="$%.0f"
+                                ),
+                                "ytd_amount": st.column_config.NumberColumn(
+                                    "YTD Completion", format="$%.0f"
+                                ),
                                 "matched": "團隊成員",
                             },
                         )
@@ -860,7 +870,8 @@ def page_iris_sync():
                                 mark_file_synced(latest["id"])
                                 st.success(
                                     f"已同步「{latest.get('name')}」： "
-                                    f"更新 {result['updated']} 筆 · "
+                                    f"Monthly Completion {result['updated']} 筆 · "
+                                    f"YTD Completion {result.get('ytd_updated', 0)} 筆 · "
                                     f"{result['matched_users']} 位團隊成員 "
                                     f"（另忽略 {result['unmatched']} 列非團隊）"
                                 )
@@ -962,7 +973,9 @@ def page_iris_sync():
 
             detected = detect_columns(raw_df)
             cols = [str(c) for c in raw_df.columns]
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2 = st.columns(2)
+            c3, c4 = st.columns(2)
+            c5, c6 = st.columns(2)
             col_agent = c1.selectbox(
                 "姓名欄",
                 ["（無）"] + cols,
@@ -974,11 +987,28 @@ def page_iris_sync():
                 index=(cols.index(detected["code"]) + 1) if detected["code"] in cols else 0,
             )
             fyc_default = cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
-            col_fyc = c3.selectbox("FYC / 業績欄", cols, index=fyc_default)
-            col_month = c4.selectbox(
+            col_fyc = c3.selectbox(
+                "當月 FYC 欄（Monthly Completion）",
+                cols,
+                index=fyc_default,
+                help="唔好揀 Monthly Submission",
+            )
+            ytd_opts = ["（無）"] + cols
+            ytd_default = (
+                (cols.index(detected["ytd"]) + 1) if detected.get("ytd") in cols else 0
+            )
+            col_ytd = c4.selectbox(
+                "YTD Completion 欄（Team FYC）",
+                ytd_opts,
+                index=ytd_default,
+            )
+            col_month = c5.selectbox(
                 "月份欄",
                 ["（用上方選擇）"] + cols,
                 index=(cols.index(detected["month"]) + 1) if detected["month"] in cols else 0,
+            )
+            st.caption(
+                "當月用 Monthly Completion；Team FYC / MDRT 用 YTD Completion 總和。"
             )
 
             preview = build_sync_preview(
@@ -988,6 +1018,7 @@ def page_iris_sync():
                 col_fyc,
                 None if col_month == "（用上方選擇）" else col_month,
                 month_choice or default_month,
+                col_ytd=None if col_ytd == "（無）" else col_ytd,
             )
             st.session_state["_iris_last_preview"] = preview
             st.markdown("#### 對應結果")
@@ -1001,7 +1032,12 @@ def page_iris_sync():
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "amount": st.column_config.NumberColumn("FYC", format="$%.0f"),
+                    "amount": st.column_config.NumberColumn(
+                        "Monthly Completion", format="$%.0f"
+                    ),
+                    "ytd_amount": st.column_config.NumberColumn(
+                        "YTD Completion", format="$%.0f"
+                    ),
                     "matched": "團隊成員",
                 },
             )

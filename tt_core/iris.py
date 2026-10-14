@@ -1,8 +1,7 @@
 """FWD Iris production report import & sync.
 
-FWD Iris / Agent Assist does not expose a public API for team FYC.
-This module syncs Iris Excel/CSV exports into monthly_fyc so Leaders
-no longer need to type amounts by hand.
+Uses Monthly Completion for that month's FYC, and YTD Completion for
+year-to-date / Team FYC totals. Never uses Monthly Submission.
 """
 
 from __future__ import annotations
@@ -18,7 +17,11 @@ from tt_core.constants import (
     IRIS_AGENT_ALIASES,
     IRIS_CODE_ALIASES,
     IRIS_FYC_ALIASES,
+    IRIS_FYC_REJECT_SUBSTR,
     IRIS_MONTH_ALIASES,
+    IRIS_MONTHLY_COMPLETION_ALIASES,
+    IRIS_YTD_COMPLETION_ALIASES,
+    IRIS_YTD_MONTH_KEY,
 )
 from tt_core.data import get_clean_users, upd_fyc
 from tt_core.db import read_data, run_query_gs
@@ -28,14 +31,26 @@ def _norm(s: Any) -> str:
     return re.sub(r"\s+", " ", str(s or "").strip().lower())
 
 
-def _find_col(columns: list[str], aliases: list[str]) -> str | None:
+def _is_rejected(col_name: str, reject: list[str] | None) -> bool:
+    if not reject:
+        return False
+    n = _norm(col_name)
+    return any(r in n for r in reject)
+
+
+def _find_col(
+    columns: list[str],
+    aliases: list[str],
+    *,
+    reject: list[str] | None = None,
+) -> str | None:
     normalized = {_norm(c): c for c in columns}
     for alias in aliases:
-        if alias in normalized:
+        if alias in normalized and not _is_rejected(normalized[alias], reject):
             return normalized[alias]
     for alias in aliases:
         for ncol, original in normalized.items():
-            if alias in ncol:
+            if alias in ncol and not _is_rejected(original, reject):
                 return original
     return None
 
@@ -81,30 +96,76 @@ def _mostly_agent_codes(series: pd.Series, threshold: float = 0.7) -> bool:
 
 
 def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
+    """
+    Detect Iris columns.
+    - fyc / monthly: Monthly Completion (never Submission)
+    - ytd: YTD Completion
+    """
     cols = [str(c) for c in df.columns]
     agent = _find_col(cols, IRIS_AGENT_ALIASES)
     code = _find_col(cols, IRIS_CODE_ALIASES)
-    fyc = _find_col(cols, IRIS_FYC_ALIASES)
     month = _find_col(cols, IRIS_MONTH_ALIASES)
 
+    # 1) Prefer explicit Monthly Completion
+    monthly = _find_col(
+        cols,
+        IRIS_MONTHLY_COMPLETION_ALIASES,
+        reject=IRIS_FYC_REJECT_SUBSTR,
+    )
+    # 2) Fallback FYC aliases, still reject submission
+    if not monthly:
+        monthly = _find_col(cols, IRIS_FYC_ALIASES, reject=IRIS_FYC_REJECT_SUBSTR)
+
+    ytd = _find_col(
+        cols,
+        IRIS_YTD_COMPLETION_ALIASES,
+        reject=IRIS_FYC_REJECT_SUBSTR,
+    )
+    # Don't use the same column for both
+    if ytd and monthly and ytd == monthly:
+        # If only one completion-like column matched both lists, keep monthly
+        # and try a stricter YTD-only pass excluding that column
+        other_cols = [c for c in cols if c != monthly]
+        ytd = _find_col(
+            other_cols,
+            IRIS_YTD_COMPLETION_ALIASES,
+            reject=IRIS_FYC_REJECT_SUBSTR,
+        )
+
     # Many Iris team exports put Agent Code in a "name"/first column.
-    # If "agent" values are mostly digits and code is missing, treat as code.
     if agent and not code and agent in df.columns and _mostly_agent_codes(df[agent]):
         code, agent = agent, None
-    elif agent and code and agent in df.columns and _mostly_agent_codes(df[agent]) and not _mostly_agent_codes(df[code]):
-        # Swapped headers — flip
+    elif (
+        agent
+        and code
+        and agent in df.columns
+        and _mostly_agent_codes(df[agent])
+        and not _mostly_agent_codes(df[code])
+    ):
         agent, code = code, agent
 
-    return {"agent": agent, "code": code, "fyc": fyc, "month": month}
+    return {
+        "agent": agent,
+        "code": code,
+        "fyc": monthly,  # monthly completion → that month's FYC
+        "ytd": ytd,  # ytd completion → Team FYC / yearly
+        "month": month,
+    }
 
 
 def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFrame, dict]:
     """Detect columns and build sync preview in one step."""
     detected = detect_columns(df)
+    if not detected.get("fyc") and not detected.get("ytd"):
+        raise ValueError(
+            "搵唔到 Monthly Completion / YTD Completion 欄。"
+            "請確認檔案有呢兩欄（唔好用 Monthly Submission），"
+            "或改用手動上傳並自己揀欄。"
+        )
     if not detected.get("fyc"):
         raise ValueError(
-            "搵唔到 FYC／業績欄。請確認檔案有 FYC / Commission / 首年佣金 等欄位，"
-            "或改用手動上傳並自己揀欄。"
+            "搵唔到 Monthly Completion 欄（當月 FYC）。"
+            "系統唔會用 Monthly Submission。"
         )
     preview = build_sync_preview(
         df,
@@ -113,6 +174,7 @@ def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFra
         detected["fyc"],
         detected.get("month"),
         default_month,
+        col_ytd=detected.get("ytd"),
     )
     return preview, detected
 
@@ -126,7 +188,7 @@ def unmapped_agents(preview: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["iris_name", "iris_code", "amount"])
     return (
         u.groupby(["iris_name", "iris_code"], dropna=False)["amount"]
-        .sum()
+        .max()
         .reset_index()
         .sort_values(by="amount", ascending=False)
     )
@@ -134,7 +196,12 @@ def unmapped_agents(preview: pd.DataFrame) -> pd.DataFrame:
 
 def preview_summary(preview: pd.DataFrame) -> dict[str, Any]:
     if preview is None or preview.empty:
-        return {"matched_rows": 0, "unmatched_rows": 0, "matched_users": 0, "unmapped_agents": 0}
+        return {
+            "matched_rows": 0,
+            "unmatched_rows": 0,
+            "matched_users": 0,
+            "unmapped_agents": 0,
+        }
     matched = preview[preview["matched"]]
     return {
         "matched_rows": int(len(matched)),
@@ -152,17 +219,14 @@ def normalize_month(value: Any, fallback: str) -> str:
     if not s or s.lower() in {"nan", "none"}:
         return fallback
 
-    # Already YYYY-MM
     m = re.match(r"^(\d{4})[-/](\d{1,2})$", s)
     if m:
         return f"{m.group(1)}-{int(m.group(2)):02d}"
 
-    # YYYYMM
     m = re.match(r"^(\d{4})(\d{2})$", s)
     if m:
         return f"{m.group(1)}-{m.group(2)}"
 
-    # Excel serial / datetime
     try:
         dt = pd.to_datetime(value, errors="coerce")
         if pd.notna(dt):
@@ -200,13 +264,14 @@ def save_agent_mapping(iris_name: str, iris_code: str, username: str, notes: str
     iris_code = str(iris_code or "").strip()
     username = str(username or "").strip()
 
-    # Update existing row matched by name or code
     match = pd.DataFrame()
     if not df.empty:
         if iris_code:
             match = df[df["iris_code"].astype(str).str.strip() == iris_code]
         if match.empty and iris_name:
-            match = df[df["iris_name"].astype(str).str.strip().str.lower() == iris_name.lower()]
+            match = df[
+                df["iris_name"].astype(str).str.strip().str.lower() == iris_name.lower()
+            ]
 
     payload = {
         "iris_name": iris_name,
@@ -215,7 +280,6 @@ def save_agent_mapping(iris_name: str, iris_code: str, username: str, notes: str
         "notes": notes,
     }
     if not match.empty:
-        # iris_agent_map has no id — delete+reinsert via row find on name
         from tt_core.db import get_sheet, clear_cache
 
         ws = get_sheet("iris_agent_map")
@@ -231,11 +295,12 @@ def save_agent_mapping(iris_name: str, iris_code: str, username: str, notes: str
     run_query_gs("INSERT", "iris_agent_map", payload)
 
 
-def resolve_username(iris_name: str, iris_code: str, agent_map: pd.DataFrame, users: pd.DataFrame) -> str | None:
+def resolve_username(
+    iris_name: str, iris_code: str, agent_map: pd.DataFrame, users: pd.DataFrame
+) -> str | None:
     name = str(iris_name or "").strip()
     code = str(iris_code or "").strip()
 
-    # If "name" is actually a numeric agent code, treat it as code too
     if name and re.fullmatch(r"\d{4,}", name) and not code:
         code = name
 
@@ -244,7 +309,6 @@ def resolve_username(iris_name: str, iris_code: str, agent_map: pd.DataFrame, us
             hit = agent_map[agent_map["iris_code"].astype(str).str.strip() == code]
             if not hit.empty and str(hit.iloc[0]["username"]).strip():
                 return str(hit.iloc[0]["username"]).strip()
-            # Also allow code stored in iris_name column of the map
             hit = agent_map[agent_map["iris_name"].astype(str).str.strip() == code]
             if not hit.empty and str(hit.iloc[0]["username"]).strip():
                 return str(hit.iloc[0]["username"]).strip()
@@ -277,8 +341,9 @@ def build_sync_preview(
     col_fyc: str,
     col_month: str | None,
     default_month: str,
+    col_ytd: str | None = None,
 ) -> pd.DataFrame:
-    """Return preview rows with matched system username and normalized FYC."""
+    """Preview with monthly completion (+ optional YTD completion)."""
     agent_map = get_agent_map()
     users = get_clean_users()
     users = users[users["role"] == "Member"]
@@ -291,10 +356,10 @@ def build_sync_preview(
             agent = ""
         if code in {"nan", "None"}:
             code = ""
-        # Normalize numeric-only "name" into code for cleaner mapping UI
         if agent and re.fullmatch(r"\d{4,}", agent) and not code:
             code, agent = agent, ""
-        amount = parse_amount(r[col_fyc])
+        amount = parse_amount(r[col_fyc]) if col_fyc else 0.0
+        ytd_amount = parse_amount(r[col_ytd]) if col_ytd else 0.0
         month_raw = r[col_month] if col_month else default_month
         month = normalize_month(month_raw, default_month)
         username = resolve_username(agent, code, agent_map, users)
@@ -304,7 +369,8 @@ def build_sync_preview(
                 "iris_code": code,
                 "username": username or "",
                 "month": month,
-                "amount": amount,
+                "amount": amount,  # monthly completion
+                "ytd_amount": ytd_amount,  # ytd completion
                 "matched": bool(username),
             }
         )
@@ -313,25 +379,41 @@ def build_sync_preview(
     if preview.empty:
         return preview
 
-    # Aggregate same user+month (Iris exports often have multiple policy lines)
+    # Agent-level totals: use max to avoid double-counting duplicate rows
     grouped = (
-        preview.groupby(["iris_name", "iris_code", "username", "month", "matched"], dropna=False)["amount"]
-        .sum()
+        preview.groupby(
+            ["iris_name", "iris_code", "username", "month", "matched"], dropna=False
+        )
+        .agg(amount=("amount", "max"), ytd_amount=("ytd_amount", "max"))
         .reset_index()
     )
     return grouped.sort_values(by=["matched", "amount"], ascending=[False, False])
 
 
 def apply_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str, Any]:
-    """Write matched FYC rows into monthly_fyc and log the sync."""
+    """
+    Write:
+    - monthly completion → monthly_fyc[selected month]
+    - ytd completion → monthly_fyc[YTD]  (used for Team FYC / yearly)
+    """
     matched = preview[preview["matched"] & (preview["username"] != "")].copy()
     updated = 0
+    ytd_updated = 0
+    has_ytd = "ytd_amount" in matched.columns
     for _, row in matched.iterrows():
         upd_fyc(row["username"], row["month"], float(row["amount"]), source="iris")
         updated += 1
+        if has_ytd:
+            upd_fyc(
+                row["username"],
+                IRIS_YTD_MONTH_KEY,
+                float(row["ytd_amount"] or 0),
+                source="iris_ytd",
+            )
+            ytd_updated += 1
 
     months = sorted(matched["month"].unique().tolist()) if not matched.empty else []
-    note = f"months={','.join(months)}"
+    note = f"months={','.join(months)}; monthly=completion; ytd_rows={ytd_updated}"
     run_query_gs(
         "INSERT",
         "iris_sync_log",
@@ -349,6 +431,7 @@ def apply_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str
     )
     return {
         "updated": updated,
+        "ytd_updated": ytd_updated,
         "matched_users": int(matched["username"].nunique()) if not matched.empty else 0,
         "unmatched": int((~preview["matched"]).sum()) if not preview.empty else 0,
         "months": months,
@@ -357,7 +440,7 @@ def apply_sync(preview: pd.DataFrame, synced_by: str, filename: str) -> dict[str
 
 def sample_template_csv() -> str:
     return (
-        "Agent Name,Agent Code,FYC,Month\n"
-        "Tim,A001,52000,2026-10\n"
-        "Oscar,A002,38000,2026-10\n"
+        "Agent Name,Agent Code,Monthly Submission,Monthly Completion,YTD Completion,Month\n"
+        "Tim,A001,60000,52000,397457,2026-10\n"
+        "Oscar,A002,40000,38000,162848,2026-10\n"
     )
