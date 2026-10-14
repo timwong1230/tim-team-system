@@ -160,6 +160,9 @@ IRIS_MONTH_ALIASES = [
 # Special month key storing Iris YTD Completion per agent
 IRIS_YTD_MONTH_KEY = "YTD"
 
+# Special month key: 2027 MDRT temporary progress (plan bonus + other credit)
+MDRT_PROGRESS_MONTH_KEY = "MDRT_2027"
+
 # Dashboard Team SC (manual override stored in system_settings)
 TEAM_SC_SETTING_KEY = "team_sc"
 

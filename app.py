@@ -34,6 +34,7 @@ from tt_core.data import (
     get_clean_users,
     get_data,
     get_last_week_data,
+    get_mdrt_progress_map,
     get_member_snapshot,
     get_note_template,
     get_q1_data,
@@ -41,6 +42,7 @@ from tt_core.data import (
     last_iris_sync,
     login,
     proc_img,
+    set_mdrt_progress,
     upd_fyc,
     upd_rec,
     update_avt,
@@ -588,8 +590,8 @@ def render_rank_cards(
     month_label: str = "",
 ) -> None:
     """
-    Card-style FYC leaderboard.
-    mode='mdrt'   → progress vs MDRT_TARGET
+    Card-style leaderboard.
+    mode='mdrt'   → 2027 MDRT temporary progress vs MDRT_TARGET
     mode='monthly'→ progress vs that month's team max (min scale 20k)
     """
     ranked = df.sort_values(by="fyc", ascending=False).reset_index(drop=True)
@@ -599,7 +601,7 @@ def render_rank_cards(
         target_label_fn = lambda _fyc: f"{month_label} 本月排名" if month_label else "本月排名"
     else:
         bar_target = float(MDRT_TARGET)
-        target_label_fn = lambda _fyc: f"目標 ${MDRT_TARGET:,.0f}"
+        target_label_fn = lambda _fyc: f"2027 MDRT 目標 ${MDRT_TARGET:,.0f}"
 
     parts = []
     for i, row in ranked.iterrows():
@@ -768,17 +770,45 @@ def page_dashboard():
                     st.error("儲存失敗，請稍後再試")
 
     st.markdown("### Leaderboard")
-    st.caption("按全年 FYC 排名 · MDRT 目標 $512,800")
+    st.caption(f"2027 MDRT 目標 ${MDRT_TARGET:,.0f} 暫時進度")
+    user_list = df["username"].tolist() if not df.empty else []
+    progress_map = get_mdrt_progress_map()
     if df.empty:
         st.info("暫無成員數據")
     else:
-        render_leaderboard(df)
+        lb = df.copy()
+        lb["fyc"] = lb["username"].map(lambda u: float(progress_map.get(str(u), 0.0)))
+        render_leaderboard(lb)
 
     if is_leader:
+        with st.expander("編輯各人 2027 MDRT 暫時進度", expanded=False):
+            st.caption(
+                "呢度輸入每位同事嘅計劃 bonus & other credit 總數"
+                f"（計入 2027 MDRT 目標 ${MDRT_TARGET:,.0f}）。"
+            )
+            if not user_list:
+                st.info("暫無成員可編輯")
+            else:
+                for uname in user_list:
+                    st.number_input(
+                        f"{uname}",
+                        min_value=0.0,
+                        value=float(progress_map.get(str(uname), 0.0)),
+                        step=1000.0,
+                        format="%.0f",
+                        key=f"mdrt_progress_{uname}",
+                    )
+                if st.button("儲存全部暫時進度", type="primary", use_container_width=True):
+                    for uname in user_list:
+                        set_mdrt_progress(
+                            uname, float(st.session_state.get(f"mdrt_progress_{uname}", 0))
+                        )
+                    st.toast("MDRT 暫時進度已更新", icon="✅")
+                    st.rerun()
+
         with st.expander("手動調整個人業績 / 招募（備用）"):
             st.caption("日常請用「Iris 業績同步」。呢度只係後備人手修正個人數。")
             c_a, c_b, c_c = st.columns(3)
-            user_list = df["username"].unique().tolist() if not df.empty else []
             tgt = c_a.selectbox("User", user_list)
             mth = c_b.selectbox("Month", [f"2026-{i:02d}" for i in range(1, 13)])
             amt = c_c.number_input("Amount", step=1000)
@@ -803,7 +833,7 @@ def page_iris_sync():
         <div class="iris-banner">
           <strong>業績欄位規則</strong><br>
           當月 FYC = <b>Monthly Completion</b>（唔用 Monthly Submission）<br>
-          個人 MDRT = 各人 <b>YTD Completion</b><br>
+          Leaderboard <b>2027 MDRT 暫時進度</b> = 計劃 bonus & other credit（Dashboard 人手輸入）<br>
           <b>Team SC</b> 喺 Dashboard 由 Leader 人手輸入（Year to date）<br>
           只需對應 TIM TEAM 成員；其他同事會自動忽略。
         </div>
@@ -904,7 +934,7 @@ def page_iris_sync():
                         )
                         st.caption(
                             "當月 FYC 用 Monthly Completion（唔用 Submission）；"
-                            "個人 MDRT 用 YTD Completion；Team SC 請喺 Dashboard 人手輸入。"
+                            "Iris 同步每月／YTD Completion；Leaderboard MDRT 暫時進度請喺 Dashboard 人手輸入。"
                         )
                         summary = preview_summary(preview)
                         st.write(
