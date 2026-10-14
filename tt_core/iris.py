@@ -96,10 +96,142 @@ def _find_col(
     return None
 
 
+def _pdf_tables_to_df(raw: bytes) -> pd.DataFrame | None:
+    """Best-effort table extract from MDRT / production PDFs."""
+    try:
+        import pdfplumber
+    except Exception:
+        return None
+
+    tables: list[list[list[Any]]] = []
+    try:
+        with pdfplumber.open(io.BytesIO(raw)) as pdf:
+            for page in pdf.pages:
+                for table in page.extract_tables() or []:
+                    if table and len(table) >= 2 and len(table[0]) >= 2:
+                        tables.append(table)
+    except Exception:
+        return None
+    if not tables:
+        return None
+
+    def _score(table: list[list[Any]]) -> tuple[int, int]:
+        header = " ".join(str(c or "") for c in table[0]).lower()
+        bonus = 0
+        if "credit" in header or "mdrt" in header:
+            bonus += 100
+        if "agent" in header or "code" in header:
+            bonus += 40
+        if "completion" in header or "fyc" in header:
+            bonus += 40
+        return (bonus, len(table) * max(len(table[0]), 1))
+
+    best = max(tables, key=_score)
+    header = []
+    for i, cell in enumerate(best[0]):
+        label = str(cell or "").strip() or f"col{i}"
+        header.append(label)
+    # Deduplicate headers
+    seen: dict[str, int] = {}
+    clean_header = []
+    for h in header:
+        n = seen.get(h, 0)
+        seen[h] = n + 1
+        clean_header.append(h if n == 0 else f"{h}_{n}")
+    rows = [[("" if c is None else str(c).strip()) for c in r] for r in best[1:]]
+    # Normalize ragged rows
+    width = len(clean_header)
+    norm_rows = []
+    for r in rows:
+        if len(r) < width:
+            r = r + [""] * (width - len(r))
+        norm_rows.append(r[:width])
+    df = pd.DataFrame(norm_rows, columns=clean_header)
+    return df if not df.empty else None
+
+
+def _pdf_text_to_df(raw: bytes) -> pd.DataFrame:
+    """
+    Parse MDRT Progress PDF text into Agent Code + Total Credit columns.
+    Looks for lines containing an agent code (4–6 digits) and a money amount.
+    """
+    chunks: list[str] = []
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(raw))
+        for page in reader.pages:
+            chunks.append(page.extract_text() or "")
+    except Exception as e:
+        raise ValueError(f"無法讀取 PDF：{e}") from e
+
+    text = "\n".join(chunks)
+    if not text.strip():
+        raise ValueError(
+            "PDF 無文字層（可能係掃瞄圖）。請用可選取文字嘅 PDF，或匯出 Excel/CSV。"
+        )
+
+    rows: list[dict[str, str]] = []
+    for line in text.splitlines():
+        line = re.sub(r"[ \t]+", " ", (line or "").strip())
+        if not line:
+            continue
+        low = line.lower()
+        if "total credit eligible for mdrt" in low and not re.search(r"\d{4,}", line):
+            continue
+        codes = re.findall(r"\b(\d{4,6})\b", line)
+        if not codes:
+            continue
+        # Money-like tokens; ignore bare years like 2026
+        amounts = []
+        for m in re.finditer(r"(?:HK\$|\$)?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d+|\d{3,})", line):
+            token = m.group(1)
+            if re.fullmatch(r"20\d{2}", token):
+                continue
+            if token in codes:
+                continue
+            amounts.append(token)
+        if not amounts:
+            continue
+        code = codes[0]
+        amount = amounts[-1]
+        # Name = text before first code, if any
+        name_part = line.split(code, 1)[0].strip(" |-:\t")
+        rows.append(
+            {
+                "Agent Name": name_part,
+                "Agent Code": code,
+                "Total Credit eligible for MDRT": amount,
+            }
+        )
+
+    if not rows:
+        raise ValueError(
+            "PDF 入面搵唔到 Agent Code + Total Credit。"
+            "請確認係 MDRT Progress Report，或改用 Excel/CSV。"
+        )
+    # De-dupe by agent code, keep last (usually the totals row)
+    df = pd.DataFrame(rows)
+    df = df.drop_duplicates(subset=["Agent Code"], keep="last")
+    return df.reset_index(drop=True)
+
+
 def load_iris_bytes(raw: bytes, filename: str) -> pd.DataFrame:
-    """Load Iris export bytes (.xlsx / .xls / .csv) into a DataFrame."""
+    """Load report bytes (.xlsx / .xls / .csv / .pdf) into a DataFrame."""
     name = (filename or "").lower()
     bio = io.BytesIO(raw)
+
+    if name.endswith(".pdf"):
+        df = _pdf_tables_to_df(raw)
+        if df is not None and not df.empty:
+            # If table headers don't include MDRT credit wording, try to map
+            cols_l = {_norm(c): c for c in df.columns}
+            has_credit = any("credit" in k or "mdrt" in k for k in cols_l)
+            has_code = any("code" in k or "agent" in k for k in cols_l)
+            if has_credit or has_code:
+                return df
+        # Fallback: text line parser tuned for MDRT Progress PDFs
+        return _pdf_text_to_df(raw)
 
     if name.endswith(".csv"):
         for enc in ("utf-8-sig", "utf-8", "cp950", "big5", "latin-1"):

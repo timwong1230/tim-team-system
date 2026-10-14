@@ -6,3 +6,5 @@ google-api-python-client
 Pillow
 openpyxl
 pyarrow
+pypdf
+pdfplumber
