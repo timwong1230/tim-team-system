@@ -19,14 +19,14 @@ from tt_core.iris import (  # noqa: E402
 
 def test_daily_mtd_completion():
     csv = (
-        "Agent Code,Monthly Submission,MTD-COMPLETION,Month\n"
+        "Agent Code,MTD_Sub_FYC,MTD_Comp_FYC,Month\n"
         "30947,90000,52000,2026-10\n"
         "59164,40000,10000,2026-10\n"
     )
     df = load_iris_bytes(csv.encode(), "daily_production_oct.csv")
     assert detect_report_kind(df, "daily_production_oct.csv") == "daily"
     cols = detect_columns(df)
-    assert cols["fyc"] == "MTD-COMPLETION"
+    assert cols["fyc"] == "MTD_Comp_FYC"
     assert cols["mdrt_credit"] is None
     preview, detected = auto_build_preview(df, "2026-10", filename="daily.csv", report_kind="daily")
     assert detected["report_kind"] == "daily"
@@ -56,7 +56,7 @@ def test_mdrt_total_credit():
 
 def test_templates():
     daily = load_iris_bytes(sample_template_csv().encode(), "t.csv")
-    assert detect_columns(daily)["fyc"] == "MTD-COMPLETION"
+    assert detect_columns(daily)["fyc"] == "MTD_Comp_FYC"
     mdrt = load_iris_bytes(sample_mdrt_template_csv().encode(), "m.csv")
     assert detect_columns(mdrt)["mdrt_credit"] == "Total Credit eligible for MDRT"
     print("templates ok")

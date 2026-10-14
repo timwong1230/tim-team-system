@@ -187,7 +187,7 @@ _DAILY_FOLDER_KEY = "iris_drive_folder_id"
 _MDRT_FOLDER_KEY = "mdrt_drive_folder_id"
 
 _DAILY_TEMPLATE_CSV = (
-    "Agent Name,Agent Code,Monthly Submission,MTD-COMPLETION,Month\n"
+    "Agent Name,Agent Code,MTD_Sub_FYC,MTD_Comp_FYC,Month\n"
     "Tim,30947,60000,52000,2026-10\n"
     "Oscar,59164,40000,10000,2026-10\n"
 )
@@ -1167,7 +1167,7 @@ def _render_drive_report_box(
                     mark_daily_file_synced(latest["id"])
                     st.success(
                         f"已同步 Daily Production「{latest.get('name')}」： "
-                        f"MTD-COMPLETION FYC {result['updated']} 筆 · "
+                        f"MTD_Comp_FYC {result['updated']} 筆 · "
                         f"{result['matched_users']} 位團隊成員 · "
                         f"月份 {', '.join(result.get('months') or []) or '—'}"
                     )
@@ -1182,7 +1182,7 @@ def page_iris_sync():
         """
         <div class="iris-banner">
           <strong>兩份報告 → 兩個數字</strong><br>
-          <b>Daily production report</b> → 讀 <b>MTD-COMPLETION</b> → 每月業績 FYC<br>
+          <b>Daily production report</b> → 讀 <b>MTD_Comp_FYC</b>（唔用 MTD_Sub_FYC）→ 每月業績 FYC<br>
           <b>MDRT Progress Report</b> → 讀 <b>Total Credit eligible for MDRT</b> → Leaderboard 暫時進度<br>
           <b>Team SC</b> 仍然喺 Dashboard 人手輸入<br>
           只需對應 TIM TEAM 成員；其他同事會自動忽略。
@@ -1251,11 +1251,11 @@ def page_iris_sync():
         )
 
         _render_drive_report_box(
-            title="A. Daily production → 每月 FYC（MTD-COMPLETION）",
+            title="A. Daily production → 每月 FYC（MTD_Comp_FYC）",
             report_kind="daily",
             folder_id=get_daily_folder_id(),
             month_fallback=month_drive,
-            amount_label="MTD-COMPLETION FYC",
+            amount_label="MTD_Comp_FYC",
             key_prefix="drv_daily",
         )
         st.divider()
@@ -1336,7 +1336,7 @@ def page_iris_sync():
             "報告類型",
             ["daily", "mdrt"],
             format_func=lambda k: (
-                "Daily production（MTD-COMPLETION → 每月 FYC）"
+                "Daily production（MTD_Comp_FYC → 每月 FYC）"
                 if k == "daily"
                 else "MDRT Progress（Total Credit eligible for MDRT → 暫時進度）"
             ),
@@ -1361,7 +1361,7 @@ def page_iris_sync():
         uploaded = st.file_uploader(
             "上傳報告檔",
             type=["xlsx", "xls", "csv", "pdf"],
-            help="Daily：Excel/CSV（MTD-COMPLETION）；MDRT：Excel/CSV/PDF（Total Credit eligible for MDRT）",
+            help="Daily：Excel/CSV（MTD_Comp_FYC，唔用 MTD_Sub_FYC）；MDRT：Excel/CSV/PDF（Total Credit eligible for MDRT）",
         )
         default_month = datetime.date.today().strftime("%Y-%m")
         month_choice = st.selectbox(
@@ -1425,7 +1425,7 @@ def page_iris_sync():
             else:
                 fyc_default = cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
                 col_amount = c3.selectbox(
-                    "當月 FYC 欄（MTD-COMPLETION）",
+                    "當月 FYC 欄（MTD_Comp_FYC）",
                     cols,
                     index=fyc_default,
                     help="唔好揀 Monthly Submission",
@@ -1447,7 +1447,7 @@ def page_iris_sync():
                     month_choice or default_month,
                     col_ytd=None,
                 )
-                amount_label = "MTD-COMPLETION FYC"
+                amount_label = "MTD_Comp_FYC"
 
             st.session_state["_iris_last_preview"] = preview
             st.markdown("#### 對應結果")

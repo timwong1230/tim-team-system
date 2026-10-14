@@ -69,7 +69,10 @@ except Exception:  # pragma: no cover
 
 
 def _norm(s: Any) -> str:
-    return re.sub(r"\s+", " ", str(s or "").strip().lower())
+    """Normalize header text: casefold, treat _/- as spaces."""
+    s = str(s or "").strip().lower()
+    s = re.sub(r"[_\-]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def _is_rejected(col_name: str, reject: list[str] | None) -> bool:
@@ -751,9 +754,9 @@ def apply_report_sync(
 
 
 def sample_template_csv() -> str:
-    """Daily production template (MTD-COMPLETION → monthly FYC)."""
+    """Daily production template (MTD_Comp_FYC → monthly FYC)."""
     return (
-        "Agent Name,Agent Code,Monthly Submission,MTD-COMPLETION,Month\n"
+        "Agent Name,Agent Code,MTD_Sub_FYC,MTD_Comp_FYC,Month\n"
         "Tim,30947,60000,52000,2026-10\n"
         "Oscar,59164,40000,10000,2026-10\n"
     )
