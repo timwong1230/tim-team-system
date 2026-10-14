@@ -207,7 +207,7 @@ def get_data(month=None) -> pd.DataFrame:
 def get_mdrt_progress_map() -> dict[str, float]:
     """Per-member 2027 MDRT temporary progress (plan bonus + other credit)."""
     fyc_df = read_data("monthly_fyc")
-    if fyc_df.empty or "amount" not in fyc_df.columns:
+    if fyc_df is None or fyc_df.empty or "amount" not in fyc_df.columns:
         return {}
     fyc_df = fyc_df.copy()
     fyc_df["month"] = fyc_df["month"].astype(str).str.strip()
@@ -216,7 +216,34 @@ def get_mdrt_progress_map() -> dict[str, float]:
     if rows.empty:
         return {}
     grouped = rows.groupby("username")["amount"].max()
-    return {str(k): float(v) for k, v in grouped.items()}
+    return {str(k).strip(): float(v) for k, v in grouped.items()}
+
+
+def lookup_mdrt_progress(username: str, progress_map: dict[str, float] | None = None) -> float:
+    """Leaderboard / home shared lookup for MDRT_2027 amount."""
+    if progress_map is None:
+        progress_map = get_mdrt_progress_map()
+    key = str(username or "").strip()
+    if not key:
+        return 0.0
+    if key in progress_map:
+        return float(progress_map[key])
+    lower = {str(k).strip().lower(): float(v) for k, v in progress_map.items()}
+    return float(lower.get(key.lower(), 0.0))
+
+
+def mdrt_card_metrics(username: str, progress_map: dict[str, float] | None = None) -> dict:
+    """Home card metrics — same progress number as Leaderboard."""
+    progress = lookup_mdrt_progress(username, progress_map)
+    target = float(MDRT_TARGET) if MDRT_TARGET else 0.0
+    pct = min(progress / target * 100, 100.0) if target else 0.0
+    remaining = max(target - progress, 0.0)
+    return {
+        "mdrt_progress": progress,
+        "mdrt_pct": pct,
+        "mdrt_remaining": remaining,
+        "mdrt_met": bool(target > 0 and progress >= target),
+    }
 
 
 def set_mdrt_progress(username: str, amount: float) -> None:
@@ -296,18 +323,14 @@ def get_member_snapshot(username: str) -> dict:
     recruit = int(me_year.iloc[0]["recruit"]) if not me_year.empty else 0
     wk_score = int(me_week.iloc[0]["wk_score"]) if not me_week.empty else 0
     wk_count = int(me_week.iloc[0]["wk_count"]) if not me_week.empty else 0
-    # Prefer MDRT Progress Report credit; fall back to YTD FYC if not synced yet
-    progress_map = get_mdrt_progress_map()
-    mdrt_progress = float(progress_map.get(str(username), 0.0))
-    if mdrt_progress <= 0 and str(username) not in progress_map:
-        mdrt_progress = fyc
-    mdrt_pct = min(mdrt_progress / MDRT_TARGET * 100, 100) if MDRT_TARGET else 0.0
-    mdrt_remaining = max(float(MDRT_TARGET) - mdrt_progress, 0.0)
+    # Same MDRT_2027 credit as Leaderboard (never substitute YTD FYC)
+    mdrt = mdrt_card_metrics(username)
     return {
         "fyc": fyc,
-        "mdrt_progress": mdrt_progress,
-        "mdrt_pct": mdrt_pct,
-        "mdrt_remaining": mdrt_remaining,
+        "mdrt_progress": mdrt["mdrt_progress"],
+        "mdrt_pct": mdrt["mdrt_pct"],
+        "mdrt_remaining": mdrt["mdrt_remaining"],
+        "mdrt_met": mdrt["mdrt_met"],
         "score": score,
         "recruit": recruit,
         "wk_score": wk_score,

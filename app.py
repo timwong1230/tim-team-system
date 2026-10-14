@@ -122,9 +122,37 @@ def get_mdrt_progress_map() -> dict[str, float]:
         if rows.empty:
             return {}
         grouped = rows.groupby("username")["amount"].max()
-        return {str(k): float(v) for k, v in grouped.items()}
+        return {str(k).strip(): float(v) for k, v in grouped.items()}
     except Exception:
         return {}
+
+
+def lookup_mdrt_progress(username: str, progress_map: dict[str, float] | None = None) -> float:
+    """Same amount Leaderboard uses for a member (MDRT_2027), case-insensitive."""
+    if progress_map is None:
+        progress_map = get_mdrt_progress_map()
+    key = str(username or "").strip()
+    if not key:
+        return 0.0
+    if key in progress_map:
+        return float(progress_map[key])
+    lower = {str(k).strip().lower(): float(v) for k, v in progress_map.items()}
+    return float(lower.get(key.lower(), 0.0))
+
+
+def mdrt_card_metrics(username: str, progress_map: dict[str, float] | None = None) -> dict:
+    """Home / Leaderboard shared MDRT progress, % and 尚欠."""
+    progress = lookup_mdrt_progress(username, progress_map)
+    target = float(MDRT_TARGET) if MDRT_TARGET else 0.0
+    pct = min(progress / target * 100, 100.0) if target else 0.0
+    remaining = max(target - progress, 0.0)
+    met = target > 0 and progress >= target
+    return {
+        "mdrt_progress": progress,
+        "mdrt_pct": pct,
+        "mdrt_remaining": remaining,
+        "mdrt_met": met,
+    }
 
 
 def set_mdrt_progress(username: str, amount: float) -> None:
@@ -585,6 +613,13 @@ def page_home():
     )
 
     if snap:
+        # Same MDRT_2027 source as Leaderboard (do not use YTD FYC here)
+        mdrt = mdrt_card_metrics(user)
+        mdrt_hint = (
+            f"MDRT {mdrt['mdrt_pct']:.1f}% · 已達標"
+            if mdrt["mdrt_met"]
+            else f"MDRT {mdrt['mdrt_pct']:.1f}% · 尚欠 ${mdrt['mdrt_remaining']:,.0f}"
+        )
         row1 = st.columns(2) if MOBILE else st.columns(4)
         cards = [
             (
@@ -595,13 +630,9 @@ def page_home():
             ),
             (
                 "我的 MDRT 進度",
-                f"${float(snap.get('mdrt_progress', snap['fyc'])):,.0f}",
-                (
-                    f"MDRT {snap['mdrt_pct']:.1f}% · 已達標"
-                    if float(snap.get("mdrt_remaining", 0)) <= 0
-                    else f"MDRT {snap['mdrt_pct']:.1f}% · 尚欠 ${float(snap.get('mdrt_remaining', 0)):,.0f}"
-                ),
-                snap["mdrt_pct"],
+                f"${mdrt['mdrt_progress']:,.0f}",
+                mdrt_hint,
+                mdrt["mdrt_pct"],
             ),
             ("活動分數", f"{snap['score']}", "全年累積", None),
             ("招募", f"{snap['recruit']}", f"Team SC ${get_team_sc(snap['team_fyc']):,.0f}", None),
@@ -1023,7 +1054,7 @@ def page_dashboard():
         st.info("暫無成員數據")
     else:
         lb = df.copy()
-        lb["fyc"] = lb["username"].map(lambda u: float(progress_map.get(str(u), 0.0)))
+        lb["fyc"] = lb["username"].map(lambda u: lookup_mdrt_progress(u, progress_map))
         render_leaderboard(lb)
 
     if is_leader:
@@ -1039,7 +1070,7 @@ def page_dashboard():
                     st.number_input(
                         f"{uname}",
                         min_value=0.0,
-                        value=float(progress_map.get(str(uname), 0.0)),
+                        value=float(lookup_mdrt_progress(uname, progress_map)),
                         step=1000.0,
                         format="%.0f",
                         key=f"mdrt_progress_{uname}",
