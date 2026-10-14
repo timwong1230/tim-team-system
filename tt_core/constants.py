@@ -160,6 +160,9 @@ IRIS_MONTH_ALIASES = [
 # Special month key storing Iris YTD Completion per agent
 IRIS_YTD_MONTH_KEY = "YTD"
 
+# Dashboard Team SC (manual override stored in system_settings)
+TEAM_SC_SETTING_KEY = "team_sc"
+
 SHEET_SCHEMAS = {
     "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
     "monthly_fyc": ["id", "username", "month", "amount", "source", "updated_at"],
