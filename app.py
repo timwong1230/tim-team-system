@@ -1539,7 +1539,7 @@ def page_monthly():
   .s{{margin-top:8px;color:rgba(248,244,234,.78);font-size:13px;}}
 </style></head><body>
 <div class="box">
-  <div class="k">{m} 團隊 FYC</div>
+  <div class="k">{m} 團隊 MTD_Comp_FYC</div>
   <div class="v">${month_total:,.0f}</div>
   <div class="s">月冠：{ _esc(top_name) } · ${top_fyc:,.0f}</div>
 </div>
@@ -1548,7 +1548,11 @@ def page_monthly():
     components.html(summary_html, height=120, scrolling=False)
 
     st.markdown("### 本月排行")
-    st.caption("按該月 FYC 排名 · 進度條對比本月最高（至少 $20,000 尺度）")
+    st.caption(
+        "按該月 **MTD_Comp_FYC**（Completion）排名 · 唔用 MTD_Sub_FYC · "
+        "進度條對比本月最高（至少 $20,000 尺度）。"
+        "若數字唔啱，請去「業績報告同步」重新同步最新 Daily production。"
+    )
     render_rank_cards(df, mode="monthly", month_label=m)
 
 
