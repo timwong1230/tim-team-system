@@ -1,0 +1,13 @@
+[server]
+headless = true
+maxUploadSize = 20
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+fastReruns = true
+
+[client]
+showErrorDetails = true
+toolbarMode = "minimal"
