@@ -40,10 +40,9 @@ def _find_col(columns: list[str], aliases: list[str]) -> str | None:
     return None
 
 
-def load_iris_file(uploaded_file) -> pd.DataFrame:
-    """Load Iris export (.xlsx / .xls / .csv) into a DataFrame."""
-    name = uploaded_file.name.lower()
-    raw = uploaded_file.read()
+def load_iris_bytes(raw: bytes, filename: str) -> pd.DataFrame:
+    """Load Iris export bytes (.xlsx / .xls / .csv) into a DataFrame."""
+    name = (filename or "").lower()
     bio = io.BytesIO(raw)
 
     if name.endswith(".csv"):
@@ -56,7 +55,6 @@ def load_iris_file(uploaded_file) -> pd.DataFrame:
         bio.seek(0)
         return pd.read_csv(bio)
 
-    # Excel: try first sheet; if empty, try others
     bio.seek(0)
     xl = pd.ExcelFile(bio)
     for sheet in xl.sheet_names:
@@ -64,6 +62,32 @@ def load_iris_file(uploaded_file) -> pd.DataFrame:
         if not df.empty and len(df.columns) >= 2:
             return df
     return xl.parse(xl.sheet_names[0])
+
+
+def load_iris_file(uploaded_file) -> pd.DataFrame:
+    """Load Iris export from a Streamlit uploader / file-like object."""
+    name = getattr(uploaded_file, "name", "upload.xlsx")
+    raw = uploaded_file.read()
+    return load_iris_bytes(raw, name)
+
+
+def auto_build_preview(df: pd.DataFrame, default_month: str) -> tuple[pd.DataFrame, dict]:
+    """Detect columns and build sync preview in one step."""
+    detected = detect_columns(df)
+    if not detected.get("fyc"):
+        raise ValueError(
+            "搵唔到 FYC／業績欄。請確認檔案有 FYC / Commission / 首年佣金 等欄位，"
+            "或改用手動上傳並自己揀欄。"
+        )
+    preview = build_sync_preview(
+        df,
+        detected.get("agent"),
+        detected.get("code"),
+        detected["fyc"],
+        detected.get("month"),
+        default_month,
+    )
+    return preview, detected
 
 
 def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:

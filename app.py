@@ -45,12 +45,23 @@ from lib.db import (
 )
 from lib.iris import (
     apply_sync,
+    auto_build_preview,
     build_sync_preview,
     detect_columns,
     get_agent_map,
+    load_iris_bytes,
     load_iris_file,
     sample_template_csv,
     save_agent_mapping,
+)
+from lib.iris_drive import (
+    download_file,
+    get_folder_id,
+    has_new_inbox_file,
+    list_inbox_files,
+    mark_file_synced,
+    save_folder_id,
+    service_account_email,
 )
 from lib.styles import CUSTOM_CSS
 
@@ -173,6 +184,15 @@ if conn["level"] == "degraded":
         "你可以繼續打卡（會先存本機）；連線恢復後按側欄「重新整理數據」。",
         icon="📡",
     )
+
+if is_leader and get_folder_id():
+    new_iris = has_new_inbox_file()
+    if new_iris:
+        st.info(
+            f"Drive Iris Inbox 有新檔：**{new_iris.get('name')}** — "
+            "去側欄「Iris 業績同步」撳「同步最新檔」即可更新業績。",
+            icon="📥",
+        )
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
@@ -447,23 +467,135 @@ def page_iris_sync():
     st.markdown(
         """
         <div class="iris-banner">
-          <strong>點樣用（約 1 分鐘）</strong><br>
-          1. 喺 FWD Iris / Agent Assist 匯出團隊業績報表（Excel 或 CSV）<br>
-          2. 第一次先做好「顧問對應」：Iris 姓名／編號 → 系統 Username<br>
-          3. 上傳檔案 → 預覽 → 一鍵同步到每月 FYC
+          <strong>最方便做法（推薦）</strong><br>
+          Iris 本身冇公開 API，唔可以穩定「自動登入讀數」。<br>
+          最省事流程：<b>Iris 匯出 Excel → 丟入指定 Google Drive 資料夾 → 撳「同步最新檔」</b>。<br>
+          之後唔使每次喺網站手動上傳。
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.caption(
-        "FWD Iris 未有對外公開 API，所以用官方匯出檔同步係最穩陣、合規嘅做法。"
-        "同步後 Dashboard / 每月業績 / 年度挑戰會即時更新。"
+
+    tab_drive, tab_map, tab_sync, tab_log = st.tabs(
+        ["① Drive 自動同步（推薦）", "② 顧問對應", "③ 手動上傳", "④ 同步紀錄"]
     )
 
-    tab_map, tab_sync, tab_log = st.tabs(["① 顧問對應", "② 上傳同步", "③ 同步紀錄"])
+    with tab_drive:
+        sa = service_account_email()
+        st.markdown("#### 一次性設定（約 2 分鐘）")
+        st.markdown(
+            f"""
+1. Google Drive 開一個資料夾，例如 **`TIM TEAM Iris Inbox`**
+2. 右鍵資料夾 → 共用 → 加入呢個電郵（編輯者權限）：  
+   `{sa or "（讀唔到 service account，請檢查 Streamlit secrets）"}`
+3. 打開資料夾，從網址複製 Folder ID  
+   （`https://drive.google.com/drive/folders/`**`呢串ID`**）
+4. 貼下面儲存
+            """
+        )
+        folder_now = get_folder_id()
+        folder_in = st.text_input(
+            "Drive Folder ID 或完整資料夾連結",
+            value=folder_now,
+            placeholder="例如 1AbCDef... 或完整 folders/ URL",
+        )
+        if st.button("儲存 Drive 資料夾", type="primary"):
+            if save_folder_id(folder_in):
+                st.toast("已儲存 Drive 資料夾", icon="✅")
+                st.rerun()
+            else:
+                st.error("儲存失敗，請檢查 Google Sheets 連線")
+
+        st.divider()
+        st.markdown("#### 日常操作")
+        st.caption("喺 Iris 匯出業績檔 → 上傳／儲存去呢個 Drive 資料夾 → 返嚟撳同步。")
+
+        month_drive = st.selectbox(
+            "若檔案無月份欄，使用此月份",
+            [f"2026-{i:02d}" for i in range(1, 13)],
+            index=max(0, datetime.date.today().month - 1),
+            key="iris_drive_month",
+        )
+
+        if not get_folder_id():
+            st.info("請先完成上面嘅 Drive 資料夾設定。")
+        else:
+            files = list_inbox_files(limit=8)
+            err = st.session_state.get("_iris_drive_error")
+            if err:
+                st.error(
+                    f"讀取 Drive 失敗：{err}\n\n"
+                    "常見原因：未將資料夾共用俾 service account，或 Folder ID 錯。"
+                )
+            if not files:
+                st.warning("資料夾未見 Excel/CSV。請將 Iris 匯出檔放進去再試。")
+            else:
+                st.markdown("**資料夾最新檔案**")
+                st.dataframe(
+                    [
+                        {
+                            "檔名": f.get("name"),
+                            "更新時間": str(f.get("modifiedTime", ""))[:19].replace("T", " "),
+                            "大小": f.get("size", ""),
+                        }
+                        for f in files
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                latest = files[0]
+                c1, c2 = st.columns(2)
+                with c1:
+                    do_preview = st.button("預覽最新檔", use_container_width=True)
+                with c2:
+                    do_sync = st.button(
+                        "同步最新檔到系統",
+                        type="primary",
+                        use_container_width=True,
+                    )
+
+                if do_preview or do_sync:
+                    try:
+                        raw = download_file(latest["id"])
+                        raw_df = load_iris_bytes(raw, latest.get("name", "iris.xlsx"))
+                        preview, detected = auto_build_preview(raw_df, month_drive)
+                        st.caption(
+                            f"自動欄位：姓名={detected.get('agent') or '—'} · "
+                            f"編號={detected.get('code') or '—'} · "
+                            f"FYC={detected.get('fyc')} · "
+                            f"月份={detected.get('month') or month_drive}"
+                        )
+                        matched_n = int(preview["matched"].sum()) if not preview.empty else 0
+                        st.write(
+                            f"可同步：**{matched_n}** 列 · "
+                            f"未對應：**{len(preview) - matched_n}** 列"
+                        )
+                        st.dataframe(preview, use_container_width=True, hide_index=True)
+                        if (~preview["matched"]).any():
+                            st.warning("有未對應顧問 — 請先去「② 顧問對應」補返，再開同步。")
+                        if do_sync:
+                            if matched_n == 0:
+                                st.error("冇可同步列，請先完成顧問對應。")
+                            else:
+                                result = apply_sync(
+                                    preview,
+                                    st.session_state["user"],
+                                    latest.get("name", "drive.xlsx"),
+                                )
+                                mark_file_synced(latest["id"])
+                                st.success(
+                                    f"已同步 Drive 檔「{latest.get('name')}」： "
+                                    f"更新 {result['updated']} 筆 · "
+                                    f"{result['matched_users']} 位成員"
+                                )
+                                st.balloons()
+                    except Exception as e:
+                        st.error(f"處理失敗：{e}")
 
     users = get_clean_users()
-    member_names = users[users["role"] == "Member"]["username"].tolist() if not users.empty else []
+    member_names = (
+        users[users["role"] == "Member"]["username"].tolist() if not users.empty else []
+    )
 
     with tab_map:
         st.markdown("#### 將 Iris 顧問對應到系統帳號")
