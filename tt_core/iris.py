@@ -219,6 +219,74 @@ def _pdf_text_to_df(raw: bytes) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex / Unnamed Excel headers into plain strings."""
+    if isinstance(df.columns, pd.MultiIndex):
+        flat = []
+        for col in df.columns.values:
+            parts = [str(p).strip() for p in col if str(p).strip() and not str(p).startswith("Unnamed")]
+            flat.append(" ".join(parts) if parts else " ".join(str(p) for p in col))
+        df = df.copy()
+        df.columns = flat
+    else:
+        df = df.copy()
+        df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def _pick_mtd_comp_column(columns: list[str]) -> str | None:
+    """Hard-prefer MTD_Comp_FYC; never MTD_Sub_FYC."""
+    exact = None
+    soft: list[str] = []
+    for c in columns:
+        if _is_rejected(c, IRIS_FYC_REJECT_SUBSTR):
+            continue
+        n = _norm(c)
+        compact = n.replace(" ", "")
+        if compact in {"mtdcompfyc", "mtdcompletionfyc"} or n in {
+            "mtd comp fyc",
+            "mtd completion fyc",
+            "mtd completion",
+        }:
+            exact = c
+            break
+        if ("comp" in n and "fyc" in n) or ("completion" in n and "mtd" in n):
+            soft.append(c)
+    return exact or (soft[0] if soft else None)
+
+
+def _load_excel_bytes(raw: bytes) -> pd.DataFrame:
+    """Pick the sheet/header row that contains MTD_Comp_FYC when possible."""
+    xl = pd.ExcelFile(io.BytesIO(raw))
+    candidates: list[tuple[int, int, pd.DataFrame]] = []
+    for sheet in xl.sheet_names:
+        for header in (0, 1, 2):
+            try:
+                df = xl.parse(sheet, header=header)
+            except Exception:
+                continue
+            if df is None or df.empty or len(df.columns) < 2:
+                continue
+            df = _flatten_columns(df)
+            # Drop fully empty columns
+            df = df.dropna(axis=1, how="all")
+            cols = [str(c) for c in df.columns]
+            score = 0
+            if _pick_mtd_comp_column(cols):
+                score += 100
+            if _find_col(cols, IRIS_CODE_ALIASES):
+                score += 25
+            if _find_col(cols, IRIS_AGENT_ALIASES):
+                score += 10
+            # Prefer wider production tables
+            score += min(len(cols), 30)
+            candidates.append((score, len(df), df))
+    if not candidates:
+        return _flatten_columns(xl.parse(xl.sheet_names[0]))
+    candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return candidates[0][2]
+
+
 def load_iris_bytes(raw: bytes, filename: str) -> pd.DataFrame:
     """Load report bytes (.xlsx / .xls / .csv / .pdf) into a DataFrame."""
     name = (filename or "").lower()
@@ -240,19 +308,13 @@ def load_iris_bytes(raw: bytes, filename: str) -> pd.DataFrame:
         for enc in ("utf-8-sig", "utf-8", "cp950", "big5", "latin-1"):
             try:
                 bio.seek(0)
-                return pd.read_csv(bio, encoding=enc)
+                return _flatten_columns(pd.read_csv(bio, encoding=enc))
             except Exception:
                 continue
         bio.seek(0)
-        return pd.read_csv(bio)
+        return _flatten_columns(pd.read_csv(bio))
 
-    bio.seek(0)
-    xl = pd.ExcelFile(bio)
-    for sheet in xl.sheet_names:
-        df = xl.parse(sheet)
-        if not df.empty and len(df.columns) >= 2:
-            return df
-    return xl.parse(xl.sheet_names[0])
+    return _load_excel_bytes(raw)
 
 
 def load_iris_file(uploaded_file) -> pd.DataFrame:
@@ -274,7 +336,7 @@ def _mostly_agent_codes(series: pd.Series, threshold: float = 0.7) -> bool:
 def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
     """
     Detect report columns.
-    - fyc / monthly: MTD-COMPLETION / Monthly Completion (never Submission)
+    - fyc / monthly: MTD_Comp_FYC only (never MTD_Sub_FYC / Submission)
     - mdrt_credit: Total Credit eligible for MDRT
     - ytd: optional legacy YTD Completion (not used for Leaderboard)
     """
@@ -285,15 +347,21 @@ def detect_columns(df: pd.DataFrame) -> dict[str, str | None]:
 
     mdrt_credit = _find_col(cols, MDRT_CREDIT_ALIASES, reject=IRIS_FYC_REJECT_SUBSTR)
 
-    # 1) Prefer explicit MTD / Monthly Completion
-    monthly = _find_col(
-        cols,
-        IRIS_MONTHLY_COMPLETION_ALIASES,
-        reject=IRIS_FYC_REJECT_SUBSTR,
-    )
-    # 2) Fallback FYC aliases, still reject submission
+    # 1) Hard-prefer MTD_Comp_FYC
+    monthly = _pick_mtd_comp_column(cols)
+    # 2) Alias list (still rejects Sub/Submission)
+    if not monthly:
+        monthly = _find_col(
+            cols,
+            IRIS_MONTHLY_COMPLETION_ALIASES,
+            reject=IRIS_FYC_REJECT_SUBSTR,
+        )
+    # 3) Fallback FYC aliases — never Sub
     if not monthly:
         monthly = _find_col(cols, IRIS_FYC_ALIASES, reject=IRIS_FYC_REJECT_SUBSTR)
+    # Final safety: if somehow landed on a Sub column, drop it
+    if monthly and _is_rejected(monthly, IRIS_FYC_REJECT_SUBSTR):
+        monthly = None
 
     ytd = _find_col(
         cols,
@@ -374,8 +442,8 @@ def auto_build_preview(
     # daily (default)
     if not detected.get("fyc"):
         raise ValueError(
-            "搵唔到 MTD-COMPLETION / Monthly Completion 欄（當月 FYC）。"
-            "請確認呢份係 Daily production report；系統唔會用 Monthly Submission。"
+            "搵唔到 MTD_Comp_FYC 欄（當月 FYC）。"
+            "請確認呢份係 Daily production report；系統唔會用 MTD_Sub_FYC / Submission。"
         )
     preview = build_sync_preview(
         df,
