@@ -475,6 +475,65 @@ def page_checkin():
             )
 
 
+def _esc(s) -> str:
+    return (
+        str(s or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _avatar_url(row) -> str:
+    av = row.get("avatar", "")
+    name = str(row.get("username", "U"))
+    if isinstance(av, str) and (av.startswith("http") or av.startswith("data:image")):
+        return av
+    return f"https://ui-avatars.com/api/?name={urllib.parse.quote(name)}&background=d4af37&color=fff&size=128"
+
+
+def render_leaderboard(df: pd.DataFrame) -> None:
+    """Card-style MDRT leaderboard (mobile-first)."""
+    ranked = df.sort_values(by="fyc", ascending=False).reset_index(drop=True)
+    cards = ['<div class="lb-list">']
+    for i, row in ranked.iterrows():
+        rank = i + 1
+        pct = min(max(float(row["fyc"]) / MDRT_TARGET * 100, 0), 100) if MDRT_TARGET else 0
+        rank_cls = "gold" if rank == 1 else "silver" if rank == 2 else "bronze" if rank == 3 else ""
+        top_cls = " lb-top1" if rank == 1 else ""
+        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else str(rank)
+        name = _esc(row["username"])
+        av = _esc(_avatar_url(row))
+        fyc = float(row["fyc"])
+        recruit = int(row.get("recruit", 0) or 0)
+        score = int(row.get("Total_Score", 0) or 0)
+        chip = '<span class="lb-chip">MDRT 達標</span>' if pct >= 100 else ""
+        cards.append(
+            f"""
+            <div class="lb-card{top_cls}">
+              <div class="lb-row">
+                <div class="lb-rank {rank_cls}">{medal}</div>
+                <img class="lb-avatar" src="{av}" alt="{name}">
+                <div class="lb-main">
+                  <div class="lb-name">{name} {chip}</div>
+                  <div class="lb-fyc">${fyc:,.0f}</div>
+                  <div class="lb-target">目標 ${MDRT_TARGET:,.0f}</div>
+                </div>
+                <div class="lb-pct">{pct:.0f}%</div>
+              </div>
+              <div class="lb-bar-wrap"><div class="lb-bar" style="width:{pct:.1f}%"></div></div>
+              <div class="lb-meta">
+                <span>招募 <strong>{recruit}</strong></span>
+                <span>活動分 <strong>{score}</strong></span>
+              </div>
+            </div>
+            """
+        )
+    cards.append("</div>")
+    st.markdown("".join(cards), unsafe_allow_html=True)
+
+
 def page_dashboard():
     st.markdown(f"## Dashboard · {st.session_state['user']}")
     if is_leader:
@@ -521,35 +580,26 @@ def page_dashboard():
                 st.link_button("Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
 
     df = get_data("Yearly")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Team FYC", f"${df['fyc'].sum():,.0f}" if not df.empty else "$0")
-    c2.metric("Recruits", int(df["recruit"].sum()) if not df.empty else 0)
-    c3.metric("Activities", int(df["Total_Score"].sum()) if not df.empty else 0)
+    team_fyc = float(df["fyc"].sum()) if not df.empty else 0.0
+    team_rec = int(df["recruit"].sum()) if not df.empty else 0
+    team_act = int(df["Total_Score"].sum()) if not df.empty else 0
+    st.markdown(
+        f"""
+        <div class="dash-kpis">
+          <div class="dash-kpi"><div class="k">Team FYC</div><div class="v">${team_fyc:,.0f}</div></div>
+          <div class="dash-kpi"><div class="k">Recruits</div><div class="v">{team_rec}</div></div>
+          <div class="dash-kpi"><div class="k">Activities</div><div class="v">{team_act}</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown("### Leaderboard")
+    st.caption("按全年 FYC 排名 · MDRT 目標 $512,800")
     if df.empty:
         st.info("暫無成員數據")
     else:
-        df = df.copy()
-        df["mdrt_fraction"] = df["fyc"].apply(lambda x: f"${x:,.0f} / ${MDRT_TARGET:,.0f}")
-        df["mdrt_percent"] = (df["fyc"] / MDRT_TARGET) * 100
-        st.dataframe(
-            df.sort_values(by="fyc", ascending=False)[
-                ["avatar", "username", "mdrt_fraction", "mdrt_percent", "recruit", "Total_Score"]
-            ],
-            column_config={
-                "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-                "username": "Name",
-                "mdrt_fraction": "MDRT 進度",
-                "mdrt_percent": st.column_config.ProgressColumn(
-                    "MDRT %", format="%.1f%%", min_value=0, max_value=100
-                ),
-                "recruit": st.column_config.NumberColumn("Recruit", format="%d"),
-                "Total_Score": st.column_config.NumberColumn("Activity", format="%d"),
-            },
-            use_container_width=True,
-            hide_index=True,
-        )
+        render_leaderboard(df)
 
     if is_leader:
         with st.expander("手動調整業績 / 招募（備用）"):
