@@ -31,6 +31,29 @@ def test_mdrt_remaining_formula():
     print("mdrt remaining formula ok")
 
 
+def test_home_matches_leaderboard_amount():
+    """Home must use MDRT_2027 map value, not YTD FYC."""
+    from tt_core.data import lookup_mdrt_progress, mdrt_card_metrics
+
+    progress_map = {"Tim": 376_881.0, "Oscar": 161_883.0}
+    assert lookup_mdrt_progress("Tim", progress_map) == 376_881.0
+    assert lookup_mdrt_progress("tim", progress_map) == 376_881.0  # case-insensitive
+    # Missing user → 0 (same as Leaderboard), never invent YTD
+    assert lookup_mdrt_progress("Unknown", progress_map) == 0.0
+
+    m = mdrt_card_metrics("Tim", progress_map)
+    assert m["mdrt_progress"] == 376_881.0
+    assert abs(m["mdrt_pct"] - 73.494) < 0.01
+    assert m["mdrt_remaining"] == 135_919.0
+    assert m["mdrt_met"] is False
+    # Screenshot case: YTD-looking amount must NOT be treated as met
+    ytd_like = mdrt_card_metrics("Tim", {"Tim": 221_611.0})
+    assert ytd_like["mdrt_met"] is False
+    assert ytd_like["mdrt_remaining"] == 291_189.0
+    print("home/leaderboard MDRT sync ok")
+
+
 if __name__ == "__main__":
     test_keys_distinct()
     test_mdrt_remaining_formula()
+    test_home_matches_leaderboard_amount()
