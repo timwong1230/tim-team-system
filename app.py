@@ -1248,9 +1248,16 @@ def page_checkin():
         t = st.selectbox("活動種類", ACTIVITY_TYPES, key="ci_type")
         default_note = get_note_template(t)
         note_h = 520 if "招募" not in t and "新人" not in t else 260
-        with st.form("checkin_form", clear_on_submit=True):
+        # Versioned key: forces fresh default when template text changes
+        note_key = "ci_note_ff15" if "招募" not in t and "新人" not in t else "ci_note_other"
+        with st.form("checkin_form_ff15", clear_on_submit=True):
             d = st.date_input("日期", value=datetime.date.today())
-            n = st.text_area("內容詳情", value=default_note, height=note_h)
+            n = st.text_area(
+                "內容詳情",
+                value=default_note,
+                height=note_h,
+                key=note_key,
+            )
             if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
                 add_act(st.session_state["user"], d, t, n)
                 st.toast("提交成功！", icon="✅")
@@ -3693,4 +3700,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T16:20Z
+# cloud_redeploy_stamp: 2026-10-15T16:28Z

@@ -586,13 +586,18 @@ def get_activity_style(act_type: str):
 
 
 def get_note_template(act_type: str) -> str:
-    from tt_core.constants import TEMPLATE_NEWBIE, TEMPLATE_RECRUIT, TEMPLATE_SALES
+    import importlib
+
+    import tt_core.constants as _c
+
+    # Streamlit Cloud may keep a stale constants module in sys.modules
+    _c = importlib.reload(_c)
 
     if "招募" in act_type:
-        return TEMPLATE_RECRUIT
+        return _c.TEMPLATE_RECRUIT
     if "新人" in act_type:
-        return TEMPLATE_NEWBIE
-    return TEMPLATE_SALES
+        return _c.TEMPLATE_NEWBIE
+    return _c.TEMPLATE_SALES
 
 
 def last_iris_sync():
