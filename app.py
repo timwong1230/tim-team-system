@@ -719,7 +719,7 @@ if not st.session_state["logged_in"]:
             f"""
             <div class="login-panel">
               <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_APP}</div>
-              <h1 style="margin:0 0 6px 0;">活動量 · 業績</h1>
+              <h1 style="margin:0 0 6px 0;">活動量管理系統</h1>
             </div>
             """,
             unsafe_allow_html=True,
@@ -760,7 +760,7 @@ if not st.session_state["logged_in"]:
                 f"""
                 <div class="login-panel">
                   <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_SYSTEM}</div>
-                  <h1 style="margin:0 0 6px 0;">活動量 · 業績 · 一站管理</h1>
+                  <h1 style="margin:0 0 6px 0;">活動量管理系統</h1>
                   <p style="color:#6B7280; margin:0 0 18px 0;">打卡更快 · 戰報更清晰 · Iris 業績自動同步</p>
                 </div>
                 """,
