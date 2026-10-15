@@ -990,6 +990,7 @@ menu_items = [
     "🎁 季度優惠 & 獎賞",
     "📁 常用表格",
     "🩺 常見疾病核保",
+    "💹 收入／支出 T-Account",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -3175,6 +3176,138 @@ def page_medical_uw():
     st.caption("結果只供內部參考，最終以 FWD 核保為準。")
 
 
+def page_cashflow_taccount():
+    """見客用：收入／支出 T-Account → 計 Cashflow → 儲蓄保險 budget。"""
+    st.markdown("## 💹 收入／支出 T-Account")
+    st.caption("同客戶一齊填每月收入同支出，計出現金流，作為儲蓄保險保費 budget。")
+
+    try:
+        from tt_core import cashflow as cf
+    except Exception:
+        st.error("Cashflow 模組未能載入，請 Reboot 後再試。")
+        return
+
+    client = st.text_input(
+        "客戶名稱（可留空）",
+        key="cf_client_name",
+        placeholder="例如：陳生／陳太",
+    )
+
+    # Seed session defaults once
+    for it in cf.INCOME_ITEMS + cf.EXPENSE_ITEMS:
+        k = f"cf_{it['id']}"
+        if k not in st.session_state:
+            st.session_state[k] = 0.0
+
+    st.markdown(
+        """
+        <style>
+        .cf-head {
+          background: linear-gradient(90deg, #1a1a2e 0%, #2d2d44 100%);
+          color: #F5D76E;
+          font-weight: 700;
+          text-align: center;
+          padding: 10px 8px;
+          border-radius: 8px 8px 0 0;
+          margin-bottom: 0;
+          letter-spacing: 0.02em;
+        }
+        .cf-total-row {
+          background: #1a1a2e;
+          color: #F5D76E;
+          font-weight: 700;
+          padding: 10px 12px;
+          border-radius: 0 0 8px 8px;
+          display: flex;
+          justify-content: space-between;
+          margin-top: 4px;
+        }
+        .cf-result {
+          border: 1px solid #E5E7EB;
+          border-radius: 12px;
+          padding: 16px;
+          margin-top: 12px;
+          background: linear-gradient(180deg, #FFFDF5 0%, #FFFFFF 100%);
+        }
+        .cf-result .big {
+          font-size: 1.6rem;
+          font-weight: 800;
+          margin: 4px 0 8px 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left, right = st.columns(2, gap="medium")
+
+    with left:
+        st.markdown('<div class="cf-head">每月收入</div>', unsafe_allow_html=True)
+        income_vals: dict = {}
+        for it in cf.INCOME_ITEMS:
+            income_vals[it["id"]] = st.number_input(
+                it["label"],
+                min_value=0.0,
+                step=100.0,
+                format="%.0f",
+                key=f"cf_{it['id']}",
+            )
+        income_total = cf.sum_items(income_vals, cf.INCOME_ITEMS)
+        st.markdown(
+            f'<div class="cf-total-row"><span>總收入</span><span>{cf.format_hkd(income_total)}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    with right:
+        st.markdown('<div class="cf-head">每月支出</div>', unsafe_allow_html=True)
+        expense_vals: dict = {}
+        for it in cf.EXPENSE_ITEMS:
+            expense_vals[it["id"]] = st.number_input(
+                it["label"],
+                min_value=0.0,
+                step=100.0,
+                format="%.0f",
+                key=f"cf_{it['id']}",
+            )
+        expense_total = cf.sum_items(expense_vals, cf.EXPENSE_ITEMS)
+        st.markdown(
+            f'<div class="cf-total-row"><span>總支出</span><span>{cf.format_hkd(expense_total)}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    values = {**income_vals, **expense_vals}
+    result = cf.calc_cashflow(values)
+    cashflow = result["cashflow"]
+    tone = "#059669" if cashflow > 0 else ("#DC2626" if cashflow < 0 else "#6B7280")
+
+    name_bit = f" — {client.strip()}" if str(client or "").strip() else ""
+    st.markdown(
+        f"""
+        <div class="cf-result">
+          <div style="color:#6B7280;font-size:0.9rem;">每月 Cashflow{name_bit}</div>
+          <div class="big" style="color:{tone};">{cf.format_hkd(cashflow)}</div>
+          <div style="color:#4B5563;font-size:0.92rem;">
+            總收入 {cf.format_hkd(result['income'])} − 總支出 {cf.format_hkd(result['expense'])}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.info(cf.budget_suggestion(cashflow))
+    st.caption(cf.PRODUCT_HINTS)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("清空重計", use_container_width=True, key="cf_reset"):
+            for it in cf.INCOME_ITEMS + cf.EXPENSE_ITEMS:
+                st.session_state[f"cf_{it['id']}"] = 0.0
+            st.session_state["cf_client_name"] = ""
+            st.rerun()
+    with c2:
+        st.caption("金額以港元／每月計。數字只留在此裝置 session，唔會自動上傳。")
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -3259,7 +3392,9 @@ elif "常用表格" in menu:
     _safe_page("常用表格", page_common_forms)
 elif "常見疾病核保" in menu or "核保" in menu:
     _safe_page("常見疾病核保", page_medical_uw)
+elif "T-Account" in menu or "收入／支出" in menu or "Cashflow" in menu:
+    _safe_page("收入／支出 T-Account", page_cashflow_taccount)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T13:05Z
+# cloud_redeploy_stamp: 2026-10-15T13:20Z
