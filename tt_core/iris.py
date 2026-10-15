@@ -320,7 +320,15 @@ def load_iris_bytes(raw: bytes, filename: str) -> pd.DataFrame:
 def load_iris_file(uploaded_file) -> pd.DataFrame:
     """Load Iris export from a Streamlit uploader / file-like object."""
     name = getattr(uploaded_file, "name", "upload.xlsx")
-    raw = uploaded_file.read()
+    if hasattr(uploaded_file, "getvalue"):
+        raw = uploaded_file.getvalue()
+    else:
+        raw = uploaded_file.read()
+    if not raw:
+        raise ValueError("檔案係空嘅")
+    # Soft cap — oversized uploads OOM Streamlit Cloud into sticky Oh-no
+    if len(raw) > 12 * 1024 * 1024:
+        raise ValueError("檔案太大（上限 12MB）。請壓縮或用 Drive 同步。")
     return load_iris_bytes(raw, name)
 
 

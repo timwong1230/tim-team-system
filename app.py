@@ -433,6 +433,99 @@ def _iris():
     return m
 
 
+_IRIS_UPLOAD_MAX_BYTES = 12 * 1024 * 1024  # 12MB — Cloud OOM → sticky Oh-no
+_FORMS_UPLOAD_MAX_BYTES = 15 * 1024 * 1024
+
+
+def _bytes_from_upload(uploaded, *, max_bytes: int) -> tuple[bytes, str]:
+    """Read uploader bytes safely; refuse oversized files before they kill Cloud."""
+    name = str(getattr(uploaded, "name", "") or "upload.bin")
+    raw = b""
+    try:
+        if hasattr(uploaded, "getvalue"):
+            raw = uploaded.getvalue()
+        else:
+            raw = uploaded.read()
+    except Exception as e:
+        raise ValueError(f"讀取檔案失敗：{e}") from e
+    if not raw:
+        raise ValueError("檔案係空嘅")
+    if len(raw) > max_bytes:
+        mb = max_bytes / (1024 * 1024)
+        raise ValueError(f"檔案太大（上限 {mb:.0f}MB）。請壓縮或用 Drive 同步。")
+    return raw, name
+
+
+def _store_iris_preview(preview) -> None:
+    """Persist iris preview as plain rows — never a DataFrame (Cloud Oh-no risk)."""
+    st.session_state.pop("_iris_last_preview", None)  # drop legacy DF key
+    if preview is None or getattr(preview, "empty", True):
+        st.session_state["_iris_last_preview_rows"] = []
+        return
+    rows: list[dict] = []
+    try:
+        for rec in preview.to_dict("records"):
+            row: dict = {}
+            for k, v in rec.items():
+                key = str(k)
+                try:
+                    if v is None:
+                        row[key] = None
+                    elif isinstance(v, (bool, str, int, float)):
+                        row[key] = v
+                    elif hasattr(v, "item"):
+                        row[key] = v.item()
+                    else:
+                        # NaN / Timestamp / other → JSON-safe string or None
+                        if isinstance(v, float) and pd.isna(v):
+                            row[key] = None
+                        else:
+                            row[key] = v if isinstance(v, (list, dict)) else (
+                                None if pd.isna(v) else str(v)
+                            )
+                except Exception:
+                    row[key] = str(v) if v is not None else None
+            rows.append(row)
+    except Exception:
+        rows = []
+    st.session_state["_iris_last_preview_rows"] = rows
+
+
+def _load_iris_preview():
+    """Rebuild preview DataFrame from plain session rows (or clear legacy DF)."""
+    legacy = st.session_state.get("_iris_last_preview")
+    if legacy is not None:
+        st.session_state.pop("_iris_last_preview", None)
+        if hasattr(legacy, "to_dict"):
+            try:
+                _store_iris_preview(legacy)
+            except Exception:
+                pass
+    rows = st.session_state.get("_iris_last_preview_rows")
+    if not isinstance(rows, list) or not rows:
+        return None
+    try:
+        return pd.DataFrame(rows)
+    except Exception:
+        return None
+
+
+def _scrub_dataframe_session_keys() -> None:
+    """Remove known DataFrame payloads that can hard-crash Streamlit Cloud."""
+    try:
+        scrub_notification_session_state()
+    except Exception:
+        st.session_state.pop("_notif_pending_payload", None)
+    legacy = st.session_state.get("_iris_last_preview")
+    if legacy is not None and not isinstance(legacy, list):
+        st.session_state.pop("_iris_last_preview", None)
+        if hasattr(legacy, "empty") and not getattr(legacy, "empty", True):
+            try:
+                _store_iris_preview(legacy)
+            except Exception:
+                st.session_state["_iris_last_preview_rows"] = []
+
+
 def _iris_call(name: str, *args, **kwargs):
     """Call an iris helper; raise a clear error if Cloud still has a stale module."""
     import inspect
@@ -819,11 +912,12 @@ if not st.session_state.get("user"):
     st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
 
-# Drop legacy notification DataFrames before any page work (Cloud crash risk)
+# Drop legacy DataFrame session payloads before any page work (Cloud crash risk)
 try:
-    scrub_notification_session_state()
+    _scrub_dataframe_session_keys()
 except Exception:
     st.session_state.pop("_notif_pending_payload", None)
+    st.session_state.pop("_iris_last_preview", None)
 
 # One-time escape hatch after previous crash / bad menu
 if st.session_state.get("_force_home_once"):
@@ -1515,7 +1609,7 @@ def _render_drive_report_box(
             filename=latest.get("name", ""),
             report_kind=report_kind,
         )
-        st.session_state["_iris_last_preview"] = preview
+        _store_iris_preview(preview)
         st.caption(
             f"報告類型={detected.get('report_kind') or report_kind} · "
             f"姓名={detected.get('agent') or '—'} · "
@@ -1679,7 +1773,7 @@ def page_iris_sync():
             "只需為 TIM TEAM 成員建立對應；其餘編號唔使理。"
         )
 
-        last_preview = st.session_state.get("_iris_last_preview")
+        last_preview = _load_iris_preview()
         pending = _iris_call('unmapped_agents', last_preview) if last_preview is not None else pd.DataFrame()
         if not pending.empty:
             st.markdown("##### 從最新預覽快速對應")
@@ -1772,131 +1866,153 @@ def page_iris_sync():
 
         if uploaded:
             try:
-                raw_df = _iris_call('load_iris_file', uploaded)
+                raw, up_name = _bytes_from_upload(
+                    uploaded, max_bytes=_IRIS_UPLOAD_MAX_BYTES
+                )
+                raw_df = _iris_call("load_iris_bytes", raw, up_name)
             except Exception as e:
                 st.error(f"無法讀取檔案：{e}")
                 return
 
-            st.markdown("#### 原始預覽")
-            st.dataframe(raw_df.head(20), use_container_width=True)
+            try:
+                st.markdown("#### 原始預覽")
+                st.dataframe(raw_df.head(20), use_container_width=True)
 
-            detected = _iris_call('detect_columns', raw_df)
-            auto_kind = _iris_call('detect_report_kind', raw_df, uploaded.name)
-            if auto_kind in {"daily", "mdrt"} and auto_kind != report_kind_manual:
-                st.warning(
-                    f"檔案欄位較似 **{auto_kind}** report；你揀咗 **{report_kind_manual}**。"
-                    "如果預覽金額唔對，請改上面報告類型。"
-                )
-            cols = [str(c) for c in raw_df.columns]
-            c1, c2 = st.columns(2)
-            c3, c4 = st.columns(2)
-            col_agent = c1.selectbox(
-                "姓名欄",
-                ["（無）"] + cols,
-                index=(cols.index(detected["agent"]) + 1) if detected["agent"] in cols else 0,
-            )
-            col_code = c2.selectbox(
-                "編號欄",
-                ["（無）"] + cols,
-                index=(cols.index(detected["code"]) + 1) if detected["code"] in cols else 0,
-            )
-
-            if report_kind_manual == "mdrt":
-                credit_default = (
-                    cols.index(detected["mdrt_credit"])
-                    if detected.get("mdrt_credit") in cols
-                    else 0
-                )
-                col_amount = c3.selectbox(
-                    "暫時進度欄（Total Credit eligible for MDRT）",
-                    cols,
-                    index=credit_default,
-                )
-                col_month = None
-                st.caption("會寫入 Leaderboard 2027 MDRT 暫時進度。Team SC 仍要人手入。")
-                preview = _iris_call('build_mdrt_preview', 
-                    raw_df,
-                    None if col_agent == "（無）" else col_agent,
-                    None if col_code == "（無）" else col_code,
-                    col_amount,
-                )
-                amount_label = "Total Credit eligible for MDRT"
-            else:
-                fyc_default = cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
-                col_amount = c3.selectbox(
-                    "當月 FYC 欄（MTD_Comp_FYC）",
-                    cols,
-                    index=fyc_default,
-                    help="唔好揀 Monthly Submission",
-                )
-                col_month = c4.selectbox(
-                    "月份欄",
-                    ["（用上方選擇）"] + cols,
-                    index=(cols.index(detected["month"]) + 1)
-                    if detected["month"] in cols
+                detected = _iris_call("detect_columns", raw_df)
+                auto_kind = _iris_call("detect_report_kind", raw_df, up_name)
+                if auto_kind in {"daily", "mdrt"} and auto_kind != report_kind_manual:
+                    st.warning(
+                        f"檔案欄位較似 **{auto_kind}** report；你揀咗 **{report_kind_manual}**。"
+                        "如果預覽金額唔對，請改上面報告類型。"
+                    )
+                cols = [str(c) for c in raw_df.columns]
+                c1, c2 = st.columns(2)
+                c3, c4 = st.columns(2)
+                col_agent = c1.selectbox(
+                    "姓名欄",
+                    ["（無）"] + cols,
+                    index=(cols.index(detected["agent"]) + 1)
+                    if detected["agent"] in cols
                     else 0,
                 )
-                st.caption("會寫入每月業績 FYC。唔會改 Leaderboard 暫時進度／Team SC。")
-                preview = _iris_call('build_sync_preview', 
-                    raw_df,
-                    None if col_agent == "（無）" else col_agent,
-                    None if col_code == "（無）" else col_code,
-                    col_amount,
-                    None if col_month == "（用上方選擇）" else col_month,
-                    month_choice or default_month,
-                    col_ytd=None,
+                col_code = c2.selectbox(
+                    "編號欄",
+                    ["（無）"] + cols,
+                    index=(cols.index(detected["code"]) + 1)
+                    if detected["code"] in cols
+                    else 0,
                 )
-                amount_label = "MTD_Comp_FYC"
 
-            st.session_state["_iris_last_preview"] = preview
-            st.markdown("#### 對應結果")
-            summary = _iris_call('preview_summary', preview)
-            st.write(
-                f"團隊可同步：**{summary['matched_rows']}** 列 · "
-                f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
-            )
-            st.dataframe(
-                preview,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "amount": st.column_config.NumberColumn(amount_label, format="$%.0f"),
-                    "matched": "團隊成員",
-                },
-            )
-            if summary["unmapped_agents"] > 0:
-                st.caption("未對應 = 非團隊／未設定，同步時會自動略過。只需對應 TIM TEAM 成員。")
-                with st.expander("查看將被忽略嘅編號"):
-                    st.dataframe(
-                        _iris_call('unmapped_agents', preview),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-            if st.button(
-                "確認同步到系統",
-                type="primary",
-                disabled=summary["matched_rows"] == 0,
-            ):
-                result = _iris_call('apply_report_sync', 
-                    preview,
-                    st.session_state["user"],
-                    uploaded.name,
-                    report_kind=report_kind_manual,
-                )
                 if report_kind_manual == "mdrt":
-                    st.success(
-                        f"MDRT 暫時進度已更新：{result.get('mdrt_updated', result['updated'])} 筆 · "
-                        f"{result['matched_users']} 位團隊成員"
+                    credit_default = (
+                        cols.index(detected["mdrt_credit"])
+                        if detected.get("mdrt_credit") in cols
+                        else 0
                     )
+                    col_amount = c3.selectbox(
+                        "暫時進度欄（Total Credit eligible for MDRT）",
+                        cols,
+                        index=credit_default,
+                    )
+                    st.caption("會寫入 Leaderboard 2027 MDRT 暫時進度。Team SC 仍要人手入。")
+                    preview = _iris_call(
+                        "build_mdrt_preview",
+                        raw_df,
+                        None if col_agent == "（無）" else col_agent,
+                        None if col_code == "（無）" else col_code,
+                        col_amount,
+                    )
+                    amount_label = "Total Credit eligible for MDRT"
                 else:
-                    st.success(
-                        f"每月 FYC 已更新：{result['updated']} 筆 · "
-                        f"{result['matched_users']} 位團隊成員 · "
-                        f"月份 {', '.join(result['months']) or '—'}"
+                    fyc_default = (
+                        cols.index(detected["fyc"]) if detected["fyc"] in cols else 0
                     )
-                st.balloons()
-                st.rerun()
+                    col_amount = c3.selectbox(
+                        "當月 FYC 欄（MTD_Comp_FYC）",
+                        cols,
+                        index=fyc_default,
+                        help="唔好揀 Monthly Submission",
+                    )
+                    col_month = c4.selectbox(
+                        "月份欄",
+                        ["（用上方選擇）"] + cols,
+                        index=(cols.index(detected["month"]) + 1)
+                        if detected["month"] in cols
+                        else 0,
+                    )
+                    st.caption("會寫入每月業績 FYC。唔會改 Leaderboard 暫時進度／Team SC。")
+                    preview = _iris_call(
+                        "build_sync_preview",
+                        raw_df,
+                        None if col_agent == "（無）" else col_agent,
+                        None if col_code == "（無）" else col_code,
+                        col_amount,
+                        None if col_month == "（用上方選擇）" else col_month,
+                        month_choice or default_month,
+                        col_ytd=None,
+                    )
+                    amount_label = "MTD_Comp_FYC"
+
+                _store_iris_preview(preview)
+                st.markdown("#### 對應結果")
+                summary = _iris_call("preview_summary", preview)
+                st.write(
+                    f"團隊可同步：**{summary['matched_rows']}** 列 · "
+                    f"其他同事將忽略：**{summary['unmapped_agents']}** 個編號"
+                )
+                st.dataframe(
+                    preview,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "amount": st.column_config.NumberColumn(
+                            amount_label, format="$%.0f"
+                        ),
+                        "matched": "團隊成員",
+                    },
+                )
+                if summary["unmapped_agents"] > 0:
+                    st.caption(
+                        "未對應 = 非團隊／未設定，同步時會自動略過。只需對應 TIM TEAM 成員。"
+                    )
+                    with st.expander("查看將被忽略嘅編號"):
+                        st.dataframe(
+                            _iris_call("unmapped_agents", preview),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                if st.button(
+                    "確認同步到系統",
+                    type="primary",
+                    disabled=summary["matched_rows"] == 0,
+                ):
+                    result = _iris_call(
+                        "apply_report_sync",
+                        preview,
+                        st.session_state["user"],
+                        up_name,
+                        report_kind=report_kind_manual,
+                    )
+                    if report_kind_manual == "mdrt":
+                        st.success(
+                            f"MDRT 暫時進度已更新："
+                            f"{result.get('mdrt_updated', result['updated'])} 筆 · "
+                            f"{result['matched_users']} 位團隊成員"
+                        )
+                    else:
+                        st.success(
+                            f"每月 FYC 已更新：{result['updated']} 筆 · "
+                            f"{result['matched_users']} 位團隊成員 · "
+                            f"月份 {', '.join(result['months']) or '—'}"
+                        )
+                    st.balloons()
+                    st.rerun()
+            except Exception as e:
+                st.session_state.pop("_iris_last_preview", None)
+                st.session_state["_iris_last_preview_rows"] = []
+                st.error(f"處理上傳失敗（已清除暫存）：{e}")
+                return
 
     with tab_log:
         log = read_data("iris_sync_log")
@@ -2606,58 +2722,72 @@ def page_common_forms():
             st.caption(
                 "只適用於 Google Workspace「共用雲端硬碟」。"
                 "普通「我的雲端硬碟」會出現 storageQuotaExceeded。"
+                "建議優先用上面「同步 Drive 資料夾」，較穩陣。"
             )
             if not folder_id:
                 st.warning("請先完成上面嘅 Drive 資料夾設定。")
             else:
+                # file_uploader OUTSIDE form — inside form + clear_on_submit can Oh-no on Cloud
+                forms_uploaded = st.file_uploader(
+                    "選擇檔案",
+                    type=[
+                        "pdf",
+                        "doc",
+                        "docx",
+                        "xls",
+                        "xlsx",
+                        "csv",
+                        "png",
+                        "jpg",
+                        "jpeg",
+                        "gif",
+                        "webp",
+                        "txt",
+                        "zip",
+                    ],
+                    key="common_forms_file",
+                )
                 with st.form("common_forms_upload", clear_on_submit=True):
-                    title = st.text_input("顯示名稱", placeholder="e.g. 轉保申請表 / 客戶資料更改表")
+                    title = st.text_input(
+                        "顯示名稱", placeholder="e.g. 轉保申請表 / 客戶資料更改表"
+                    )
                     category = st.selectbox("分類", categories)
                     note = st.text_input("備註（可留空）", placeholder="用途、版本、注意事項…")
-                    uploaded = st.file_uploader(
-                        "選擇檔案",
-                        type=[
-                            "pdf",
-                            "doc",
-                            "docx",
-                            "xls",
-                            "xlsx",
-                            "csv",
-                            "png",
-                            "jpg",
-                            "jpeg",
-                            "gif",
-                            "webp",
-                            "txt",
-                            "zip",
-                        ],
-                    )
                     if st.form_submit_button("上傳", type="primary"):
-                        if not uploaded:
+                        if not forms_uploaded:
                             st.error("請先選擇檔案")
                         else:
-                            display = (title or "").strip() or Path(uploaded.name).stem
-                            upload_fn = getattr(cf, "upload_form", None) if cf else None
-                            if not callable(upload_fn):
-                                st.error(
-                                    "app 內上傳需要最新模組／共用雲端硬碟。"
-                                    "請改用上面「同步 Drive 資料夾」。"
+                            try:
+                                data, fname = _bytes_from_upload(
+                                    forms_uploaded, max_bytes=_FORMS_UPLOAD_MAX_BYTES
                                 )
-                            else:
-                                result = upload_fn(
-                                    title=display,
-                                    category=category,
-                                    filename=uploaded.name,
-                                    data=uploaded.getvalue(),
-                                    uploaded_by=st.session_state.get("user", ""),
-                                    note=note,
-                                    mime=getattr(uploaded, "type", None) or None,
+                                display = (title or "").strip() or Path(fname).stem
+                                upload_fn = (
+                                    getattr(cf, "upload_form", None) if cf else None
                                 )
-                                if result.get("ok"):
-                                    st.toast(f"已上傳：{display}", icon="✅")
-                                    st.rerun()
+                                if not callable(upload_fn):
+                                    st.error(
+                                        "app 內上傳需要最新模組／共用雲端硬碟。"
+                                        "請改用上面「同步 Drive 資料夾」。"
+                                    )
                                 else:
-                                    st.error(result.get("error") or "上傳失敗")
+                                    result = upload_fn(
+                                        title=display,
+                                        category=category,
+                                        filename=fname,
+                                        data=data,
+                                        uploaded_by=st.session_state.get("user", ""),
+                                        note=note,
+                                        mime=getattr(forms_uploaded, "type", None)
+                                        or None,
+                                    )
+                                    if result.get("ok"):
+                                        st.toast(f"已上傳：{display}", icon="✅")
+                                        st.rerun()
+                                    else:
+                                        st.error(result.get("error") or "上傳失敗")
+                            except Exception as e:
+                                st.error(f"上傳失敗：{e}")
 
     filter_opts = ["全部"] + categories
     cat_filter = st.radio(
@@ -2910,4 +3040,4 @@ elif "常用表格" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T07:09Z
+# cloud_redeploy_stamp: 2026-10-15T07:20Z
