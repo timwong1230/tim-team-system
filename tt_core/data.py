@@ -80,6 +80,38 @@ def add_act(u, d, t, n):
     )
 
 
+def _quarterly_sheet_items(quarter: str, kind: str) -> list[dict]:
+    q = str(quarter or "").strip().upper()
+    k = str(kind or "").strip().lower()
+    try:
+        df = read_data("quarterly_offers")
+    except Exception:
+        return []
+    if df is None or df.empty or "quarter" not in df.columns:
+        return []
+    work = df.copy()
+    work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
+    work["kind"] = work["kind"].astype(str).str.strip().str.lower()
+    hit = work[(work["quarter"] == q) & (work["kind"] == k)]
+    if hit.empty:
+        return []
+    rows = []
+    for _, r in hit.iterrows():
+        title = str(r.get("title", "") or "").strip()
+        if not title:
+            continue
+        rows.append(
+            {
+                "id": r.get("id", ""),
+                "title": title,
+                "detail": str(r.get("detail", "") or "").strip(),
+                "note": str(r.get("note", "") or "").strip(),
+                "sort": int(pd.to_numeric(r.get("sort", 0), errors="coerce") or 0),
+            }
+        )
+    return sorted(rows, key=lambda x: x["sort"])
+
+
 def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
     """Sheet rows override defaults when that quarter+kind has any saved rows."""
     from tt_core.quarterly_offers import default_items
@@ -88,30 +120,25 @@ def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
     k = str(kind or "").strip().lower()
     if k not in {"customer", "agent"}:
         return []
-    try:
-        df = read_data("quarterly_offers")
-    except Exception:
-        df = None
-    if df is not None and not df.empty and "quarter" in df.columns:
-        work = df.copy()
-        work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
-        work["kind"] = work["kind"].astype(str).str.strip().str.lower()
-        hit = work[(work["quarter"] == q) & (work["kind"] == k)]
-        if not hit.empty:
-            rows = []
-            for _, r in hit.iterrows():
-                rows.append(
-                    {
-                        "id": r.get("id", ""),
-                        "title": str(r.get("title", "") or "").strip(),
-                        "detail": str(r.get("detail", "") or "").strip(),
-                        "note": str(r.get("note", "") or "").strip(),
-                        "sort": int(pd.to_numeric(r.get("sort", 0), errors="coerce") or 0),
-                    }
-                )
-            rows = [x for x in rows if x["title"]]
-            return sorted(rows, key=lambda x: x["sort"])
+    sheet_items = _quarterly_sheet_items(q, k)
+    if sheet_items:
+        return sheet_items
     return default_items(q, k)
+
+
+def get_quarterly_catalog(quarter: str, kind: str) -> dict:
+    """Table-ready catalog: banner + sections[{title, columns, rows}]."""
+    from tt_core.quarterly_offers import catalog_from_flat_items, default_catalog
+
+    q = str(quarter or "").strip().upper()
+    k = str(kind or "").strip().lower()
+    empty = {"banner": "", "footnote": "", "sections": []}
+    if k not in {"customer", "agent"}:
+        return empty
+    sheet_items = _quarterly_sheet_items(q, k)
+    if sheet_items:
+        return catalog_from_flat_items(sheet_items, kind=k)
+    return default_catalog(q, k)
 
 
 def add_quarterly_offer(quarter: str, kind: str, title: str, detail: str, note: str = "", sort: int = 0) -> bool:

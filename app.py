@@ -146,6 +146,49 @@ def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
     return []
 
 
+def get_quarterly_catalog(quarter: str, kind: str) -> dict:
+    """Table catalog with lazy fallbacks for Streamlit Cloud cache lag."""
+    empty = {"banner": "", "footnote": "", "sections": []}
+    try:
+        import tt_core.data as d
+
+        fn = getattr(d, "get_quarterly_catalog", None)
+        if callable(fn):
+            cat = fn(quarter, kind)
+            if isinstance(cat, dict):
+                return cat
+    except Exception:
+        pass
+
+    m = _quarterly_mod()
+    # Sheet override via flat items
+    items = get_quarterly_offer_items(quarter, kind)
+    from_flat = getattr(m, "catalog_from_flat_items", None) if m else None
+    default_catalog = getattr(m, "default_catalog", None) if m else None
+    # If items came from sheet they have no "section" key from defaults... hard to tell.
+    # Prefer default_catalog when available and sheet empty of custom-only signal:
+    try:
+        df = read_data("quarterly_offers")
+        q = str(quarter or "").strip().upper()
+        k = str(kind or "").strip().lower()
+        has_sheet = False
+        if df is not None and not df.empty and "quarter" in df.columns:
+            work = df.copy()
+            work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
+            work["kind"] = work["kind"].astype(str).str.strip().str.lower()
+            has_sheet = not work[(work["quarter"] == q) & (work["kind"] == k)].empty
+        if has_sheet and callable(from_flat):
+            return from_flat(items, kind=k)
+    except Exception:
+        pass
+    if callable(default_catalog):
+        try:
+            return default_catalog(quarter, kind)
+        except Exception:
+            return empty
+    return empty
+
+
 def add_quarterly_offer(
     quarter: str, kind: str, title: str, detail: str, note: str = "", sort: int = 0
 ) -> bool:
@@ -1869,34 +1912,93 @@ def page_recruit():
     )
 
 
-def _render_offer_cards(items: list[dict], *, empty_hint: str) -> None:
-    if not items:
+def _offer_cell_html(val: str) -> str:
+    text = _esc(val).replace("\n", "<br>")
+    return text if text else "—"
+
+
+def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4AF37") -> None:
+    sections = list((catalog or {}).get("sections") or [])
+    if not sections:
         st.info(empty_hint)
         return
-    for item in items:
-        title = _esc(item.get("title", ""))
-        detail = _esc(item.get("detail", "")).replace("\n", "<br>")
-        note = str(item.get("note", "") or "").strip()
-        note_html = (
-            f'<div class="offer-note">{_esc(note)}</div>' if note else ""
-        )
+
+    banner = str((catalog or {}).get("banner", "") or "").strip()
+    footnote = str((catalog or {}).get("footnote", "") or "").strip()
+    if banner:
         st.markdown(
-            f"""
-            <div class="offer-card">
-              <div class="offer-title">{title}</div>
-              <div class="offer-detail">{detail}</div>
-              {note_html}
-            </div>
-            """,
+            f'<div class="offer-banner">{_esc(banner)}</div>',
             unsafe_allow_html=True,
         )
+
+    parts = []
+    for section in sections:
+        title = _esc(section.get("title", ""))
+        cols = list(section.get("columns") or [])
+        rows = list(section.get("rows") or [])
+        if not cols or not rows:
+            continue
+        thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
+        body_rows = []
+        for i, row in enumerate(rows):
+            cells = list(row) + [""] * max(0, len(cols) - len(row))
+            tds = "".join(
+                f'<td class="{"offer-product" if j == 0 else ""}">{_offer_cell_html(str(cells[j] if j < len(cells) else ""))}</td>'
+                for j in range(len(cols))
+            )
+            zebra = " class='alt'" if i % 2 else ""
+            body_rows.append(f"<tr{zebra}>{tds}</tr>")
+        parts.append(
+            "<div class='offer-section'>"
+            f"<div class='offer-section-title'><span style='background:{accent}'></span>{title}</div>"
+            "<div class='offer-table-wrap'><table class='offer-table'>"
+            f"<thead><tr>{thead}</tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody>"
+            "</table></div></div>"
+        )
+
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<style>"
+        "html,body{margin:0;padding:0;background:transparent;"
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans TC',sans-serif;}"
+        ".offer-section{margin:0 0 16px 0;}"
+        ".offer-section-title{display:flex;align-items:center;gap:10px;"
+        "font-weight:800;font-size:15px;color:#1C2430;margin:0 0 8px 0;letter-spacing:.02em;}"
+        ".offer-section-title span{display:inline-block;width:4px;height:16px;border-radius:4px;}"
+        ".offer-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;"
+        "border:1px solid #E8E2D4;border-radius:14px;background:#fff;"
+        "box-shadow:0 8px 22px rgba(28,36,48,.05);}"
+        ".offer-table{width:100%;border-collapse:collapse;min-width:520px;}"
+        ".offer-table th{background:linear-gradient(180deg,#1C2430,#2A3444);color:#F8F4EA;"
+        "font-size:12px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;"
+        "padding:12px 12px;text-align:left;white-space:nowrap;}"
+        f".offer-table th:first-child{{border-top-left-radius:13px;}}"
+        f".offer-table th:last-child{{border-top-right-radius:13px;}}"
+        ".offer-table td{padding:12px;font-size:13.5px;color:#2C3440;line-height:1.45;"
+        "border-top:1px solid #F0EBE0;vertical-align:top;}"
+        ".offer-table tr.alt td{background:#FCFAF5;}"
+        ".offer-table td.offer-product{font-weight:700;color:#1C2430;min-width:120px;}"
+        f".offer-table tbody tr:hover td{{background:rgba(212,175,55,.08);}}"
+        "</style></head><body>"
+        + "".join(parts)
+        + "</body></html>"
+    )
+    # Rough height: header + rows
+    n_rows = sum(len(s.get("rows") or []) for s in sections) + len(sections) * 2
+    height = min(max(220, 70 + n_rows * 52), 2200)
+    components.html(html, height=height, scrolling=True)
+
+    if footnote:
+        st.caption(footnote)
 
 
 def page_quarterly_offers():
     st.markdown("## 季度優惠 & 獎賞")
     st.caption(
-        "Q4 內容來自 FWD Flash Report：客戶優惠 PDM76/2026、"
-        "理財顧問獎賞 TA261048。僅供內部參考，條款以官方文件為準。"
+        "表格一覽 · Q4 來自 FWD Flash Report（客戶優惠 PDM76/2026、"
+        "理財顧問獎賞 TA261048）。僅供內部參考，條款以官方文件為準。"
     )
 
     quarters = _quarters_map()
@@ -1923,18 +2025,20 @@ def page_quarterly_offers():
         unsafe_allow_html=True,
     )
 
-    customer_items = get_quarterly_offer_items(choice, "customer")
-    agent_items = get_quarterly_offer_items(choice, "agent")
+    customer_cat = get_quarterly_catalog(choice, "customer")
+    agent_cat = get_quarterly_catalog(choice, "agent")
     tab_c, tab_a = st.tabs(["客戶優惠", "營業員獎賞"])
     with tab_c:
-        _render_offer_cards(
-            customer_items,
+        _render_offer_catalog(
+            customer_cat,
             empty_hint="呢季暫時未有客戶優惠資料。Leader 可喺下面加入，或再 upload 文件畀系統更新。",
+            accent="#D4AF37",
         )
     with tab_a:
-        _render_offer_cards(
-            agent_items,
+        _render_offer_catalog(
+            agent_cat,
             empty_hint="呢季暫時未有營業員獎賞資料。Leader 可喺下面加入，或再 upload 文件畀系統更新。",
+            accent="#C4895A",
         )
 
     if is_leader:

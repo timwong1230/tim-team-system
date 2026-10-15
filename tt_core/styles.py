@@ -185,6 +185,17 @@ div.stButton > button[kind="secondary"] {
   box-shadow: 0 4px 15px rgba(0,0,0,0.05);
   margin-bottom: 20px;
 }
+.offer-banner {
+  background: linear-gradient(135deg, #1C2430 0%, #2C3A4E 100%);
+  color: #F8F4EA;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 0 14px 0;
+  border: 1px solid rgba(212,175,55,0.35);
+  box-shadow: 0 10px 24px rgba(28,36,48,0.12);
+}
 .offer-card {
   background: #ffffff;
   border: 1px solid #E8E2D4;
