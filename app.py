@@ -1762,7 +1762,10 @@ def _render_offer_cards(items: list[dict], *, empty_hint: str) -> None:
 
 def page_quarterly_offers():
     st.markdown("## 季度優惠 & 獎賞")
-    st.caption("每個季度嘅客戶優惠同營業員獎賞 — 方便出嚟見客即查。")
+    st.caption(
+        "Q4 內容來自 FWD Flash Report：客戶優惠 PDM76/2026、"
+        "理財顧問獎賞 TA261048。僅供內部參考，條款以官方文件為準。"
+    )
 
     q_keys = list(QUARTERS.keys())
     cur = current_quarter_key()
