@@ -82,8 +82,8 @@ def save_folder_id(folder_id: str) -> bool:
     return set_setting(FOLDER_KEY, _normalize_folder_id(folder_id))
 
 
-def list_forms(*, category: str | None = None) -> pd.DataFrame:
-    df = read_data(SHEET)
+def list_forms(*, category: str | None = None, force: bool = False) -> pd.DataFrame:
+    df = read_data(SHEET, force=force)
     if df is None or df.empty:
         return pd.DataFrame(
             columns=[
@@ -126,7 +126,7 @@ def _quota_error(exc: Exception) -> bool:
     )
 
 
-def list_drive_folder_files(folder_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+def list_drive_folder_files(folder_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
     """List files already in the shared folder (SA can read; no upload quota needed)."""
     service = get_drive_service()
     folder_id = (folder_id or get_folder_id()).strip()
@@ -135,20 +135,28 @@ def list_drive_folder_files(folder_id: str | None = None, limit: int = 100) -> l
 
     q = f"'{folder_id}' in parents and trashed=false and mimeType != 'application/vnd.google-apps.folder'"
     try:
-        resp = (
-            service.files()
-            .list(
-                q=q,
-                spaces="drive",
-                fields="files(id,name,mimeType,modifiedTime,size,owners)",
-                orderBy="modifiedTime desc",
-                pageSize=limit,
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
+        files: list[dict[str, Any]] = []
+        page_token = None
+        while True:
+            resp = (
+                service.files()
+                .list(
+                    q=q,
+                    spaces="drive",
+                    fields="nextPageToken,files(id,name,mimeType,modifiedTime,size,owners)",
+                    orderBy="modifiedTime desc",
+                    pageSize=min(100, max(1, limit - len(files))),
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
             )
-            .execute()
-        )
-        files = resp.get("files", []) or []
+            batch = resp.get("files", []) or []
+            files.extend(batch)
+            page_token = resp.get("nextPageToken")
+            if not page_token or len(files) >= limit:
+                break
         return [f for f in files if _is_allowed_name(str(f.get("name") or ""))]
     except Exception as e:
         st.session_state["_common_forms_drive_warn"] = str(e)[:240]
@@ -164,6 +172,7 @@ def sync_folder_into_catalog(
     """
     Index files that Leaders already put into the Drive folder.
     Works with ordinary My Drive folders shared with the service account.
+    Safe to run repeatedly — already-indexed files are skipped.
     """
     folder_id = get_folder_id()
     if not folder_id:
@@ -181,7 +190,14 @@ def sync_folder_into_catalog(
             "message": "資料夾暫時未有可同步檔案（請先用自己帳號放入 PDF／Word／Excel）",
         }
 
-    existing = list_forms()
+    # Force-refresh catalog so second/third sync sees files added moments ago
+    try:
+        from tt_core.db import soft_invalidate
+
+        soft_invalidate(SHEET)
+    except Exception:
+        pass
+    existing = list_forms(force=True)
     known_ids = set()
     if not existing.empty and "drive_file_id" in existing.columns:
         known_ids = {str(x).strip() for x in existing["drive_file_id"].tolist() if str(x).strip()}
@@ -190,6 +206,8 @@ def sync_folder_into_catalog(
     note = str(note or "").strip()
     added = 0
     skipped = 0
+    failed = 0
+    failed_names: list[str] = []
     now = str(datetime.datetime.now())
 
     for f in files:
@@ -212,24 +230,42 @@ def sync_folder_into_catalog(
             "uploaded_at": str(f.get("modifiedTime") or now)[:19].replace("T", " "),
             "note": note,
         }
-        if run_query_gs("INSERT", SHEET, row):
+        try:
+            ok = bool(run_query_gs("INSERT", SHEET, row))
+        except Exception:
+            ok = False
+        if ok:
             added += 1
             known_ids.add(drive_id)
             # Anyone-with-link so teammates open without Request access
-            share_file_anyone(drive_id)
+            try:
+                share_file_anyone(drive_id)
+            except Exception:
+                pass
         else:
-            return {
-                "ok": False,
-                "error": f"寫入清單失敗（已新增 {added} 份）",
-                "added": added,
-                "skipped": skipped,
-            }
+            failed += 1
+            if len(failed_names) < 5:
+                failed_names.append(name)
+
+    if added == 0 and failed == 0 and skipped > 0:
+        msg = (
+            f"冇新檔：Drive 入面 {skipped} 份都已經喺清單。"
+            "請放入**新檔案**到資料夾，再撳同步一次。"
+        )
+    elif failed and added == 0:
+        msg = "寫入清單失敗：" + "、".join(failed_names)
+        return {"ok": False, "error": msg, "added": 0, "skipped": skipped, "failed": failed}
+    else:
+        msg = f"同步完成：新增 {added} 份，略過已有 {skipped} 份"
+        if failed:
+            msg += f"，失敗 {failed} 份（{'、'.join(failed_names)}）"
 
     return {
-        "ok": True,
+        "ok": failed == 0 or added > 0,
         "added": added,
         "skipped": skipped,
-        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份（已嘗試開放連結分享）",
+        "failed": failed,
+        "message": msg,
     }
 
 

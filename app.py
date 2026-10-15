@@ -1883,12 +1883,22 @@ def page_iris_sync():
                 mime="text/csv",
             )
         st.caption("檔案上限 8MB。太大請改用上面 Drive 資料夾同步，避免 Cloud Oh no。")
+        if "manual_iris_upload_nonce" not in st.session_state:
+            st.session_state["manual_iris_upload_nonce"] = 0
+        up_nonce = int(st.session_state.get("manual_iris_upload_nonce") or 0)
         uploaded = st.file_uploader(
             "上傳報告檔（≤8MB）",
             type=["xlsx", "xls", "csv", "pdf"],
             help="Daily：Excel/CSV（MTD_Comp_FYC）；MDRT：Excel/CSV/PDF。太大請用 Drive 同步。",
-            key="manual_iris_upload",
+            key=f"manual_iris_upload_{up_nonce}",
         )
+        c_clear, _ = st.columns([1, 2])
+        with c_clear:
+            if st.button("清除／換另一份檔", key=f"manual_iris_clear_{up_nonce}"):
+                st.session_state["manual_iris_upload_nonce"] = up_nonce + 1
+                st.session_state.pop("_iris_last_preview", None)
+                st.session_state["_iris_last_preview_rows"] = []
+                st.rerun()
         default_month = datetime.date.today().strftime("%Y-%m")
         month_choice = st.selectbox(
             "Daily report 若無月份欄，使用此月份",
@@ -2043,6 +2053,12 @@ def page_iris_sync():
                         f"月份 {', '.join(result['months']) or '—'}"
                     )
                 st.balloons()
+                # Reset uploader so the next file can be chosen immediately
+                st.session_state["manual_iris_upload_nonce"] = (
+                    int(st.session_state.get("manual_iris_upload_nonce") or 0) + 1
+                )
+                st.session_state.pop("_iris_last_preview", None)
+                st.session_state["_iris_last_preview_rows"] = []
                 st.rerun()
         except Exception as e:
             st.session_state.pop("_iris_last_preview", None)
@@ -2542,20 +2558,27 @@ def _list_common_forms_drive_files(folder_id: str, limit: int = 100) -> list:
         "mimeType != 'application/vnd.google-apps.folder'"
     )
     try:
-        resp = (
-            service.files()
-            .list(
-                q=q,
-                spaces="drive",
-                fields="files(id,name,mimeType,modifiedTime,size)",
-                orderBy="modifiedTime desc",
-                pageSize=limit,
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
+        files: list[dict] = []
+        page_token = None
+        while True:
+            resp = (
+                service.files()
+                .list(
+                    q=q,
+                    spaces="drive",
+                    fields="nextPageToken,files(id,name,mimeType,modifiedTime,size)",
+                    orderBy="modifiedTime desc",
+                    pageSize=min(100, max(1, limit - len(files))),
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
             )
-            .execute()
-        )
-        files = resp.get("files", []) or []
+            files.extend(resp.get("files", []) or [])
+            page_token = resp.get("nextPageToken")
+            if not page_token or len(files) >= limit:
+                break
         out = []
         for f in files:
             name = str(f.get("name") or "")
@@ -2609,7 +2632,13 @@ def _sync_common_forms_folder(
         }
 
     try:
-        existing = read_data("common_forms")
+        from tt_core.db import soft_invalidate
+
+        soft_invalidate("common_forms")
+    except Exception:
+        pass
+    try:
+        existing = read_data("common_forms", force=True)
     except Exception:
         existing = pd.DataFrame()
     known_ids = set()
@@ -2622,6 +2651,8 @@ def _sync_common_forms_folder(
     note = str(note or "").strip()
     added = 0
     skipped = 0
+    failed = 0
+    failed_names: list[str] = []
     now = str(datetime.datetime.now())
 
     for f in files:
@@ -2645,10 +2676,13 @@ def _sync_common_forms_folder(
             "uploaded_at": str(f.get("modifiedTime") or now)[:19].replace("T", " "),
             "note": note,
         }
-        if run_query_gs("INSERT", "common_forms", row):
+        try:
+            ok = bool(run_query_gs("INSERT", "common_forms", row))
+        except Exception:
+            ok = False
+        if ok:
             added += 1
             known_ids.add(drive_id)
-            # Best-effort anyone-with-link (same as module helper)
             try:
                 service = _drive().get_drive_service()
                 if service:
@@ -2661,18 +2695,34 @@ def _sync_common_forms_folder(
             except Exception:
                 pass
         else:
-            return {
-                "ok": False,
-                "error": f"寫入清單失敗（已新增 {added} 份）",
-                "added": added,
-                "skipped": skipped,
-            }
+            failed += 1
+            if len(failed_names) < 5:
+                failed_names.append(name)
+
+    if added == 0 and failed == 0 and skipped > 0:
+        msg = (
+            f"冇新檔：Drive 入面 {skipped} 份都已經喺清單。"
+            "請放入新檔案到資料夾，再撳同步一次。"
+        )
+    elif failed and added == 0:
+        return {
+            "ok": False,
+            "error": "寫入清單失敗：" + "、".join(failed_names),
+            "added": 0,
+            "skipped": skipped,
+            "failed": failed,
+        }
+    else:
+        msg = f"同步完成：新增 {added} 份，略過已有 {skipped} 份"
+        if failed:
+            msg += f"，失敗 {failed} 份"
 
     return {
-        "ok": True,
+        "ok": failed == 0 or added > 0,
         "added": added,
         "skipped": skipped,
-        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份（已嘗試開放連結分享）",
+        "failed": failed,
+        "message": msg,
     }
 
 
@@ -2707,8 +2757,8 @@ def page_common_forms():
 
         with st.expander("Leader：同步 Drive 資料夾（推薦）", expanded=bool(folder_id)):
             st.info(
-                "Service Account 冇個人 Drive 空間，**唔好用下面「app 內上傳」去普通資料夾**。"
                 "請用你自己 Google 帳號將文件放入資料夾，再撳同步。"
+                "可以重複撳同步——已入清單嘅會略過，只加新檔。"
             )
             if not folder_id:
                 st.warning("請先完成上面嘅 Drive 資料夾設定。")
@@ -2731,10 +2781,16 @@ def page_common_forms():
                             note=sync_note,
                         )
                     if result.get("ok"):
-                        st.toast(result.get("message") or "同步完成", icon="✅")
+                        added = int(result.get("added") or 0)
+                        if added:
+                            st.toast(result.get("message") or "同步完成", icon="✅")
+                        else:
+                            st.info(result.get("message") or "冇新檔")
+                        # Reset category filter so new files are visible
+                        st.session_state["common_forms_cat_filter"] = "全部"
                         st.rerun()
                     else:
-                        st.error(result.get("error") or "同步失敗")
+                        st.error(result.get("error") or result.get("message") or "同步失敗")
                 if st.button(
                     "開放全部連結（免審批）",
                     key="common_forms_share_all",
@@ -3015,4 +3071,4 @@ elif "常用表格" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T07:30Z
+# cloud_redeploy_stamp: 2026-10-15T07:45Z
