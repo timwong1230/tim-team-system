@@ -649,15 +649,15 @@ BRAND_SYSTEM = "TIM TEAM SYSTEM"
 
 
 def page_icon_arg():
-    """Return a PIL image when possible — more reliable than paths on Streamlit Cloud."""
+    """Prefer a real image file path/PIL — Streamlit converts this to a media URL for the tab."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parent
     for rel in (
-        "static/app_icon_32.png",
-        "static/app_icon_48.png",
+        "static/apple-touch-icon.png",
         "static/app_icon_180.png",
         "static/app_icon_512.png",
+        "static/app_icon_32.png",
         "static/ace_team_logo.jpg",
     ):
         path = root / rel
@@ -669,7 +669,8 @@ def page_icon_arg():
             return Image.open(path)
         except Exception:
             return str(path)
-    return "🃏"
+    # Public CDN fallback if static/ missing on a stale Cloud image
+    return "https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/apple-touch-icon.png"
 
 
 try:

@@ -3,15 +3,30 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
+
+# Public icon URLs — iOS Add to Home Screen often re-fetches icons WITHOUT
+# Streamlit auth cookies, so same-origin /app/static can 303 to login and
+# fall back to the Streamlit crown. jsDelivr serves repo files anonymously.
+_REPO_CDN = "https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static"
+# Use filenames already present on main when possible so CDN works immediately
+_ICON_PUBLIC_180 = f"{_REPO_CDN}/app_icon_180.png"
+_ICON_PUBLIC_192 = f"{_REPO_CDN}/app_icon_192.png"
+_ICON_PUBLIC_512 = f"{_REPO_CDN}/app_icon_512.png"
+_ICON_PUBLIC_32 = f"{_REPO_CDN}/app_icon_32.png"
+
+# Same-origin paths when server.enableStaticServing=true
+_ICON_LOCAL_180 = "/app/static/apple-touch-icon.png"
+_ICON_LOCAL_192 = "/app/static/android-chrome-192.png"
+_ICON_LOCAL_512 = "/app/static/android-chrome-512.png"
+_ICON_LOCAL_32 = "/app/static/app_icon_32.png"
 
 
 def _static_icon_data_uri(filename: str) -> str:
     """Load icon bytes from repo static/ — never rely on Cloud-cached branding helpers."""
     import base64
-    from pathlib import Path
 
     path = Path(__file__).resolve().parents[1] / "static" / filename
     if not path.exists():
@@ -32,32 +47,20 @@ def _brand_bits():
     except Exception:
         pass
 
-    favicon = _static_icon_data_uri("app_icon_32.png") or _static_icon_data_uri(
-        "app_icon_48.png"
-    )
-    icon = (
-        _static_icon_data_uri("app_icon_180.png")
-        or _static_icon_data_uri("app_icon_192.png")
+    # Prefer HTTP(S) URLs for iOS home-screen icons (data: URIs are ignored by Safari)
+    favicon = _ICON_PUBLIC_32
+    icon = _ICON_PUBLIC_180
+    icon_big = _ICON_PUBLIC_512
+    # Local static paths as extras (authenticated session / desktop)
+    icon_local = _ICON_LOCAL_180 if (Path(__file__).resolve().parents[1] / "static" / "apple-touch-icon.png").exists() else ""
+    icon_local_big = _ICON_LOCAL_512 if (Path(__file__).resolve().parents[1] / "static" / "android-chrome-512.png").exists() else ""
+    # data URI last-resort for tab favicon when offline / CDN blocked
+    data_icon = (
+        _static_icon_data_uri("apple-touch-icon.png")
+        or _static_icon_data_uri("app_icon_180.png")
         or _static_icon_data_uri("ace_team_logo.jpg")
     )
-    icon_big = (
-        _static_icon_data_uri("app_icon_512.png")
-        or _static_icon_data_uri("app_icon_192.png")
-        or icon
-    )
-    # Last resort: branding helper (may be stale on Cloud)
-    if not icon:
-        try:
-            import tt_core.branding as b
-
-            fn = getattr(b, "icon_data_uri", None)
-            if callable(fn):
-                icon = fn(180) or ""
-                icon_big = fn(512) or icon
-        except Exception:
-            pass
-    favicon = favicon or icon
-    return name, system, favicon, icon, icon_big
+    return name, system, favicon, icon, icon_big, icon_local, icon_local_big, data_icon
 
 
 def is_mobile() -> bool:
@@ -92,13 +95,22 @@ def is_ios() -> bool:
 
 def inject_pwa_head() -> None:
     """
-    Inject iOS / PWA meta tags into <head> so Safari Add to Home Screen
-    opens as a standalone app (no browser chrome).
+    Inject iOS / PWA meta + apple-touch-icon into the real document <head>.
+
+    Uses st.html(unsafe_allow_javascript=True) so the script runs in the main
+    page (not a sandboxed iframe). components.v1.html cannot reliably rewrite
+    parent <head> on iPad Safari — that left users stuck with the Streamlit crown.
     """
-    brand_name, brand_system, favicon, icon, icon_big = _brand_bits()
-    icon_big = icon_big or icon
-    if not icon:
-        return
+    (
+        brand_name,
+        brand_system,
+        favicon,
+        icon,
+        icon_big,
+        icon_local,
+        icon_local_big,
+        data_icon,
+    ) = _brand_bits()
 
     manifest = {
         "name": brand_system,
@@ -113,6 +125,12 @@ def inject_pwa_head() -> None:
                 "src": icon,
                 "sizes": "180x180",
                 "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": _ICON_PUBLIC_192,
+                "sizes": "192x192",
+                "type": "image/png",
                 "purpose": "any maskable",
             },
             {
@@ -123,31 +141,33 @@ def inject_pwa_head() -> None:
             },
         ],
     }
-    favicon_js = json.dumps(favicon or icon)
-    icon_js = json.dumps(icon)
-    icon_big_js = json.dumps(icon_big)
-    brand_js = json.dumps(brand_name)
-    manifest_js = json.dumps(manifest)
 
-    components.html(
-        f"""
-<!DOCTYPE html>
-<html><head></head><body>
+    payload = {
+        "favicon": favicon,
+        "icon": icon,
+        "iconBig": icon_big,
+        "iconLocal": icon_local,
+        "iconLocalBig": icon_local_big,
+        "dataIcon": data_icon,
+        "brand": brand_name,
+        "manifest": manifest,
+        "version": "ace-v5",
+    }
+    payload_js = json.dumps(payload)
+
+    script = f"""
 <script>
 (function () {{
-  const doc = window.parent.document;
-  const head = doc.head || doc.getElementsByTagName('head')[0];
+  var P = {payload_js};
+  var doc = document;
+  var head = doc.head || doc.getElementsByTagName('head')[0];
   if (!head) return;
 
-  const favicon = {favicon_js};
-  const icon = {icon_js};
-  const iconBig = {icon_big_js};
-  const brand = {brand_js};
-  const VERSION = 'ace-v4';
-  const already = head.getAttribute('data-tt-pwa') === VERSION;
+  var VERSION = P.version;
+  var already = head.getAttribute('data-tt-pwa') === VERSION;
 
   function upsertMeta(attr, key, value) {{
-    let el = head.querySelector('meta[' + attr + '="' + key + '"]');
+    var el = head.querySelector('meta[' + attr + '="' + key + '"]');
     if (!el) {{
       el = doc.createElement('meta');
       el.setAttribute(attr, key);
@@ -156,25 +176,33 @@ def inject_pwa_head() -> None:
     el.setAttribute('content', value);
   }}
 
-  function isAceHref(href) {{
-    return typeof href === 'string' && href.indexOf('data:image') === 0;
+  function isOurs(href) {{
+    if (!href) return false;
+    if (href.indexOf('data:image') === 0) return true;
+    if (href.indexOf('apple-touch-icon') !== -1) return true;
+    if (href.indexOf('app_icon_') !== -1) return true;
+    if (href.indexOf('android-chrome') !== -1) return true;
+    if (href.indexOf('tim-team-system') !== -1 && href.indexOf('/static/') !== -1) return true;
+    if (href.indexOf('/app/static/') === 0) return true;
+    return false;
   }}
 
   function hasCrownOrStale() {{
-    const links = head.querySelectorAll(
+    var links = head.querySelectorAll(
       'link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]'
     );
     if (!links.length) return true;
-    for (let i = 0; i < links.length; i++) {{
-      const href = links[i].getAttribute('href') || '';
-      if (!isAceHref(href)) return true;
-      if (/streamlit|favicon\\.png|favicon\\.ico|emoji/i.test(href)) return true;
+    for (var i = 0; i < links.length; i++) {{
+      var href = links[i].getAttribute('href') || '';
+      if (!isOurs(href)) return true;
+      if (/streamlit|favicon\\.png|favicon\\.ico/i.test(href) && href.indexOf('app_icon') === -1) return true;
     }}
+    // Must have at least one apple-touch-icon for iOS home screen
+    if (!head.querySelector('link[rel="apple-touch-icon"]')) return true;
     return false;
   }}
 
   function applyFavicon() {{
-    // Remove Streamlit default crown / stale icons, then set ACE TEAM mark
     head.querySelectorAll(
       'link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]'
     ).forEach(function (el) {{
@@ -182,7 +210,8 @@ def inject_pwa_head() -> None:
     }});
 
     function add(rel, href, sizes, type) {{
-      const el = doc.createElement('link');
+      if (!href) return;
+      var el = doc.createElement('link');
       el.setAttribute('rel', rel);
       if (sizes) el.setAttribute('sizes', sizes);
       if (type) el.setAttribute('type', type);
@@ -190,12 +219,19 @@ def inject_pwa_head() -> None:
       el.setAttribute('data-tt-icon', VERSION);
       head.appendChild(el);
     }}
-    add('icon', favicon, '32x32', 'image/png');
-    add('shortcut icon', favicon, null, 'image/png');
-    add('icon', icon, '180x180', 'image/png');
-    add('icon', iconBig, '512x512', 'image/png');
-    add('apple-touch-icon', icon, '180x180', 'image/png');
-    add('apple-touch-icon-precomposed', icon, '180x180', 'image/png');
+
+    // Public HTTPS first — iOS can fetch without Streamlit session cookies
+    add('apple-touch-icon', P.icon, '180x180', 'image/png');
+    add('apple-touch-icon-precomposed', P.icon, '180x180', 'image/png');
+    add('icon', P.favicon, '32x32', 'image/png');
+    add('shortcut icon', P.favicon, null, 'image/png');
+    add('icon', P.icon, '180x180', 'image/png');
+    add('icon', P.iconBig, '512x512', 'image/png');
+    // Same-origin static copies (when Cloud serves /app/static)
+    add('apple-touch-icon', P.iconLocal, '180x180', 'image/png');
+    add('icon', P.iconLocalBig, '512x512', 'image/png');
+    // data URI last for desktop tab when CDN blocked
+    add('icon', P.dataIcon, '180x180', 'image/png');
   }}
 
   upsertMeta('name', 'viewport',
@@ -203,17 +239,21 @@ def inject_pwa_head() -> None:
   upsertMeta('name', 'apple-mobile-web-app-capable', 'yes');
   upsertMeta('name', 'mobile-web-app-capable', 'yes');
   upsertMeta('name', 'apple-mobile-web-app-status-bar-style', 'black-translucent');
-  upsertMeta('name', 'apple-mobile-web-app-title', brand);
-  upsertMeta('name', 'application-name', brand);
+  upsertMeta('name', 'apple-mobile-web-app-title', P.brand);
+  upsertMeta('name', 'application-name', P.brand);
   upsertMeta('name', 'theme-color', '#0A0D14');
 
+  // Help share sheet / scrapers (Streamlit Cloud may still override)
+  upsertMeta('property', 'og:title', P.brand);
+  upsertMeta('property', 'og:image', P.iconBig);
+
   applyFavicon();
+  try {{ doc.title = P.brand; }} catch (e) {{}}
   head.setAttribute('data-tt-pwa', VERSION);
 
-  const manifest = {manifest_js};
-  const blob = new Blob([JSON.stringify(manifest)], {{ type: 'application/manifest+json' }});
-  const url = URL.createObjectURL(blob);
-  let link = head.querySelector('link[rel="manifest"]');
+  var blob = new Blob([JSON.stringify(P.manifest)], {{ type: 'application/manifest+json' }});
+  var url = URL.createObjectURL(blob);
+  var link = head.querySelector('link[rel="manifest"]');
   if (!link) {{
     link = doc.createElement('link');
     link.rel = 'manifest';
@@ -221,44 +261,58 @@ def inject_pwa_head() -> None:
   }}
   link.href = url;
 
-  // Already wired this session — do not stack observers/timers
   if (already) return;
 
-  // Streamlit often re-injects its crown favicon after load — keep replacing it
-  const obs = new MutationObserver(function () {{
+  var obs = new MutationObserver(function () {{
     if (hasCrownOrStale()) applyFavicon();
   }});
   try {{ obs.observe(head, {{ childList: true, subtree: true }}); }} catch (e) {{}}
-  let n = 0;
-  const timer = setInterval(function () {{
+  var n = 0;
+  var timer = setInterval(function () {{
     if (hasCrownOrStale()) applyFavicon();
     n += 1;
-    if (n >= 40) clearInterval(timer);
+    if (n >= 60) clearInterval(timer);
   }}, 250);
 
-  const standalone = window.parent.navigator.standalone === true
-    || window.parent.matchMedia('(display-mode: standalone)').matches;
+  var standalone = (window.navigator.standalone === true)
+    || window.matchMedia('(display-mode: standalone)').matches;
   if (standalone) {{
     doc.documentElement.setAttribute('data-tt-standalone', '1');
   }}
 }})();
 </script>
-</body></html>
-        """,
-        height=0,
-        width=0,
-    )
+"""
+
+    # st.html runs in the main document (not iframe) — required for iPad Safari
+    try:
+        st.html(script, unsafe_allow_javascript=True)
+        return
+    except Exception:
+        pass
+
+    # Fallback for older Streamlit: iframe inject (desktop only reliability)
+    try:
+        import streamlit.components.v1 as components
+
+        components.html(
+            f"<!DOCTYPE html><html><head></head><body>{script.replace('var doc = document;', 'var doc = window.parent.document;')}</body></html>",
+            height=0,
+            width=0,
+        )
+    except Exception:
+        pass
 
 
 def render_install_guide(*, compact: bool = False) -> None:
     """Safari Add to Home Screen instructions."""
-    brand_name, _, _, _, _ = _brand_bits()
+    brand_name, _, _, _, _, _, _, _ = _brand_bits()
     body_zh = (
         "1. 用 **Safari** 打開本網站（唔好用 Chrome）\n"
         "2. 撳底部分享按鈕\n"
         "3. 揀 **加到主畫面 / Add to Home Screen**\n"
-        f"4. 名稱用 **{brand_name}** → 新增\n"
-        "5. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）\n"
+        f"4. 名稱改成 **{brand_name}**（如果顯示 Streamlit）→ 新增\n"
+        "5. 如果圖示仍係皇冠：刪除舊主畫面圖示 → 重新開頁 → 再加一次\n"
+        "6. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）\n"
     )
     if compact:
         with st.expander("加到 iPhone 主畫面（變 App）", expanded=False):

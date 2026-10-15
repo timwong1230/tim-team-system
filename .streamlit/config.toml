@@ -1,6 +1,8 @@
 [server]
 headless = true
 maxUploadSize = 20
+# Serve ./static at /app/static/ — needed for apple-touch-icon HTTP URLs
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
