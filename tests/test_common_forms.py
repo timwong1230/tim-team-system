@@ -7,6 +7,7 @@ from tt_core.common_forms import (
     CATEGORIES,
     _normalize_folder_id,
     _quota_error,
+    ensure_view_link,
     format_size,
 )
 
@@ -42,3 +43,9 @@ def test_quota_error_detection():
         )
     )
     assert not _quota_error(Exception("permission denied"))
+
+
+def test_ensure_view_link_shape():
+    url = ensure_view_link("abc123FileId")
+    assert url.startswith("https://drive.google.com/file/d/abc123FileId/view")
+    assert ensure_view_link("") == ""

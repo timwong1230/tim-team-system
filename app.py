@@ -2451,7 +2451,10 @@ def _sync_common_forms_folder(
 
 def page_common_forms():
     st.markdown("## 常用表格")
-    st.caption("簽單／行政常用文件一站下載。Leader 放入 Drive 後同步；同事隨時下載。")
+    st.caption(
+        "簽單／行政常用文件。撳「開啟檔案」用 Google Drive 開；"
+        "睇完關掉新頁／返回即可，唔會困喺下載預覽。"
+    )
 
     cf = _common_forms()
     categories = list(getattr(cf, "CATEGORIES", None) or _COMMON_FORMS_CATEGORIES)
@@ -2632,35 +2635,22 @@ def page_common_forms():
             """,
             unsafe_allow_html=True,
         )
+        view_url = _common_forms_view_link(drive_id) if drive_id else ""
         cols = st.columns([2, 1] if is_leader else [1])
-        cache_key = f"_form_dl_{rid}"
         with cols[0]:
             if not drive_id:
                 st.warning("缺少 Drive 檔案 ID")
+            elif view_url:
+                # New tab / external Drive view — user can dismiss and return to app
+                st.link_button(
+                    "開啟檔案",
+                    view_url,
+                    use_container_width=True,
+                    type="primary",
+                )
+                st.caption("會用 Google Drive 開新頁；睇完關掉／返回即可返 app。")
             else:
-                cached = st.session_state.get(cache_key)
-                if cached is None:
-                    if st.button("下載", key=f"prep_form_{rid}", use_container_width=True):
-                        try:
-                            with st.spinner("準備檔案…"):
-                                dl = getattr(cf, "download_form_bytes", None) if cf else None
-                                if callable(dl):
-                                    st.session_state[cache_key] = dl(drive_id)
-                                else:
-                                    st.session_state[cache_key] = download_file(drive_id)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"下載失敗：{e}")
-                else:
-                    st.download_button(
-                        "儲存到裝置",
-                        data=cached,
-                        file_name=fname or f"{title}.bin",
-                        mime=str(row.get("mime") or "application/octet-stream"),
-                        key=f"dl_form_{rid}",
-                        use_container_width=True,
-                        type="primary",
-                    )
+                st.warning("未能產生開啟連結")
         if is_leader and len(cols) > 1:
             with cols[1]:
                 if st.button("刪除", key=f"del_form_{rid}", use_container_width=True):
@@ -2672,11 +2662,40 @@ def page_common_forms():
                             "ok": bool(run_query_gs("DELETE", "common_forms", row_id=rid))
                         }
                     if result.get("ok"):
-                        st.session_state.pop(cache_key, None)
                         st.toast("已刪除", icon="🗑️")
                         st.rerun()
                     else:
                         st.error(result.get("error") or "刪除失敗")
+
+def _common_forms_view_link(drive_file_id: str) -> str:
+    """Open Drive file in a new tab (avoids iOS download preview trap)."""
+    file_id = str(drive_file_id or "").strip()
+    if not file_id:
+        return ""
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "ensure_view_link", None)
+            if callable(fn):
+                return str(fn(file_id) or "")
+    except Exception:
+        pass
+    try:
+        service = _drive().get_drive_service()
+        if service:
+            try:
+                service.permissions().create(
+                    fileId=file_id,
+                    body={"type": "anyone", "role": "reader"},
+                    supportsAllDrives=True,
+                    fields="id",
+                ).execute()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+
 
 def page_profile():
     st.markdown("## 個人設定")

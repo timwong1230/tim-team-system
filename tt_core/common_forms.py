@@ -313,6 +313,29 @@ def download_form_bytes(drive_file_id: str) -> bytes:
     return download_file(drive_file_id)
 
 
+def ensure_view_link(drive_file_id: str) -> str:
+    """
+    Make a Drive file openable via link (anyone with link → reader).
+    Opens in a new browser tab so iPhone/PWA users can dismiss and return to the app.
+    """
+    file_id = str(drive_file_id or "").strip()
+    if not file_id:
+        return ""
+    service = get_drive_service()
+    if service:
+        try:
+            service.permissions().create(
+                fileId=file_id,
+                body={"type": "anyone", "role": "reader"},
+                supportsAllDrives=True,
+                fields="id",
+            ).execute()
+        except Exception:
+            # Already shared, or SA cannot change ACL — still return the view URL.
+            pass
+    return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+
+
 def delete_form(row_id, drive_file_id: str | None = None) -> dict[str, Any]:
     """Remove catalog row. Does not trash Drive file by default (Leader may still need the original)."""
     if row_id is None or str(row_id).strip() == "":
