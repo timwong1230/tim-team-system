@@ -991,6 +991,7 @@ menu_items = [
     "📁 常用表格",
     "🩺 常見疾病核保",
     "💹 收入／支出 T-Account",
+    "🛡️ 保障缺口",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -3314,6 +3315,180 @@ def page_cashflow_taccount():
         st.caption("金額以港元／每月計。數字只留在此裝置 session，唔會自動上傳。")
 
 
+def page_protection_gap():
+    """見客用：輸入現有保障 → pie chart 展示保障缺口。"""
+    st.markdown("## 🛡️ 保障缺口")
+    st.caption(
+        "輸入客戶已有保單（類型／公司／保額／保費），對比建議保額，"
+        "用 pie chart 睇清楚買咗未等於買夠。"
+    )
+
+    try:
+        from tt_core import protection_gap as pg
+    except Exception:
+        st.error("保障缺口模組未能載入，請 Reboot 後再試。")
+        return
+
+    main_types = ["人壽保險", "危疾保險", "醫療保險", "意外保險"]
+
+    # Pending flags MUST apply before widgets that own these keys
+    if st.session_state.pop("_pg_pending_reset", False):
+        st.session_state["pg_client_name"] = ""
+        st.session_state["pg_monthly_income"] = 0.0
+        st.session_state["pg_rows"] = pg.empty_portfolio(4)
+        for t in pg.POLICY_TYPES:
+            st.session_state.pop(f"pg_target_{t}", None)
+
+    pending_targets = st.session_state.pop("_pg_pending_targets", None)
+    if isinstance(pending_targets, dict):
+        for t, val in pending_targets.items():
+            st.session_state[f"pg_target_{t}"] = float(val or 0)
+
+    if "pg_client_name" not in st.session_state:
+        st.session_state["pg_client_name"] = ""
+    if "pg_monthly_income" not in st.session_state:
+        st.session_state["pg_monthly_income"] = 0.0
+    if "pg_rows" not in st.session_state:
+        st.session_state["pg_rows"] = pg.empty_portfolio(4)
+
+    client = st.text_input(
+        "客戶名稱（可留空）",
+        key="pg_client_name",
+        placeholder="例如：陳生／陳太",
+    )
+    monthly_income = st.number_input(
+        "每月收入（用來建議保額，可改）",
+        min_value=0.0,
+        step=1000.0,
+        format="%.0f",
+        key="pg_monthly_income",
+        help="人壽約 10 倍年薪、危疾約 4 倍、意外約 3 倍；醫療預設 $1,000,000（可手動改）",
+    )
+
+    suggested = pg.suggested_targets(monthly_income)
+    st.markdown("#### 建議保額（可人手調整）")
+    target_cols = st.columns(4)
+    targets: dict[str, float] = {}
+    for col, t in zip(target_cols, main_types):
+        with col:
+            key = f"pg_target_{t}"
+            if key not in st.session_state:
+                st.session_state[key] = float(suggested.get(t) or 0)
+            targets[t] = st.number_input(
+                t.replace("保險", ""),
+                min_value=0.0,
+                step=100000.0,
+                format="%.0f",
+                key=key,
+            )
+    targets["其他"] = 0.0
+
+    if st.button("按月入重設建議保額", key="pg_resync_targets"):
+        st.session_state["_pg_pending_targets"] = {
+            t: float(suggested.get(t) or 0) for t in main_types
+        }
+        st.rerun()
+
+    st.markdown("#### 已有保單")
+    st.caption("保單類型 · 保險公司 · 保額 · 每月保費（有買 ≠ 買夠）")
+
+    edited = st.data_editor(
+        pd.DataFrame(st.session_state["pg_rows"]),
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "保單類型": st.column_config.SelectboxColumn(
+                "保單類型",
+                options=pg.POLICY_TYPES,
+                required=True,
+                width="medium",
+            ),
+            "保險公司": st.column_config.TextColumn("保險公司", width="medium"),
+            "保額": st.column_config.NumberColumn(
+                "保額", min_value=0, step=100000, format="$%d", width="small"
+            ),
+            "保費": st.column_config.NumberColumn(
+                "保費（每月）", min_value=0, step=100, format="$%d", width="small"
+            ),
+        },
+        key="pg_editor",
+    )
+
+    # Keep session copy in sync for next run (plain records only — no DataFrame)
+    try:
+        st.session_state["pg_rows"] = edited.to_dict("records")
+    except Exception:
+        pass
+
+    rows = pg.normalize_rows(edited.to_dict("records") if edited is not None else [])
+    gaps = pg.gap_table(rows, targets)
+    total_prem = pg.total_monthly_premium(rows)
+    total_gap = sum(float(g["保障缺口"]) for g in gaps if g["保單類型"] != "其他")
+    total_have = sum(float(g["已有保額"]) for g in gaps if g["保單類型"] != "其他")
+
+    name_bit = f" — {client.strip()}" if str(client or "").strip() else ""
+    st.markdown(f"### 分析結果{name_bit}")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("已有保障總額", pg.format_hkd(total_have))
+    m2.metric("保障缺口總額", pg.format_hkd(total_gap))
+    m3.metric("現有每月保費", pg.format_hkd(total_prem))
+
+    c_pie1, c_pie2 = st.columns(2)
+    with c_pie1:
+        st.markdown("##### 現有保額分佈")
+        st.markdown(
+            pg.svg_pie(pg.pie_current_cover(rows), label_key="類型", value_key="保額"),
+            unsafe_allow_html=True,
+        )
+    with c_pie2:
+        st.markdown("##### 已有保障 vs 保障缺口")
+        st.markdown(
+            pg.svg_pie(
+                pg.pie_gap_vs_covered(gaps),
+                label_key="項目",
+                value_key="金額",
+                colors=["#059669", "#DC2626", "#9CA3AF"],
+            ),
+            unsafe_allow_html=True,
+        )
+
+    if gaps:
+        st.markdown("##### 分類缺口明細")
+        show = pd.DataFrame(gaps)
+        st.dataframe(
+            show,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "已有保額": st.column_config.NumberColumn(format="$%d"),
+                "建議保額": st.column_config.NumberColumn(format="$%d"),
+                "保障缺口": st.column_config.NumberColumn(format="$%d"),
+                "已保障%": st.column_config.NumberColumn(format="%.1f%%"),
+                "現有月保費": st.column_config.NumberColumn(format="$%d"),
+            },
+        )
+
+    if total_gap > 0:
+        st.warning(
+            f"仍有約 **{pg.format_hkd(total_gap)}** 保障缺口。"
+            "可按缺口優先補 **人壽／危疾／醫療／意外**。"
+        )
+    elif rows:
+        st.success("以而家建議保額計，主要保障類型未見明顯缺口（仍可按家庭責任再加）。")
+    else:
+        st.info("請先輸入至少一份已有保單，或將建議保額同現況對比。")
+
+    st.caption(
+        "建議保額只供銷售參考，並非核保或財務建議；實際需要視乎家庭責任、負債、Lifestyle。"
+        "數字只留在此裝置 session。"
+    )
+
+    if st.button("清空重計", use_container_width=True, key="pg_reset"):
+        st.session_state["_pg_pending_reset"] = True
+        st.rerun()
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -3400,7 +3575,9 @@ elif "常見疾病核保" in menu or "核保" in menu:
     _safe_page("常見疾病核保", page_medical_uw)
 elif "T-Account" in menu or "收入／支出" in menu or "Cashflow" in menu:
     _safe_page("收入／支出 T-Account", page_cashflow_taccount)
+elif "保障缺口" in menu:
+    _safe_page("保障缺口", page_protection_gap)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T13:25Z
+# cloud_redeploy_stamp: 2026-10-15T13:30Z
