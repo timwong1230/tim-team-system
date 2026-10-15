@@ -3331,11 +3331,17 @@ def page_protection_gap():
 
     main_types = ["人壽保險", "危疾保險", "醫療保險", "意外保險"]
 
+    def _pg_clear_row_widget_keys(n: int = 40) -> None:
+        for i in range(n):
+            for suffix in ("type", "company", "cover", "premium"):
+                st.session_state.pop(f"pg_r{i}_{suffix}", None)
+
     # Pending flags MUST apply before widgets that own these keys
     if st.session_state.pop("_pg_pending_reset", False):
         st.session_state["pg_client_name"] = ""
         st.session_state["pg_monthly_income"] = 0.0
-        st.session_state["pg_rows"] = pg.empty_portfolio(4)
+        st.session_state["pg_rows"] = pg.empty_portfolio(3)
+        _pg_clear_row_widget_keys()
         for t in pg.POLICY_TYPES:
             st.session_state.pop(f"pg_target_{t}", None)
 
@@ -3344,12 +3350,26 @@ def page_protection_gap():
         for t, val in pending_targets.items():
             st.session_state[f"pg_target_{t}"] = float(val or 0)
 
+    if st.session_state.pop("_pg_add_row", False):
+        rows_now = list(st.session_state.get("pg_rows") or [])
+        rows_now.append(dict(pg.EMPTY_ROW))
+        st.session_state["pg_rows"] = rows_now
+
+    drop_idx = st.session_state.pop("_pg_drop_row", None)
+    if isinstance(drop_idx, int):
+        rows_now = list(st.session_state.get("pg_rows") or [])
+        if 0 <= drop_idx < len(rows_now):
+            # Rebuild widget keys from remaining rows after drop
+            kept = [r for i, r in enumerate(rows_now) if i != drop_idx]
+            _pg_clear_row_widget_keys()
+            st.session_state["pg_rows"] = kept or pg.empty_portfolio(1)
+
     if "pg_client_name" not in st.session_state:
         st.session_state["pg_client_name"] = ""
     if "pg_monthly_income" not in st.session_state:
         st.session_state["pg_monthly_income"] = 0.0
     if "pg_rows" not in st.session_state:
-        st.session_state["pg_rows"] = pg.empty_portfolio(4)
+        st.session_state["pg_rows"] = pg.empty_portfolio(3)
 
     client = st.text_input(
         "客戶名稱（可留空）",
@@ -3390,38 +3410,126 @@ def page_protection_gap():
         st.rerun()
 
     st.markdown("#### 已有保單")
-    st.caption("保單類型 · 保險公司 · 保額 · 每月保費（有買 ≠ 買夠）")
+    st.caption("逐行輸入更穩陣（唔會㩒 Enter 就清數）。保險公司欄較窄，保額／保費較闊。")
 
-    edited = st.data_editor(
-        pd.DataFrame(st.session_state["pg_rows"]),
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "保單類型": st.column_config.SelectboxColumn(
+    portfolio = list(st.session_state.get("pg_rows") or pg.empty_portfolio(3))
+    # Seed row widget keys once from portfolio (never overwrite live widget values)
+    for i, row in enumerate(portfolio):
+        if f"pg_r{i}_type" not in st.session_state:
+            st.session_state[f"pg_r{i}_type"] = str(row.get("保單類型") or "人壽保險")
+        if f"pg_r{i}_company" not in st.session_state:
+            st.session_state[f"pg_r{i}_company"] = str(row.get("保險公司") or "")
+        if f"pg_r{i}_cover" not in st.session_state:
+            st.session_state[f"pg_r{i}_cover"] = float(row.get("保額") or 0)
+        if f"pg_r{i}_premium" not in st.session_state:
+            st.session_state[f"pg_r{i}_premium"] = float(row.get("保費") or 0)
+
+    # Header (desktop)
+    if not MOBILE:
+        h1, h2, h3, h4, h5 = st.columns([1.15, 0.85, 1.45, 1.25, 0.45])
+        h1.caption("保單類型")
+        h2.caption("保險公司")
+        h3.caption("保額")
+        h4.caption("保費（每月）")
+        h5.caption("")
+
+    collected: list[dict] = []
+    for i in range(len(portfolio)):
+        if MOBILE:
+            st.markdown(f"**保單 {i + 1}**")
+            ptype = st.selectbox(
                 "保單類型",
-                options=pg.POLICY_TYPES,
-                required=True,
-                width="medium",
-            ),
-            "保險公司": st.column_config.TextColumn("保險公司", width="medium"),
-            "保額": st.column_config.NumberColumn(
-                "保額", min_value=0, step=100000, format="$%d", width="small"
-            ),
-            "保費": st.column_config.NumberColumn(
-                "保費（每月）", min_value=0, step=100, format="$%d", width="small"
-            ),
-        },
-        key="pg_editor",
-    )
+                pg.POLICY_TYPES,
+                key=f"pg_r{i}_type",
+                label_visibility="collapsed",
+            )
+            company = st.text_input(
+                "保險公司",
+                key=f"pg_r{i}_company",
+                placeholder="例如 AIA",
+                label_visibility="collapsed",
+            )
+            c_a, c_b = st.columns([1.15, 1.0])
+            with c_a:
+                cover = st.number_input(
+                    "保額",
+                    min_value=0.0,
+                    step=100000.0,
+                    format="%.0f",
+                    key=f"pg_r{i}_cover",
+                )
+            with c_b:
+                premium = st.number_input(
+                    "保費（每月）",
+                    min_value=0.0,
+                    step=100.0,
+                    format="%.0f",
+                    key=f"pg_r{i}_premium",
+                )
+            if st.button("刪除呢行", key=f"pg_del_{i}", use_container_width=True):
+                st.session_state["_pg_drop_row"] = i
+                st.rerun()
+            st.divider()
+        else:
+            c1, c2, c3, c4, c5 = st.columns([1.15, 0.85, 1.45, 1.25, 0.45])
+            with c1:
+                ptype = st.selectbox(
+                    "保單類型",
+                    pg.POLICY_TYPES,
+                    key=f"pg_r{i}_type",
+                    label_visibility="collapsed",
+                )
+            with c2:
+                company = st.text_input(
+                    "保險公司",
+                    key=f"pg_r{i}_company",
+                    placeholder="AIA",
+                    label_visibility="collapsed",
+                )
+            with c3:
+                cover = st.number_input(
+                    "保額",
+                    min_value=0.0,
+                    step=100000.0,
+                    format="%.0f",
+                    key=f"pg_r{i}_cover",
+                    label_visibility="collapsed",
+                )
+            with c4:
+                premium = st.number_input(
+                    "保費",
+                    min_value=0.0,
+                    step=100.0,
+                    format="%.0f",
+                    key=f"pg_r{i}_premium",
+                    label_visibility="collapsed",
+                )
+            with c5:
+                if st.button("✕", key=f"pg_del_{i}", help="刪除呢行"):
+                    st.session_state["_pg_drop_row"] = i
+                    st.rerun()
 
-    # Keep session copy in sync for next run (plain records only — no DataFrame)
-    try:
-        st.session_state["pg_rows"] = edited.to_dict("records")
-    except Exception:
-        pass
+        collected.append(
+            {
+                "保單類型": ptype,
+                "保險公司": company,
+                "保額": cover,
+                "保費": premium,
+            }
+        )
 
-    rows = pg.normalize_rows(edited.to_dict("records") if edited is not None else [])
+    # Persist plain rows for navigation / reset (widgets keep live values via keys)
+    st.session_state["pg_rows"] = collected
+
+    b_add, b_hint = st.columns([1, 2])
+    with b_add:
+        if st.button("＋ 加多一份保單", use_container_width=True, key="pg_add_row"):
+            st.session_state["_pg_add_row"] = True
+            st.rerun()
+    with b_hint:
+        st.caption("輸入後數字會保留；唔使驚㩒 Enter。")
+
+    rows = pg.normalize_rows(collected)
     gaps = pg.gap_table(rows, targets)
     total_prem = pg.total_monthly_premium(rows)
     total_gap = sum(float(g["保障缺口"]) for g in gaps if g["保單類型"] != "其他")
@@ -3580,4 +3688,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T13:30Z
+# cloud_redeploy_stamp: 2026-10-15T13:40Z
