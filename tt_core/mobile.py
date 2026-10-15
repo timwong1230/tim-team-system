@@ -87,8 +87,8 @@ def inject_pwa_head() -> None:
   const doc = window.parent.document;
   const head = doc.head || doc.getElementsByTagName('head')[0];
   if (!head) return;
-  if (head.getAttribute('data-tt-pwa') === 'ace-v1') return;
-  head.setAttribute('data-tt-pwa', 'ace-v1');
+  if (head.getAttribute('data-tt-pwa') === 'ace-v2') return;
+  head.setAttribute('data-tt-pwa', 'ace-v2');
 
   function upsertMeta(attr, key, value) {{
     let el = head.querySelector('meta[' + attr + '="' + key + '"]');
