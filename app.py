@@ -687,12 +687,18 @@ try:
 except Exception:
     MOBILE = False
 
-st.set_page_config(
-    page_title=BRAND_NAME,
-    page_icon=page_icon_arg(),
-    layout="centered" if MOBILE else "wide",
-    initial_sidebar_state="collapsed" if MOBILE else "expanded",
-)
+try:
+    st.set_page_config(
+        page_title=BRAND_NAME,
+        page_icon=page_icon_arg(),
+        layout="centered" if MOBILE else "wide",
+        initial_sidebar_state="collapsed" if MOBILE else "expanded",
+    )
+except Exception:
+    try:
+        st.set_page_config(page_title=BRAND_NAME, page_icon="🃏")
+    except Exception:
+        pass
 try:
     inject_pwa_head()
 except Exception:
@@ -752,6 +758,7 @@ if not st.session_state["logged_in"]:
         )
         render_install_guide(compact=True)
         st.caption("每年目標：M + 2")
+        st.caption("若見到 Oh no：Streamlit Cloud → Manage app → Reboot，再重新開啟。")
     else:
         c1, c2, c3 = st.columns([1, 1.4, 1])
         with c2:
@@ -797,23 +804,34 @@ if not st.session_state.get("user"):
     st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
 
-# Warm disk cache once per browser session so pages read locally (fast + offline-safe)
-if not st.session_state.get("_warmed_at"):
-    try:
-        with st.spinner("正在載入團隊數據（首次會稍慢，之後會用快取）…"):
-            warm_cache(force=False)
-    except Exception:
-        st.session_state["_warmed_at"] = True
+# One-time escape hatch after previous crash / bad menu
+if st.session_state.get("_force_home_once"):
+    st.session_state["_menu_choice"] = "🏠 我的主頁"
+    st.session_state.pop("_force_home_once", None)
 
+# Warm disk cache once per browser session so pages read locally (fast + offline-safe)
 try:
-    check_notifications(st.session_state.get("user"))
-except Exception:
-    pass
-is_leader = st.session_state.get("role") == "Leader"
-try:
-    conn = connection_banner_state()
-except Exception:
-    conn = {"level": "unknown", "label": "數據狀態未知", "age": None, "raw": {}}
+    if not st.session_state.get("_warmed_at"):
+        try:
+            with st.spinner("正在載入團隊數據（首次會稍慢，之後會用快取）…"):
+                warm_cache(force=False)
+        except Exception:
+            st.session_state["_warmed_at"] = True
+
+    try:
+        check_notifications(st.session_state.get("user"))
+    except Exception:
+        pass
+    is_leader = st.session_state.get("role") == "Leader"
+    try:
+        conn = connection_banner_state()
+    except Exception:
+        conn = {"level": "unknown", "label": "數據狀態未知", "age": None, "raw": {}}
+except Exception as e:
+    st.session_state.clear()
+    st.error(f"啟動失敗，已重置登入：{e}")
+    st.info("請重新登入。若仍然 Oh no，請去 Streamlit Cloud → Manage app → Reboot。")
+    st.stop()
 
 menu_items = [
     "🏠 我的主頁",
@@ -2754,13 +2772,12 @@ def _safe_page(label: str, fn):
     try:
         fn()
     except Exception as e:
+        st.session_state["_force_home_once"] = True
+        st.session_state["_menu_choice"] = "🏠 我的主頁"
         st.error(f"{label} 暫時無法開啟：{e}")
         st.caption("可以撳側欄其他功能，或登出再入。若持續出現請 Reboot app。")
-        # Escape sticky broken menu (e.g. 常用表格 after a bad deploy)
-        if "常用表格" in str(label):
-            st.session_state["_menu_choice"] = "🏠 我的主頁"
-            if st.button("返回主頁", type="primary"):
-                st.rerun()
+        if st.button("返回主頁", type="primary", key=f"safe_home_{label}"):
+            st.rerun()
 
 if "我的主頁" in menu:
     _safe_page("我的主頁", page_home)

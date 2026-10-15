@@ -16,7 +16,6 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
-from googleapiclient.http import MediaIoBaseUpload
 
 from tt_core.db import read_data, run_query_gs
 from tt_core.iris_drive import (
@@ -261,6 +260,10 @@ def upload_form(
 
     mime = mime or _guess_mime(filename)
     meta = {"name": filename, "parents": [folder_id]}
+    try:
+        from googleapiclient.http import MediaIoBaseUpload
+    except Exception as e:
+        return {"ok": False, "error": f"缺少 Drive 上傳套件：{e}"}
     media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime, resumable=True)
     try:
         created = (
