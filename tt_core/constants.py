@@ -54,14 +54,6 @@ TEMPLATE_NEWBIE = (
     "下次 Review 日期: "
 )
 
-AMMO_CATEGORIES = [
-    "行為金融學 (理智漏洞)",
-    "醫療理賠 (危機感)",
-    "財富傳承 (家族案例)",
-    "資產配置 (觀念導正)",
-    "市場熱話 / 政策解讀",
-]
-
 # Common FWD Iris / production-report header aliases (case-insensitive match)
 IRIS_AGENT_ALIASES = [
     "agent name",
@@ -213,6 +205,16 @@ SHEET_SCHEMAS = {
         "dream",
         "scenario",
         "timestamp",
+    ],
+    "quarterly_offers": [
+        "id",
+        "quarter",
+        "kind",
+        "title",
+        "detail",
+        "note",
+        "sort",
+        "updated_at",
     ],
     "iris_agent_map": ["iris_name", "iris_code", "username", "notes"],
     "iris_sync_log": [

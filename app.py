@@ -19,7 +19,6 @@ import streamlit.components.v1 as components
 
 from tt_core.constants import (
     ACTIVITY_TYPES,
-    AMMO_CATEGORIES,
     MDRT_TARGET,
     Q1_TARGET,
     WEEKLY_MIN_ACTS,
@@ -27,8 +26,9 @@ from tt_core.constants import (
 )
 from tt_core.data import (
     add_act,
-    add_ammo,
+    add_quarterly_offer,
     check_notifications,
+    delete_quarterly_offer,
     get_activity_style,
     get_all_act,
     get_clean_users,
@@ -37,6 +37,7 @@ from tt_core.data import (
     get_member_snapshot,
     get_note_template,
     get_q1_data,
+    get_quarterly_offer_items,
     get_weekly_data,
     last_iris_sync,
     login,
@@ -46,6 +47,7 @@ from tt_core.data import (
     update_avt,
     update_pw,
 )
+from tt_core.quarterly_offers import QUARTERS, current_quarter_key
 from tt_core.db import (
     connection_banner_state,
     init_db_gs,
@@ -512,7 +514,7 @@ menu_items = [
     "🏆 年度挑戰",
     "⚖️ 每週挑戰",
     "🤝 招募龍虎榜",
-    "📚 彈藥庫",
+    "🎁 季度優惠 & 獎賞",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -1735,107 +1737,120 @@ def page_recruit():
     )
 
 
-def page_ammo():
-    st.markdown("## Story Depot 彈藥庫")
-    st.caption("將客觀數據轉成真實故事：噩夢 vs 美夢")
+def _render_offer_cards(items: list[dict], *, empty_hint: str) -> None:
+    if not items:
+        st.info(empty_hint)
+        return
+    for item in items:
+        title = _esc(item.get("title", ""))
+        detail = _esc(item.get("detail", "")).replace("\n", "<br>")
+        note = str(item.get("note", "") or "").strip()
+        note_html = (
+            f'<div class="offer-note">{_esc(note)}</div>' if note else ""
+        )
+        st.markdown(
+            f"""
+            <div class="offer-card">
+              <div class="offer-title">{title}</div>
+              <div class="offer-detail">{detail}</div>
+              {note_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    active_pool_df = get_clean_users()
-    roster_pool = (
-        active_pool_df[~active_pool_df["username"].isin(["Admin", "Tim"])]["username"]
-        .dropna()
-        .unique()
-        .tolist()
+
+def page_quarterly_offers():
+    st.markdown("## 季度優惠 & 獎賞")
+    st.caption("每個季度嘅客戶優惠同營業員獎賞 — 方便出嚟見客即查。")
+
+    q_keys = list(QUARTERS.keys())
+    cur = current_quarter_key()
+    default_idx = q_keys.index(cur) if cur in q_keys else 0
+    labels = [f"{k} {QUARTERS[k]['label']}（{QUARTERS[k]['period']}）" for k in q_keys]
+    choice = st.radio(
+        "季度",
+        options=q_keys,
+        index=default_idx,
+        format_func=lambda k: labels[q_keys.index(k)],
+        horizontal=not MOBILE,
+        label_visibility="collapsed",
     )
-    roster_pool.sort()
-    if not roster_pool:
-        roster_pool = [u for u in active_pool_df["username"].unique() if u != "Admin"] or ["本週負責同事"]
-    curr_week_num = datetime.date.today().isocalendar()[1]
-    this_week_duty = roster_pool[curr_week_num % len(roster_pool)]
-
+    meta = QUARTERS[choice]
     st.markdown(
         f"""
-        <div class="challenge-header-box" style="border-left-color:#9b59b6;background:linear-gradient(to right,#f4ecf7,#ffffff);">
-          <div style="font-weight:800;color:#9b59b6;">本週 Drill Training（Week {curr_week_num}）</div>
-          輪值主講：<strong style="color:#9b59b6;">【 {this_week_duty} 】</strong><br>
-          固定主講：<strong style="color:#D4AF37;">【 Tim 】</strong>
+        <div class="challenge-header-box">
+          <strong>{choice} {meta['label']}</strong> · {meta['period']}<br>
+          <span style="color:#6B7280;font-size:0.92rem;">而家系統季度：{cur}</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    tab_submit, tab_library = st.tabs(["提交知識素材", "團隊武器庫"])
-    with tab_submit:
-        with st.form("ammo_form", clear_on_submit=True):
-            c_cat, c_date = st.columns(2)
-            cat = c_cat.selectbox("知識點範疇", AMMO_CATEGORIES)
-            d = c_date.date_input("提交日期", value=datetime.date.today())
-            title = st.text_input("知識點主題 (Hook)", placeholder="e.g. 隱形醫療通脹")
-            knowledge = st.text_area("專業知識點", height=80)
-            story_context = st.text_area("真實故事背景", height=80)
-            c_night, c_dream = st.columns(2)
-            nightmare = c_night.text_area("噩夢畫面", height=140)
-            dream = c_dream.text_area("美夢畫面", height=140)
-            scenario = st.text_input("實戰場景")
-            if st.form_submit_button("儲存知識素材", type="primary"):
-                if title and knowledge and story_context:
-                    add_ammo(
-                        st.session_state["user"],
-                        d,
-                        cat,
-                        title,
-                        knowledge,
-                        story_context,
-                        nightmare,
-                        dream,
-                        scenario,
-                    )
-                    st.toast("知識點提交成功！", icon="💥")
-                else:
-                    st.error("「標題」「知識點」「真實故事」必填")
-
-    with tab_library:
-        df_ammo = read_data("story_ammo")
-        if df_ammo.empty or "knowledge" not in df_ammo.columns:
-            st.info("武器庫仲係空 — 提交第一批素材啦。")
-            return
-        df_ammo = df_ammo.drop_duplicates(subset=["id"], keep="first").sort_values(
-            by="id", ascending=False
+    customer_items = get_quarterly_offer_items(choice, "customer")
+    agent_items = get_quarterly_offer_items(choice, "agent")
+    tab_c, tab_a = st.tabs(["客戶優惠", "營業員獎賞"])
+    with tab_c:
+        _render_offer_cards(
+            customer_items,
+            empty_hint="呢季暫時未有客戶優惠資料。Leader 可喺下面加入，或再 upload 文件畀系統更新。",
         )
-        col_s, col_f = st.columns([2, 1])
-        search_kw = col_s.text_input("關鍵字搜尋", placeholder="標題或故事…")
-        filter_cat = col_f.selectbox("分類", ["全部"] + df_ammo["category"].unique().tolist())
-        filtered = df_ammo
-        if filter_cat != "全部":
-            filtered = filtered[filtered["category"] == filter_cat]
-        if search_kw:
-            filtered = filtered[
-                filtered["title"].str.contains(search_kw, na=False)
-                | filtered["knowledge"].str.contains(search_kw, na=False)
-                | filtered["story_context"].str.contains(search_kw, na=False)
-            ]
-        st.caption(f"武器庫存量：{len(filtered)}")
-        for _, row in filtered.iterrows():
-            with st.expander(f"[{row['category']}] {row['title']}  ·  {row['username']}"):
-                st.markdown(f"**專業知識點：**\n{row['knowledge']}")
-                st.markdown(f"**真實故事：**\n{row['story_context']}")
-                c_n, c_d = st.columns(2)
-                with c_n:
-                    if row.get("nightmare"):
-                        st.markdown(
-                            f"<div class='ammo-nightmare'><strong>噩夢：</strong><br>{row['nightmare']}</div>",
-                            unsafe_allow_html=True,
-                        )
+    with tab_a:
+        _render_offer_cards(
+            agent_items,
+            empty_hint="呢季暫時未有營業員獎賞資料。Leader 可喺下面加入，或再 upload 文件畀系統更新。",
+        )
+
+    if is_leader:
+        with st.expander("Leader：新增 / 刪除優惠項目", expanded=False):
+            st.caption("寫入 Google Sheet `quarterly_offers`。有 Sheet 資料時會覆蓋該季預設內容。")
+            with st.form("quarterly_offer_form", clear_on_submit=True):
+                kind = st.selectbox(
+                    "類型",
+                    ["customer", "agent"],
+                    format_func=lambda k: "客戶優惠" if k == "customer" else "營業員獎賞",
+                )
+                title = st.text_input("標題", placeholder="e.g. 首年保費折扣 / FYC Bonus")
+                detail = st.text_area("詳情", height=100)
+                note = st.text_input("備註（可留空）", placeholder="限期、條款提示…")
+                sort = st.number_input("排序", min_value=0, value=0, step=1)
+                if st.form_submit_button("新增項目", type="primary"):
+                    if title.strip() and detail.strip():
+                        if add_quarterly_offer(choice, kind, title, detail, note, int(sort)):
+                            st.toast("已新增", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error("儲存失敗，請稍後再試")
                     else:
-                        st.warning("噩夢畫面待 Training 討論")
-                with c_d:
-                    if row.get("dream"):
-                        st.markdown(
-                            f"<div class='ammo-dream'><strong>美夢：</strong><br>{row['dream']}</div>",
-                            unsafe_allow_html=True,
+                        st.error("標題同詳情必填")
+
+            st.divider()
+            st.caption(f"刪除 {choice} 已存項目（只刪 Sheet 入面嘅）")
+            try:
+                df_all = read_data("quarterly_offers")
+            except Exception:
+                df_all = pd.DataFrame()
+            if df_all is None or df_all.empty or "quarter" not in df_all.columns:
+                st.info("Sheet 未有項目")
+            else:
+                work = df_all.copy()
+                work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
+                work = work[work["quarter"] == choice]
+                if work.empty:
+                    st.info("呢季 Sheet 未有項目")
+                else:
+                    for _, row in work.iterrows():
+                        kind_label = (
+                            "客戶優惠"
+                            if str(row.get("kind", "")).lower() == "customer"
+                            else "營業員獎賞"
                         )
-                    else:
-                        st.warning("美夢畫面待 Training 討論")
-                st.caption(f"場景：{row.get('scenario','')} · {row.get('date','')}")
+                        c1, c2 = st.columns([4, 1])
+                        c1.markdown(f"**[{kind_label}]** {row.get('title', '')}")
+                        if c2.button("刪除", key=f"del_offer_{row.get('id')}"):
+                            if delete_quarterly_offer(row.get("id")):
+                                st.toast("已刪除", icon="🗑️")
+                                st.rerun()
 
 
 def page_profile():
@@ -1905,7 +1920,7 @@ elif "每週" in menu:
     page_challenge()
 elif "招募" in menu:
     page_recruit()
-elif "彈藥庫" in menu:
-    page_ammo()
+elif "季度優惠" in menu:
+    page_quarterly_offers()
 elif "設定" in menu:
     page_profile()
