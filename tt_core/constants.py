@@ -230,4 +230,16 @@ SHEET_SCHEMAS = {
         "note",
     ],
     "system_settings": ["id", "key", "value", "updated_at"],
+    "common_forms": [
+        "id",
+        "title",
+        "category",
+        "filename",
+        "mime",
+        "drive_file_id",
+        "size_bytes",
+        "uploaded_by",
+        "uploaded_at",
+        "note",
+    ],
 }

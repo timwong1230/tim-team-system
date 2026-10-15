@@ -808,6 +808,7 @@ menu_items = [
     "⚖️ 每週挑戰",
     "🤝 招募龍虎榜",
     "🎁 季度優惠 & 獎賞",
+    "📁 常用表格",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -2215,6 +2216,178 @@ def page_quarterly_offers():
                                 st.rerun()
 
 
+def _common_forms():
+    """Lazy-load 常用表格 helpers (Cloud may cache older tt_core without this module)."""
+    try:
+        import tt_core.common_forms as m
+
+        return m
+    except Exception:
+        return None
+
+
+def page_common_forms():
+    st.markdown("## 常用表格")
+    st.caption("簽單／行政常用文件一站下載。Leader 可上傳、分類同刪除。")
+
+    cf = _common_forms()
+    if cf is None:
+        st.error("常用表格模組未能載入。請去 Streamlit Manage app → Reboot 後再試。")
+        return
+
+    categories = list(getattr(cf, "CATEGORIES", ["簽單表格", "行政文件", "培訓資料", "客戶文件", "其他"]))
+    folder_id = ""
+    try:
+        folder_id = str(cf.get_folder_id() or "").strip()
+    except Exception:
+        folder_id = ""
+
+    if is_leader:
+        with st.expander("Leader：Drive 資料夾設定", expanded=not bool(folder_id)):
+            st.markdown(cf.setup_hint())
+            raw = st.text_input(
+                "常用表格 Folder ID / Drive 連結",
+                value=folder_id,
+                placeholder="https://drive.google.com/drive/folders/…",
+                key="common_forms_folder_input",
+            )
+            if st.button("儲存資料夾", type="primary", key="common_forms_save_folder"):
+                if cf.save_folder_id(raw):
+                    st.toast("已儲存常用表格資料夾", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("請貼上有效嘅 Folder ID 或 Drive 連結")
+            if folder_id:
+                st.caption(f"而家 Folder ID：`{folder_id}`")
+
+        with st.expander("Leader：上傳文件", expanded=bool(folder_id)):
+            if not folder_id:
+                st.warning("請先完成上面嘅 Drive 資料夾設定，先可以上傳。")
+            else:
+                with st.form("common_forms_upload", clear_on_submit=True):
+                    title = st.text_input("顯示名稱", placeholder="e.g. 轉保申請表 / 客戶資料更改表")
+                    category = st.selectbox("分類", categories)
+                    note = st.text_input("備註（可留空）", placeholder="用途、版本、注意事項…")
+                    uploaded = st.file_uploader(
+                        "選擇檔案",
+                        type=[
+                            "pdf",
+                            "doc",
+                            "docx",
+                            "xls",
+                            "xlsx",
+                            "csv",
+                            "png",
+                            "jpg",
+                            "jpeg",
+                            "gif",
+                            "webp",
+                            "txt",
+                            "zip",
+                        ],
+                    )
+                    if st.form_submit_button("上傳", type="primary"):
+                        if not uploaded:
+                            st.error("請先選擇檔案")
+                        else:
+                            display = (title or "").strip() or Path(uploaded.name).stem
+                            result = cf.upload_form(
+                                title=display,
+                                category=category,
+                                filename=uploaded.name,
+                                data=uploaded.getvalue(),
+                                uploaded_by=st.session_state.get("user", ""),
+                                note=note,
+                                mime=getattr(uploaded, "type", None) or None,
+                            )
+                            if result.get("ok"):
+                                st.toast(f"已上傳：{display}", icon="✅")
+                                st.rerun()
+                            else:
+                                st.error(result.get("error") or "上傳失敗")
+
+    filter_opts = ["全部"] + categories
+    cat_filter = st.radio(
+        "分類",
+        options=filter_opts,
+        horizontal=not MOBILE,
+        key="common_forms_cat_filter",
+    )
+
+    try:
+        df = cf.list_forms(category=None if cat_filter == "全部" else cat_filter)
+    except Exception as e:
+        st.error(f"讀取清單失敗：{e}")
+        return
+
+    if df is None or df.empty:
+        st.info(
+            "暫時未有文件。"
+            + (" Leader 上傳後，同事就可以喺呢度下載。" if is_leader else " 請聯絡 Leader 上傳常用表格。")
+        )
+        return
+
+    st.caption(f"共 {len(df)} 份文件")
+    for _, row in df.iterrows():
+        rid = row.get("id", "")
+        title = str(row.get("title", "") or row.get("filename", "") or "未命名")
+        cat = str(row.get("category", "") or "其他")
+        fname = str(row.get("filename", "") or "")
+        note = str(row.get("note", "") or "").strip()
+        by = str(row.get("uploaded_by", "") or "")
+        at = str(row.get("uploaded_at", "") or "")[:16]
+        size_label = cf.format_size(row.get("size_bytes", 0))
+        drive_id = str(row.get("drive_file_id", "") or "").strip()
+
+        st.markdown(
+            f"""
+            <div class="challenge-header-box" style="margin-bottom:0.55rem;">
+              <strong>{title}</strong>
+              <span style="color:#6B7280;font-size:0.9rem;"> · {cat}</span><br>
+              <span style="color:#6B7280;font-size:0.88rem;">{fname} · {size_label}</span>
+              {"<br><span style='color:#6B7280;font-size:0.88rem;'>" + note + "</span>" if note else ""}
+              <br><span style="color:#9CA3AF;font-size:0.8rem;">上傳：{by or "—"} · {at or "—"}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        cols = st.columns([2, 1] if is_leader else [1])
+        cache_key = f"_form_dl_{rid}"
+        with cols[0]:
+            if not drive_id:
+                st.warning("缺少 Drive 檔案 ID")
+            else:
+                cached = st.session_state.get(cache_key)
+                if cached is None:
+                    if st.button("下載", key=f"prep_form_{rid}", use_container_width=True):
+                        try:
+                            with st.spinner("準備檔案…"):
+                                st.session_state[cache_key] = cf.download_form_bytes(drive_id)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"下載失敗：{e}")
+                else:
+                    st.download_button(
+                        "儲存到裝置",
+                        data=cached,
+                        file_name=fname or f"{title}.bin",
+                        mime=str(row.get("mime") or "application/octet-stream"),
+                        key=f"dl_form_{rid}",
+                        use_container_width=True,
+                        type="primary",
+                    )
+        if is_leader and len(cols) > 1:
+            with cols[1]:
+                if st.button("刪除", key=f"del_form_{rid}", use_container_width=True):
+                    result = cf.delete_form(rid, drive_id or None)
+                    if result.get("ok"):
+                        st.session_state.pop(cache_key, None)
+                        st.toast("已刪除", icon="🗑️")
+                        st.rerun()
+                    else:
+                        st.error(result.get("error") or "刪除失敗")
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -2284,5 +2457,7 @@ elif "招募" in menu:
     page_recruit()
 elif "季度優惠" in menu:
     page_quarterly_offers()
+elif "常用表格" in menu:
+    page_common_forms()
 elif "設定" in menu:
     page_profile()

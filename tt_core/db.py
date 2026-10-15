@@ -37,6 +37,7 @@ CORE_SHEETS = [
     "iris_agent_map",
     "iris_sync_log",
     "system_settings",
+    "common_forms",
 ]
 
 
@@ -281,6 +282,7 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
             "quarterly_offers",
             "iris_sync_log",
             "system_settings",
+            "common_forms",
         }:
             if "id" not in data_dict or not data_dict["id"]:
                 data_dict["id"] = cache_store.next_id(sheet_name)
