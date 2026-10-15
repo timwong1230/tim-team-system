@@ -456,6 +456,33 @@ def _bytes_from_upload(uploaded, *, max_bytes: int) -> tuple[bytes, str]:
     return raw, name
 
 
+def _json_safe_cell(v):
+    """Convert one cell to a session_state-safe scalar."""
+    try:
+        if v is None:
+            return None
+        if isinstance(v, (bool, str)):
+            return v
+        if isinstance(v, int) and not isinstance(v, bool):
+            return int(v)
+        if isinstance(v, float):
+            return None if pd.isna(v) else float(v)
+        if hasattr(v, "item"):
+            try:
+                return _json_safe_cell(v.item())
+            except Exception:
+                pass
+        # pandas NA / NaT
+        try:
+            if pd.isna(v):
+                return None
+        except Exception:
+            pass
+        return str(v)
+    except Exception:
+        return None
+
+
 def _store_iris_preview(preview) -> None:
     """Persist iris preview as plain rows — never a DataFrame (Cloud Oh-no risk)."""
     st.session_state.pop("_iris_last_preview", None)  # drop legacy DF key
@@ -465,27 +492,7 @@ def _store_iris_preview(preview) -> None:
     rows: list[dict] = []
     try:
         for rec in preview.to_dict("records"):
-            row: dict = {}
-            for k, v in rec.items():
-                key = str(k)
-                try:
-                    if v is None:
-                        row[key] = None
-                    elif isinstance(v, (bool, str, int, float)):
-                        row[key] = v
-                    elif hasattr(v, "item"):
-                        row[key] = v.item()
-                    else:
-                        # NaN / Timestamp / other → JSON-safe string or None
-                        if isinstance(v, float) and pd.isna(v):
-                            row[key] = None
-                        else:
-                            row[key] = v if isinstance(v, (list, dict)) else (
-                                None if pd.isna(v) else str(v)
-                            )
-                except Exception:
-                    row[key] = str(v) if v is not None else None
-            rows.append(row)
+            rows.append({str(k): _json_safe_cell(v) for k, v in rec.items()})
     except Exception:
         rows = []
     st.session_state["_iris_last_preview_rows"] = rows
