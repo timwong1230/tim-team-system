@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 import streamlit as st
 import streamlit.components.v1 as components
+
+from tt_core.branding import BRAND_NAME, BRAND_SYSTEM, icon_data_uri
 
 
 def is_mobile() -> bool:
@@ -38,90 +42,109 @@ def is_ios() -> bool:
 
 def inject_pwa_head() -> None:
     """
-    Inject iOS / PWA meta tags into <head> so Safari「加到主畫面」
+    Inject iOS / PWA meta tags into <head> so Safari Add to Home Screen
     opens as a standalone app (no browser chrome).
     """
+    icon = icon_data_uri(180)
+    icon_big = icon_data_uri(512) or icon
+    if not icon:
+        return
+
+    manifest = {
+        "name": BRAND_SYSTEM,
+        "short_name": BRAND_NAME,
+        "start_url": ".",
+        "display": "standalone",
+        "background_color": "#0A0D14",
+        "theme_color": "#0A0D14",
+        "lang": "zh-Hant",
+        "icons": [
+            {
+                "src": icon,
+                "sizes": "180x180",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+            {
+                "src": icon_big,
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+        ],
+    }
+    icon_js = json.dumps(icon)
+    icon_big_js = json.dumps(icon_big)
+    brand_js = json.dumps(BRAND_NAME)
+    manifest_js = json.dumps(manifest)
+
     components.html(
-        """
+        f"""
 <!DOCTYPE html>
 <html><head></head><body>
 <script>
-(function () {
+(function () {{
   const doc = window.parent.document;
   const head = doc.head || doc.getElementsByTagName('head')[0];
-  if (!head || head.getAttribute('data-tt-pwa') === '1') return;
-  head.setAttribute('data-tt-pwa', '1');
+  if (!head) return;
+  if (head.getAttribute('data-tt-pwa') === 'ace-v1') return;
+  head.setAttribute('data-tt-pwa', 'ace-v1');
 
-  function upsertMeta(attr, key, value) {
+  function upsertMeta(attr, key, value) {{
     let el = head.querySelector('meta[' + attr + '="' + key + '"]');
-    if (!el) {
+    if (!el) {{
       el = doc.createElement('meta');
       el.setAttribute(attr, key);
       head.appendChild(el);
-    }
+    }}
     el.setAttribute('content', value);
-  }
+  }}
 
-  function upsertLink(rel, href, sizes) {
+  function upsertLink(rel, href, sizes) {{
     let el = head.querySelector('link[rel="' + rel + '"]' + (sizes ? '[sizes="' + sizes + '"]' : ''));
-    if (!el) {
+    if (!el) {{
       el = doc.createElement('link');
       el.setAttribute('rel', rel);
       if (sizes) el.setAttribute('sizes', sizes);
       head.appendChild(el);
-    }
+    }}
     el.setAttribute('href', href);
-  }
+  }}
+
+  const icon = {icon_js};
+  const iconBig = {icon_big_js};
+  const brand = {brand_js};
 
   upsertMeta('name', 'viewport',
     'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no');
   upsertMeta('name', 'apple-mobile-web-app-capable', 'yes');
   upsertMeta('name', 'mobile-web-app-capable', 'yes');
   upsertMeta('name', 'apple-mobile-web-app-status-bar-style', 'black-translucent');
-  upsertMeta('name', 'apple-mobile-web-app-title', 'TIM TEAM');
-  upsertMeta('name', 'application-name', 'TIM TEAM');
-  upsertMeta('name', 'theme-color', '#1C2430');
+  upsertMeta('name', 'apple-mobile-web-app-title', brand);
+  upsertMeta('name', 'application-name', brand);
+  upsertMeta('name', 'theme-color', '#0A0D14');
 
-  // Gold TIM icon (SVG data URI) — works as home-screen icon
-  const icon =
-    'data:image/svg+xml,' + encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">' +
-      '<rect width="180" height="180" rx="40" fill="#1C2430"/>' +
-      '<circle cx="90" cy="90" r="62" fill="none" stroke="#D4AF37" stroke-width="6"/>' +
-      '<text x="90" y="104" text-anchor="middle" font-family="Georgia, serif" font-size="42" font-weight="700" fill="#D4AF37">TIM</text>' +
-      '</svg>'
-    );
   upsertLink('apple-touch-icon', icon, '180x180');
   upsertLink('icon', icon, '180x180');
+  upsertLink('icon', iconBig, '512x512');
 
-  // Minimal web manifest via blob URL
-  const manifest = {
-    name: 'TIM TEAM System',
-    short_name: 'TIM TEAM',
-    start_url: '.',
-    display: 'standalone',
-    background_color: '#1C2430',
-    theme_color: '#1C2430',
-    lang: 'zh-Hant',
-    icons: [{ src: icon, sizes: '180x180', type: 'image/svg+xml', purpose: 'any maskable' }]
-  };
-  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const manifest = {manifest_js};
+  const blob = new Blob([JSON.stringify(manifest)], {{ type: 'application/manifest+json' }});
   const url = URL.createObjectURL(blob);
   let link = head.querySelector('link[rel="manifest"]');
-  if (!link) {
+  if (!link) {{
     link = doc.createElement('link');
     link.rel = 'manifest';
     head.appendChild(link);
-  }
+  }}
   link.href = url;
 
-  // Hide Streamlit chrome a bit when launched from home screen
   const standalone = window.parent.navigator.standalone === true
     || window.parent.matchMedia('(display-mode: standalone)').matches;
-  if (standalone) {
+  if (standalone) {{
     doc.documentElement.setAttribute('data-tt-standalone', '1');
-  }
-})();
+  }}
+}})();
 </script>
 </body></html>
         """,
@@ -131,32 +154,26 @@ def inject_pwa_head() -> None:
 
 
 def render_install_guide(*, compact: bool = False) -> None:
-    """Safari → Add to Home Screen instructions."""
-    title = "加到 iPhone 主畫面（變 App）"
-    body = """
-1. 用 **Safari** 打開本網站（唔好用 Chrome）
-2. 撳底部分享按鈕 **□↑**
-3. 向下滑，揀 **「加到主畫面」/ Add to Home Screen**
-4. 名稱用 **TIM TEAM** → 新增
-5. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）
-"""
+    """Safari Add to Home Screen instructions."""
+    body_zh = (
+        "1. 用 **Safari** 打開本網站（唔好用 Chrome）\n"
+        "2. 撳底部分享按鈕\n"
+        "3. 揀 **加到主畫面 / Add to Home Screen**\n"
+        f"4. 名稱用 **{BRAND_NAME}** → 新增\n"
+        "5. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）\n"
+    )
     if compact:
-        with st.expander(title, expanded=False):
-            st.markdown(body)
-            st.caption("iPad 同樣步驟。Android：Chrome 選單 →「安裝應用程式」。")
+        with st.expander("加到 iPhone 主畫面（變 App）", expanded=False):
+            st.markdown(body_zh)
+            st.caption("iPad 同樣步驟。Android：Chrome 選單 → 安裝應用程式。")
     else:
-        st.markdown(f"### {title}")
-        st.markdown(body)
-        st.info("一次加好，成隊同事主畫面都有 TIM TEAM，打卡會快好多。")
+        st.markdown("### 加到 iPhone 主畫面（變 App）")
+        st.markdown(body_zh)
+        st.info(f"一次加好，成隊同事主畫面都有 {BRAND_NAME}，打卡會快好多。")
 
 
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     """Compact top navigation for phones (avoids opening sidebar every time)."""
-    # Prefer short labels on mobile
-    labels = []
-    for item in menu_items:
-        # keep emoji + first phrase
-        labels.append(item)
     idx = 0
     if current and current in menu_items:
         idx = menu_items.index(current)
