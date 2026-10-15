@@ -466,16 +466,38 @@ def update_last_read_time(username: str):
         pass
 
 
-@st.dialog("團隊最新戰報")
-def show_notification_modal(new_activities, current_user):
-    st.markdown(f"**Hi {current_user}，你不在的時候，團隊發生了以下動態：**")
-    for _, row in new_activities.iterrows():
-        act_time = (
-            pd.to_datetime(row["timestamp"]).strftime("%m/%d %H:%M")
-            if row["timestamp"]
-            else row["date"]
+def _activities_to_plain_rows(df) -> list[dict]:
+    """Plain dict rows only — never put a DataFrame in session_state (Cloud crash risk)."""
+    rows: list[dict] = []
+    if df is None or getattr(df, "empty", True):
+        return rows
+    for _, row in df.iterrows():
+        ts = row.get("timestamp", "")
+        try:
+            act_time = (
+                pd.to_datetime(ts).strftime("%m/%d %H:%M") if ts not in ("", None) else str(row.get("date", "") or "")
+            )
+        except Exception:
+            act_time = str(row.get("date", "") or "")
+        rows.append(
+            {
+                "username": str(row.get("username", "") or ""),
+                "type": str(row.get("type", "") or ""),
+                "note": str(row.get("note", "") or ""),
+                "when": act_time,
+            }
         )
-        st.info(f"**{row['username']}** — {row['type']}\n\n{row['note']}\n\n*{act_time}*")
+    return rows
+
+
+@st.dialog("團隊最新戰報")
+def show_notification_modal(rows, current_user):
+    st.markdown(f"**Hi {current_user}，你不在的時候，團隊發生了以下動態：**")
+    for row in rows or []:
+        st.info(
+            f"**{row.get('username', '')}** — {row.get('type', '')}\n\n"
+            f"{row.get('note', '')}\n\n*{row.get('when', '')}*"
+        )
     st.markdown("---")
     if st.button("收到，知道了", type="primary", use_container_width=True):
         update_last_read_time(current_user)
@@ -488,51 +510,59 @@ def check_notifications(current_user: str):
     """Show unread check-in feed at most once per login session."""
     if not current_user:
         return
-
-    # Keep dialog open across reruns until user dismisses it
-    pending = st.session_state.get("_notif_pending_payload")
-    if pending is not None:
-        show_notification_modal(pending, current_user)
-        return
-
-    # Already handled this login — never pop again while browsing
-    if st.session_state.get("_notif_checked_this_login"):
-        return
-
-    users_df = get_clean_users()
-    act_df = read_data("activities")
-    if users_df.empty or act_df.empty:
-        st.session_state["_notif_checked_this_login"] = True
-        return
-    user_record = users_df[users_df["username"] == current_user]
-    if user_record.empty:
-        st.session_state["_notif_checked_this_login"] = True
-        return
-    last_read_str = str(user_record.iloc[0].get("last_read", ""))
     try:
-        last_read = (
-            pd.to_datetime(last_read_str)
-            if last_read_str and last_read_str != ""
-            else pd.to_datetime("2020-01-01")
-        )
-    except Exception:
-        last_read = pd.to_datetime("2020-01-01")
-    if "timestamp" not in act_df.columns:
+        # Keep dialog open across reruns until user dismisses it
+        pending = st.session_state.get("_notif_pending_payload")
+        if isinstance(pending, list) and pending:
+            show_notification_modal(pending, current_user)
+            return
+        # Clear any legacy / corrupt payload (e.g. old DataFrame) without crashing
+        if pending is not None and not isinstance(pending, list):
+            st.session_state["_notif_pending_payload"] = None
+
+        # Already handled this login — never pop again while browsing
+        if st.session_state.get("_notif_checked_this_login"):
+            return
+
+        users_df = get_clean_users()
+        act_df = read_data("activities")
+        if users_df.empty or act_df.empty:
+            st.session_state["_notif_checked_this_login"] = True
+            return
+        user_record = users_df[users_df["username"] == current_user]
+        if user_record.empty:
+            st.session_state["_notif_checked_this_login"] = True
+            return
+        last_read_str = str(user_record.iloc[0].get("last_read", ""))
+        try:
+            last_read = (
+                pd.to_datetime(last_read_str)
+                if last_read_str and last_read_str != ""
+                else pd.to_datetime("2020-01-01")
+            )
+        except Exception:
+            last_read = pd.to_datetime("2020-01-01")
+        if "timestamp" not in act_df.columns:
+            st.session_state["_notif_checked_this_login"] = True
+            return
+        act_df = act_df.copy()
+        act_df["timestamp_dt"] = pd.to_datetime(act_df["timestamp"], errors="coerce")
+        new_activities = act_df[
+            (act_df["timestamp_dt"] > last_read)
+            & (act_df["username"] != current_user)
+            & (~act_df["username"].isin(INACTIVE_MEMBERS))
+        ]
         st.session_state["_notif_checked_this_login"] = True
-        return
-    act_df["timestamp_dt"] = pd.to_datetime(act_df["timestamp"], errors="coerce")
-    new_activities = act_df[
-        (act_df["timestamp_dt"] > last_read)
-        & (act_df["username"] != current_user)
-        & (~act_df["username"].isin(INACTIVE_MEMBERS))
-    ]
-    st.session_state["_notif_checked_this_login"] = True
-    if not new_activities.empty:
-        # Store payload so dialog can re-render until dismissed (once per login only)
-        st.session_state["_notif_pending_payload"] = new_activities
-        show_notification_modal(new_activities, current_user)
-    else:
-        update_last_read_time(current_user)
+        rows = _activities_to_plain_rows(new_activities)
+        if rows:
+            st.session_state["_notif_pending_payload"] = rows
+            show_notification_modal(rows, current_user)
+        else:
+            update_last_read_time(current_user)
+    except Exception:
+        # Never let the login banner take down the whole app
+        st.session_state["_notif_checked_this_login"] = True
+        st.session_state["_notif_pending_payload"] = None
 
 
 def get_activity_style(act_type: str):
