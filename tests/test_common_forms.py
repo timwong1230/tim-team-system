@@ -18,6 +18,7 @@ def test_categories_include_signing_and_admin():
     assert "簽單表格" in CATEGORIES
     assert "行政文件" in CATEGORIES
     assert "產品資料" in CATEGORIES
+    assert "Sales Kit" in CATEGORIES
 
 
 def test_allowed_ext_covers_common_office_files():
