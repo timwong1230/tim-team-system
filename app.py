@@ -1327,6 +1327,26 @@ def _esc(s) -> str:
     )
 
 
+def _render_whatsapp_share(report: str, *, key: str, caption: str = "") -> None:
+    """Show copyable summary + one-tap WhatsApp open (帶得走)."""
+    try:
+        from tt_core.whatsapp_share import wa_me_url
+    except Exception:
+        wa_me_url = lambda t: f"https://wa.me/?text={urllib.parse.quote(t or '')}"  # noqa: E731
+
+    st.markdown("##### 📤 一鍵傳 WhatsApp 俾客戶")
+    if caption:
+        st.caption(caption)
+    else:
+        st.caption("摘要已預填；撳掣開 WhatsApp 揀對話即可傳送（傳前可改字）。")
+    st.code(report, language=None)
+    st.link_button(
+        "打開 WhatsApp 傳送",
+        wa_me_url(report),
+        use_container_width=True,
+    )
+
+
 def _avatar_url(row) -> str:
     av = row.get("avatar", "")
     name = str(row.get("username", "U"))
@@ -3043,6 +3063,13 @@ def page_medical_uw():
         st.session_state["mu_scenario_id"] = None
 
     disease_id = st.session_state.get("mu_disease_id")
+    if "mu_client_name" not in st.session_state:
+        st.session_state["mu_client_name"] = ""
+    st.text_input(
+        "客戶名稱（可留空，會寫入 WhatsApp 摘要）",
+        key="mu_client_name",
+        placeholder="例如：陳生／陳太",
+    )
 
     # ── Step 1: pick disease ──────────────────────────────────────────────
     if not disease_id:
@@ -3192,10 +3219,32 @@ def page_medical_uw():
         for line in extra:
             st.markdown(f"- {line}")
 
+    answer_rows = mu.summarize_answers(disease, answers)
     with st.expander("今次問答摘要"):
-        for qlab, alab in mu.summarize_answers(disease, answers):
+        for qlab, alab in answer_rows:
             st.markdown(f"- **{qlab}**：{alab}")
         st.markdown(f"- **對應情況**：{scenario.get('label_zh')}")
+
+    try:
+        from tt_core.whatsapp_share import medical_uw_summary
+
+        wa_text = medical_uw_summary(
+            client=str(st.session_state.get("mu_client_name") or ""),
+            disease_zh=disease.get("name_zh") or "",
+            disease_en=disease.get("name_en") or "",
+            scenario_label=scenario.get("label_zh") or "",
+            outcomes=outcomes,
+            product_labels=mu.PRODUCT_LABELS,
+            answer_rows=answer_rows,
+            extra_reqs=list(extra),
+        )
+        _render_whatsapp_share(
+            wa_text,
+            key="mu_wa",
+            caption="客戶版摘要會註明「只供參考、非最終核保」。",
+        )
+    except Exception as e:
+        st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
 
     st.caption("結果只供內部參考，最終以 FWD 核保為準。")
 
@@ -3326,8 +3375,35 @@ def page_cashflow_taccount():
         unsafe_allow_html=True,
     )
 
-    st.info(cf.budget_suggestion(cashflow))
+    hint = cf.budget_suggestion(cashflow)
+    st.info(hint)
     st.caption(cf.PRODUCT_HINTS)
+
+    if result["income"] > 0 or result["expense"] > 0:
+        try:
+            from tt_core.whatsapp_share import cashflow_summary
+
+            income_lines = [
+                (it["label"], float(income_vals.get(it["id"]) or 0))
+                for it in cf.INCOME_ITEMS
+            ]
+            expense_lines = [
+                (it["label"], float(expense_vals.get(it["id"]) or 0))
+                for it in cf.EXPENSE_ITEMS
+            ]
+            wa_text = cashflow_summary(
+                client=client,
+                income=result["income"],
+                expense=result["expense"],
+                cashflow=cashflow,
+                income_lines=income_lines,
+                expense_lines=expense_lines,
+                format_hkd=cf.format_hkd,
+                budget_hint=hint,
+            )
+            _render_whatsapp_share(wa_text, key="cf_wa")
+        except Exception as e:
+            st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -3614,6 +3690,23 @@ def page_protection_gap():
     else:
         st.info("請先輸入至少一份已有保單，或將建議保額同現況對比。")
 
+    if pillars and (rows or total_gap > 0 or total_have > 0):
+        try:
+            from tt_core.whatsapp_share import protection_gap_summary
+
+            wa_text = protection_gap_summary(
+                client=client,
+                pillars=pillars,
+                summary=summary,
+                total_have=total_have,
+                total_gap=total_gap,
+                total_prem=total_prem,
+                format_hkd=pg.format_hkd,
+            )
+            _render_whatsapp_share(wa_text, key="pg_wa")
+        except Exception as e:
+            st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
+
     st.caption(
         "建議保額只供銷售參考，並非核保或財務建議；實際需要視乎家庭責任、負債、Lifestyle。"
         "數字只留在此裝置 session。"
@@ -3715,4 +3808,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T17:30Z
+# cloud_redeploy_stamp: 2026-10-15T23:40Z
