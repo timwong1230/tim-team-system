@@ -490,20 +490,32 @@ def _activities_to_plain_rows(df) -> list[dict]:
     return rows
 
 
-@st.dialog("團隊最新戰報")
-def show_notification_modal(rows, current_user):
-    st.markdown(f"**Hi {current_user}，你不在的時候，團隊發生了以下動態：**")
-    for row in rows or []:
-        st.info(
-            f"**{row.get('username', '')}** — {row.get('type', '')}\n\n"
-            f"{row.get('note', '')}\n\n*{row.get('when', '')}*"
-        )
-    st.markdown("---")
-    if st.button("收到，知道了", type="primary", use_container_width=True):
-        update_last_read_time(current_user)
-        st.session_state["_notif_pending_payload"] = None
-        st.session_state["_notif_checked_this_login"] = True
-        st.rerun()
+def show_notification_banner(rows, current_user):
+    """Inline banner only — avoid @st.dialog (Cloud Oh-no crash risk)."""
+    with st.container(border=True):
+        st.markdown(f"### 團隊最新戰報")
+        st.markdown(f"**Hi {current_user}，你不在的時候，團隊發生了以下動態：**")
+        for row in (rows or [])[:20]:
+            st.info(
+                f"**{row.get('username', '')}** — {row.get('type', '')}\n\n"
+                f"{row.get('note', '')}\n\n*{row.get('when', '')}*"
+            )
+        if st.button("收到，知道了", type="primary", use_container_width=True, key="_notif_ack"):
+            update_last_read_time(current_user)
+            st.session_state["_notif_pending_payload"] = None
+            st.session_state["_notif_checked_this_login"] = True
+            st.rerun()
+
+
+def scrub_notification_session_state():
+    """Drop legacy DataFrame / corrupt notification payloads from session_state."""
+    pending = st.session_state.get("_notif_pending_payload")
+    if pending is None:
+        return
+    if isinstance(pending, list):
+        return
+    # Old builds stored a DataFrame here — that can hard-crash Streamlit Cloud
+    st.session_state["_notif_pending_payload"] = None
 
 
 def check_notifications(current_user: str):
@@ -511,14 +523,12 @@ def check_notifications(current_user: str):
     if not current_user:
         return
     try:
-        # Keep dialog open across reruns until user dismisses it
+        scrub_notification_session_state()
+        # Keep banner open across reruns until user dismisses it
         pending = st.session_state.get("_notif_pending_payload")
         if isinstance(pending, list) and pending:
-            show_notification_modal(pending, current_user)
+            show_notification_banner(pending, current_user)
             return
-        # Clear any legacy / corrupt payload (e.g. old DataFrame) without crashing
-        if pending is not None and not isinstance(pending, list):
-            st.session_state["_notif_pending_payload"] = None
 
         # Already handled this login — never pop again while browsing
         if st.session_state.get("_notif_checked_this_login"):
@@ -556,7 +566,7 @@ def check_notifications(current_user: str):
         rows = _activities_to_plain_rows(new_activities)
         if rows:
             st.session_state["_notif_pending_payload"] = rows
-            show_notification_modal(rows, current_user)
+            show_notification_banner(rows, current_user)
         else:
             update_last_read_time(current_user)
     except Exception:

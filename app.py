@@ -46,6 +46,15 @@ from tt_core.data import (
     update_avt,
     update_pw,
 )
+
+try:
+    from tt_core.data import scrub_notification_session_state
+except Exception:
+
+    def scrub_notification_session_state():
+        pending = st.session_state.get("_notif_pending_payload")
+        if pending is not None and not isinstance(pending, list):
+            st.session_state["_notif_pending_payload"] = None
 from tt_core.db import (
     connection_banner_state,
     init_db_gs,
@@ -762,7 +771,7 @@ if not st.session_state["logged_in"]:
         )
         render_install_guide(compact=True)
         st.caption("每年目標：M + 2")
-        st.caption("若見到 Oh no：Streamlit Cloud 開 app → 右上 ⋮ → Reboot app（或等自動重新部署），再重新開啟。")
+        st.caption("若見到 Oh no：撳右下角紅色 Manage app → ⋮ → Reboot app，等 Running 後再開。")
     else:
         c1, c2, c3 = st.columns([1, 1.4, 1])
         with c2:
@@ -810,6 +819,12 @@ if not st.session_state.get("user"):
     st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
 
+# Drop legacy notification DataFrames before any page work (Cloud crash risk)
+try:
+    scrub_notification_session_state()
+except Exception:
+    st.session_state.pop("_notif_pending_payload", None)
+
 # One-time escape hatch after previous crash / bad menu
 if st.session_state.get("_force_home_once"):
     st.session_state["_menu_choice"] = "🏠 我的主頁"
@@ -836,7 +851,7 @@ try:
 except Exception as e:
     st.session_state.clear()
     st.error(f"啟動失敗，已重置登入：{e}")
-    st.info("請重新登入。若仍然 Oh no，請去 Streamlit Cloud → Manage app → Reboot。")
+    st.info("請重新登入。若仍然 Oh no：右下角紅色 Manage app → ⋮ → Reboot app。")
     st.stop()
 
 menu_items = [
@@ -2895,4 +2910,4 @@ elif "常用表格" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T07:07Z
+# cloud_redeploy_stamp: 2026-10-15T07:09Z
