@@ -288,6 +288,29 @@ div.stButton > button[kind="secondary"] {
   color: #F8F4EA !important;
   white-space: nowrap;
 }
+/* 項目：領獎須知等標籤欄（窄） */
+.offer-table col.offer-label-col,
+.offer-table th.offer-label-col,
+.offer-table td.offer-label-col {
+  width: 18%;
+  font-weight: 700;
+  color: #1C2430 !important;
+  white-space: nowrap;
+}
+/* 兩欄表（項目／說明）：項目窄、說明闊 */
+.offer-table.offer-cols-2 col.offer-label-col,
+.offer-table.offer-cols-2 th.offer-label-col,
+.offer-table.offer-cols-2 td.offer-label-col,
+.offer-table.offer-cols-2 col.offer-product,
+.offer-table.offer-cols-2 th.offer-product,
+.offer-table.offer-cols-2 td.offer-product {
+  width: 18%;
+}
+.offer-table.offer-cols-2 col.offer-detail-col,
+.offer-table.offer-cols-2 th.offer-detail-col,
+.offer-table.offer-cols-2 td.offer-detail-col {
+  width: 82%;
+}
 /* 三欄表（產品／詳情／備註）：詳情再闊、備註再窄 */
 .offer-table.offer-cols-3 col.offer-product,
 .offer-table.offer-cols-3 th.offer-product,
