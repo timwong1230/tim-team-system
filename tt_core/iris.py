@@ -327,8 +327,8 @@ def load_iris_file(uploaded_file) -> pd.DataFrame:
     if not raw:
         raise ValueError("檔案係空嘅")
     # Soft cap — oversized uploads OOM Streamlit Cloud into sticky Oh-no
-    if len(raw) > 12 * 1024 * 1024:
-        raise ValueError("檔案太大（上限 12MB）。請壓縮或用 Drive 同步。")
+    if len(raw) > 8 * 1024 * 1024:
+        raise ValueError("檔案太大（上限 8MB）。請壓縮或用 Drive 同步。")
     return load_iris_bytes(raw, name)
 
 

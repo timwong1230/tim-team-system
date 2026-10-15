@@ -196,19 +196,16 @@ def read_data(sheet_name: str, *, force: bool = False) -> pd.DataFrame:
     if fresh is not None:
         cache_store.save_sheet(sheet_name, fresh, source="sheets")
         cache_store.touch_status(True, "ok")
-        st.session_state[f"backup_{sheet_name}"] = fresh
+        # Never put DataFrames in session_state — Cloud OOM / sticky Oh-no
+        st.session_state.pop(f"backup_{sheet_name}", None)
         _set_read_meta(sheet_name, from_cache=False, stale=False)
         return fresh
 
-    # Sheets failed — prefer stale cache
+    # Sheets failed — prefer stale disk/memory cache (not session_state)
     if cached_df is not None and (age is None or age < STALE_MAX_SEC):
         _set_read_meta(sheet_name, from_cache=True, stale=True)
-        st.session_state[f"backup_{sheet_name}"] = cached_df
+        st.session_state.pop(f"backup_{sheet_name}", None)
         return _normalize_df(cached_df, sheet_name)
-
-    if f"backup_{sheet_name}" in st.session_state:
-        _set_read_meta(sheet_name, from_cache=True, stale=True)
-        return _normalize_df(st.session_state[f"backup_{sheet_name}"], sheet_name)
 
     _set_read_meta(sheet_name, from_cache=False, stale=True)
     return pd.DataFrame(columns=expected_cols)
