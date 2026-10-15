@@ -2257,6 +2257,7 @@ _COMMON_FORMS_CATEGORIES = [
     "行政文件",
     "培訓資料",
     "客戶文件",
+    "產品資料",
     "其他",
 ]
 _COMMON_FORMS_FOLDER_KEY = "common_forms_folder_id"
