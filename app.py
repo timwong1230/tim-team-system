@@ -2058,7 +2058,7 @@ def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4A
                 <span class="offer-section-bar" style="background:{accent}"></span>{title}
               </div>
               <div class="offer-table-wrap">
-                <table class="offer-table offer-table-fixed">
+                <table class="offer-table offer-table-fixed offer-cols-{len(cols)}">
                   <colgroup>{colgroup}</colgroup>
                   <thead><tr>{thead}</tr></thead>
                   <tbody>{''.join(body_rows)}</tbody>

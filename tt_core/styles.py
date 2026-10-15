@@ -259,33 +259,50 @@ div.stButton > button[kind="secondary"] {
 .offer-table col.offer-product,
 .offer-table th.offer-product,
 .offer-table td.offer-product {
-  width: 22%;
+  width: 20%;
 }
 .offer-table td.offer-product {
   font-weight: 700;
   color: #1C2430 !important;
 }
+/* 詳情／優惠重點：主力闊欄 */
 .offer-table col.offer-detail-col,
 .offer-table th.offer-detail-col,
 .offer-table td.offer-detail-col {
-  width: 55%;
+  width: 58%;
 }
 .offer-table col.offer-mid-col,
 .offer-table th.offer-mid-col,
 .offer-table td.offer-mid-col {
-  width: 18%;
+  width: 14%;
 }
+/* 備註：窄欄 */
 .offer-table col.offer-note-col,
 .offer-table th.offer-note-col,
 .offer-table td.offer-note-col {
-  width: 12%;
-  max-width: 96px;
+  width: 10%;
   color: #6B7280 !important;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 .offer-table th.offer-note-col {
   color: #F8F4EA !important;
   white-space: nowrap;
+}
+/* 三欄表（產品／詳情／備註）：詳情再闊、備註再窄 */
+.offer-table.offer-cols-3 col.offer-product,
+.offer-table.offer-cols-3 th.offer-product,
+.offer-table.offer-cols-3 td.offer-product {
+  width: 22%;
+}
+.offer-table.offer-cols-3 col.offer-detail-col,
+.offer-table.offer-cols-3 th.offer-detail-col,
+.offer-table.offer-cols-3 td.offer-detail-col {
+  width: 68%;
+}
+.offer-table.offer-cols-3 col.offer-note-col,
+.offer-table.offer-cols-3 th.offer-note-col,
+.offer-table.offer-cols-3 td.offer-note-col {
+  width: 10%;
 }
 .offer-card {
   background: #ffffff;
