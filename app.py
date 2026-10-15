@@ -1241,15 +1241,16 @@ def page_home():
 
 def page_checkin():
     st.markdown("## 打卡中心")
-    st.caption("用範本記面談重點，提交後即時出現喺團隊動態。")
+    st.caption("用 Fact find background 範本記面談重點，提交後即時出現喺團隊動態。")
     tab_new, tab_hist = st.tabs(["立即打卡", "團隊動態"])
 
     with tab_new:
         t = st.selectbox("活動種類", ACTIVITY_TYPES, key="ci_type")
         default_note = get_note_template(t)
+        note_h = 520 if "招募" not in t and "新人" not in t else 260
         with st.form("checkin_form", clear_on_submit=True):
             d = st.date_input("日期", value=datetime.date.today())
-            n = st.text_area("內容詳情", value=default_note, height=200)
+            n = st.text_area("內容詳情", value=default_note, height=note_h)
             if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
                 add_act(st.session_state["user"], d, t, n)
                 st.toast("提交成功！", icon="✅")
@@ -3692,4 +3693,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T15:35Z
+# cloud_redeploy_stamp: 2026-10-15T16:20Z

@@ -17,16 +17,23 @@ ACTIVITY_TYPES = [
 ]
 
 TEMPLATE_SALES = (
-    "【客戶資料】\n"
-    "Name: \n"
-    "講左3Q? 有咩feedback? \n"
-    "Fact Find 重點: \n\n"
-    "【面談內容】\n"
-    "Sell左咩Plan? \n"
-    "客戶反應/抗拒點: \n\n"
-    "【下一步】\n"
-    "下次見面日期: \n"
-    "Action Items: "
+    "【Fact find background】\n"
+    "Name: \n\n"
+    "1. 性格：\n\n"
+    "2. 工作情況（職業／人工／年資）：\n\n"
+    "3. 家庭現況（家庭人物關係圖）：\n\n"
+    "4. 興趣：\n\n"
+    "5. 人生最大經歷／轉捩點：\n\n"
+    "6. 未來目標／想做的事情：\n\n"
+    "7. 未來關心／擔心的事情：\n\n"
+    "8. ⚠️ prepare 切入主題角度 — 用咩切入？：\n\n"
+    "9. 已買保險？（病歷紀錄）：\n\n"
+    "10. 邊間公司：\n\n"
+    "11. 同 agent 關係：\n\n"
+    "12. 落咗咩 sales concept：\n\n"
+    "13. 點跟進客人 follow up：\n\n"
+    "14. 經過今日之後嘅了解，你哋彼此嘅熟悉程度：\n\n"
+    "15. ⚠️ 約 next appointment／活動：日子："
 )
 
 TEMPLATE_RECRUIT = (
