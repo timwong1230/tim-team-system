@@ -7,7 +7,25 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-from tt_core.branding import BRAND_NAME, BRAND_SYSTEM, icon_data_uri
+
+def _brand_bits():
+    """Lazy brand/icon load so a stale branding.py cannot break login."""
+    name = "TIM TEAM"
+    system = "TIM TEAM SYSTEM"
+    icon = ""
+    icon_big = ""
+    try:
+        import tt_core.branding as b
+
+        name = getattr(b, "BRAND_NAME", name) or name
+        system = getattr(b, "BRAND_SYSTEM", system) or system
+        fn = getattr(b, "icon_data_uri", None)
+        if callable(fn):
+            icon = fn(180) or ""
+            icon_big = fn(512) or icon
+    except Exception:
+        pass
+    return name, system, icon, icon_big
 
 
 def is_mobile() -> bool:
@@ -45,14 +63,14 @@ def inject_pwa_head() -> None:
     Inject iOS / PWA meta tags into <head> so Safari Add to Home Screen
     opens as a standalone app (no browser chrome).
     """
-    icon = icon_data_uri(180)
-    icon_big = icon_data_uri(512) or icon
+    brand_name, brand_system, icon, icon_big = _brand_bits()
+    icon_big = icon_big or icon
     if not icon:
         return
 
     manifest = {
-        "name": BRAND_SYSTEM,
-        "short_name": BRAND_NAME,
+        "name": brand_system,
+        "short_name": brand_name,
         "start_url": ".",
         "display": "standalone",
         "background_color": "#0A0D14",
@@ -75,7 +93,7 @@ def inject_pwa_head() -> None:
     }
     icon_js = json.dumps(icon)
     icon_big_js = json.dumps(icon_big)
-    brand_js = json.dumps(BRAND_NAME)
+    brand_js = json.dumps(brand_name)
     manifest_js = json.dumps(manifest)
 
     components.html(
@@ -155,11 +173,12 @@ def inject_pwa_head() -> None:
 
 def render_install_guide(*, compact: bool = False) -> None:
     """Safari Add to Home Screen instructions."""
+    brand_name, _, _, _ = _brand_bits()
     body_zh = (
         "1. 用 **Safari** 打開本網站（唔好用 Chrome）\n"
         "2. 撳底部分享按鈕\n"
         "3. 揀 **加到主畫面 / Add to Home Screen**\n"
-        f"4. 名稱用 **{BRAND_NAME}** → 新增\n"
+        f"4. 名稱用 **{brand_name}** → 新增\n"
         "5. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）\n"
     )
     if compact:
@@ -169,7 +188,7 @@ def render_install_guide(*, compact: bool = False) -> None:
     else:
         st.markdown("### 加到 iPhone 主畫面（變 App）")
         st.markdown(body_zh)
-        st.info(f"一次加好，成隊同事主畫面都有 {BRAND_NAME}，打卡會快好多。")
+        st.info(f"一次加好，成隊同事主畫面都有 {brand_name}，打卡會快好多。")
 
 
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:

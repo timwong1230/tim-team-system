@@ -640,8 +640,49 @@ from tt_core.mobile import (
     mobile_top_nav,
     render_install_guide,
 )
-from tt_core.branding import BRAND_APP, BRAND_NAME, BRAND_SYSTEM, page_icon_arg
 from tt_core.styles import CUSTOM_CSS
+
+# Inline brand fallbacks — Cloud may cache an older tt_core.branding without page_icon_arg
+BRAND_NAME = "TIM TEAM"
+BRAND_APP = "TIM TEAM APP"
+BRAND_SYSTEM = "TIM TEAM SYSTEM"
+
+
+def page_icon_arg():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent
+    for rel in (
+        "static/app_icon_180.png",
+        "static/app_icon_512.png",
+        "static/ace_team_logo.jpg",
+    ):
+        if (root / rel).exists():
+            return rel
+    try:
+        import tt_core.branding as b
+
+        fn = getattr(b, "page_icon_arg", None)
+        if callable(fn):
+            return fn()
+        logo = getattr(b, "logo_path", None)
+        if callable(logo):
+            p = str(logo() or "")
+            if p.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                return p
+    except Exception:
+        pass
+    return "🃏"
+
+
+try:
+    import tt_core.branding as _brand
+
+    BRAND_NAME = getattr(_brand, "BRAND_NAME", BRAND_NAME) or BRAND_NAME
+    BRAND_APP = getattr(_brand, "BRAND_APP", BRAND_APP) or BRAND_APP
+    BRAND_SYSTEM = getattr(_brand, "BRAND_SYSTEM", BRAND_SYSTEM) or BRAND_SYSTEM
+except Exception:
+    pass
 
 try:
     MOBILE = is_mobile()
