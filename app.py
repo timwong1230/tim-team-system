@@ -3319,8 +3319,8 @@ def page_protection_gap():
     """見客用：輸入現有保障 → pie chart 展示保障缺口。"""
     st.markdown("## 🛡️ 保障缺口")
     st.caption(
-        "輸入客戶已有保單（類型／公司／保額／保費），對比建議保額，"
-        "用 pie chart 睇清楚買咗未等於買夠。"
+        "輸入客戶已有保單（類型／公司／保額／保費），對比建議保額；"
+        "四大保障狀態盤用等權重顯示人壽／危疾／醫療／意外——未做都會睇到。"
     )
 
     try:
@@ -3535,31 +3535,23 @@ def page_protection_gap():
     total_gap = sum(float(g["保障缺口"]) for g in gaps if g["保單類型"] != "其他")
     total_have = sum(float(g["已有保額"]) for g in gaps if g["保單類型"] != "其他")
 
+    pillars = pg.pillar_status(gaps)
+    summary = pg.completeness_summary(pillars)
+
     name_bit = f" — {client.strip()}" if str(client or "").strip() else ""
     st.markdown(f"### 分析結果{name_bit}")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("已有保障總額", pg.format_hkd(total_have))
-    m2.metric("保障缺口總額", pg.format_hkd(total_gap))
-    m3.metric("現有每月保費", pg.format_hkd(total_prem))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("四大保障達標", f'{summary["ready"]}/{summary["total"]}')
+    m2.metric("已有保障總額", pg.format_hkd(total_have))
+    m3.metric("保障缺口總額", pg.format_hkd(total_gap))
+    m4.metric("現有每月保費", pg.format_hkd(total_prem))
 
-    c_pie1, c_pie2 = st.columns(2)
-    with c_pie1:
-        st.markdown("##### 現有保額分佈")
-        st.markdown(
-            pg.svg_pie(pg.pie_current_cover(rows), label_key="類型", value_key="保額"),
-            unsafe_allow_html=True,
-        )
-    with c_pie2:
-        st.markdown("##### 已有保障 vs 保障缺口")
-        st.markdown(
-            pg.svg_pie(
-                pg.pie_gap_vs_covered(gaps),
-                label_key="項目",
-                value_key="金額",
-                colors=["#059669", "#DC2626", "#9CA3AF"],
-            ),
-            unsafe_allow_html=True,
-        )
+    st.markdown("##### 四大保障狀態盤")
+    st.caption("人壽／危疾／醫療／意外各佔一格（等權重）——未做嘅會用紅色顯示，唔會消失。")
+    st.markdown(pg.svg_pillar_status_pie(pillars), unsafe_allow_html=True)
+
+    st.markdown("##### 各類達標進度")
+    st.markdown(pg.html_pillar_gap_bars(pillars), unsafe_allow_html=True)
 
     if gaps:
         st.markdown("##### 分類缺口明細")
@@ -3577,13 +3569,18 @@ def page_protection_gap():
             },
         )
 
-    if total_gap > 0:
+    if summary["missing_names"] or summary["short_names"]:
+        bits = []
+        if summary["missing_names"]:
+            bits.append("未做：**" + "／".join(summary["missing_names"]) + "**")
+        if summary["short_names"]:
+            bits.append("不足：**" + "／".join(summary["short_names"]) + "**")
         st.warning(
-            f"仍有約 **{pg.format_hkd(total_gap)}** 保障缺口。"
-            "可按缺口優先補 **人壽／危疾／醫療／意外**。"
+            f"四大保障未齊 — {'；'.join(bits)}。"
+            f"金額缺口約 **{pg.format_hkd(total_gap)}**。"
         )
     elif rows:
-        st.success("以而家建議保額計，主要保障類型未見明顯缺口（仍可按家庭責任再加）。")
+        st.success("四大保障（人壽／危疾／醫療／意外）以而家建議保額計已達標。")
     else:
         st.info("請先輸入至少一份已有保單，或將建議保額同現況對比。")
 
