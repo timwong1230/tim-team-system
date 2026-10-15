@@ -6,6 +6,7 @@ from tt_core.common_forms import (
     ALLOWED_EXT,
     CATEGORIES,
     _normalize_folder_id,
+    _quota_error,
     format_size,
 )
 
@@ -31,3 +32,13 @@ def test_normalize_folder_id_from_url():
     url = "https://drive.google.com/drive/folders/abc123XYZ?usp=sharing"
     assert _normalize_folder_id(url) == "abc123XYZ"
     assert _normalize_folder_id("  plainId  ") == "plainId"
+
+
+def test_quota_error_detection():
+    assert _quota_error(
+        Exception(
+            "HttpError 403 when requesting ... "
+            "Service Accounts do not have storage quota. ... storageQuotaExceeded"
+        )
+    )
+    assert not _quota_error(Exception("permission denied"))

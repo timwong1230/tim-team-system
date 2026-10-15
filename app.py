@@ -2228,7 +2228,7 @@ def _common_forms():
 
 def page_common_forms():
     st.markdown("## 常用表格")
-    st.caption("簽單／行政常用文件一站下載。Leader 可上傳、分類同刪除。")
+    st.caption("簽單／行政常用文件一站下載。Leader 放入 Drive 後同步；同事隨時下載。")
 
     cf = _common_forms()
     if cf is None:
@@ -2260,9 +2260,44 @@ def page_common_forms():
             if folder_id:
                 st.caption(f"而家 Folder ID：`{folder_id}`")
 
-        with st.expander("Leader：上傳文件", expanded=bool(folder_id)):
+        with st.expander("Leader：同步 Drive 資料夾（推薦）", expanded=bool(folder_id)):
+            st.info(
+                "Service Account 冇個人 Drive 空間，**唔好用下面「app 內上傳」去普通資料夾**。"
+                "請用你自己 Google 帳號將文件放入資料夾，再撳同步。"
+            )
             if not folder_id:
-                st.warning("請先完成上面嘅 Drive 資料夾設定，先可以上傳。")
+                st.warning("請先完成上面嘅 Drive 資料夾設定。")
+            else:
+                sync_cat = st.selectbox(
+                    "新檔預設分類",
+                    categories,
+                    key="common_forms_sync_cat",
+                )
+                sync_note = st.text_input(
+                    "新檔備註（可留空）",
+                    key="common_forms_sync_note",
+                    placeholder="例如：2026 版簽單表格",
+                )
+                if st.button("同步 Drive 資料夾", type="primary", key="common_forms_sync_btn"):
+                    with st.spinner("掃描資料夾…"):
+                        result = cf.sync_folder_into_catalog(
+                            category=sync_cat,
+                            uploaded_by=st.session_state.get("user", ""),
+                            note=sync_note,
+                        )
+                    if result.get("ok"):
+                        st.toast(result.get("message") or "同步完成", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(result.get("error") or "同步失敗")
+
+        with st.expander("Leader：app 內上傳（需共用雲端硬碟）", expanded=False):
+            st.caption(
+                "只適用於 Google Workspace「共用雲端硬碟」。"
+                "普通「我的雲端硬碟」會出現 storageQuotaExceeded。"
+            )
+            if not folder_id:
+                st.warning("請先完成上面嘅 Drive 資料夾設定。")
             else:
                 with st.form("common_forms_upload", clear_on_submit=True):
                     title = st.text_input("顯示名稱", placeholder="e.g. 轉保申請表 / 客戶資料更改表")
@@ -2323,7 +2358,11 @@ def page_common_forms():
     if df is None or df.empty:
         st.info(
             "暫時未有文件。"
-            + (" Leader 上傳後，同事就可以喺呢度下載。" if is_leader else " 請聯絡 Leader 上傳常用表格。")
+            + (
+                " Leader：用自己帳號放入 Drive 資料夾後，撳「同步 Drive 資料夾」。"
+                if is_leader
+                else " 請聯絡 Leader 放入常用表格。"
+            )
         )
         return
 
