@@ -2216,9 +2216,39 @@ def page_quarterly_offers():
                                 st.rerun()
 
 
+_COMMON_FORMS_CATEGORIES = [
+    "簽單表格",
+    "行政文件",
+    "培訓資料",
+    "客戶文件",
+    "其他",
+]
+_COMMON_FORMS_FOLDER_KEY = "common_forms_folder_id"
+_COMMON_FORMS_ALLOWED_EXT = {
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".csv",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".txt",
+    ".zip",
+}
+
+
 def _common_forms():
-    """Lazy-load 常用表格 helpers (Cloud may cache older tt_core without this module)."""
+    """Lazy-load + reload 常用表格 helpers (Cloud often keeps a stale module)."""
+    import importlib
+    import sys
+
     try:
+        if "tt_core.common_forms" in sys.modules:
+            return importlib.reload(sys.modules["tt_core.common_forms"])
         import tt_core.common_forms as m
 
         return m
@@ -2226,25 +2256,210 @@ def _common_forms():
         return None
 
 
+def _common_forms_folder_id() -> str:
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "get_folder_id", None)
+            if callable(fn):
+                return str(fn() or "").strip()
+    except Exception:
+        pass
+    return _get_setting(_COMMON_FORMS_FOLDER_KEY, "")
+
+
+def _save_common_forms_folder(raw: str) -> bool:
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "save_folder_id", None)
+            if callable(fn):
+                return bool(fn(raw))
+    except Exception:
+        pass
+    return bool(_set_setting(_COMMON_FORMS_FOLDER_KEY, _normalize_folder_id(raw)))
+
+
+def _common_forms_setup_hint() -> str:
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "setup_hint", None)
+            if callable(fn):
+                return str(fn())
+    except Exception:
+        pass
+    sa = ""
+    try:
+        sa = str(service_account_email() or "")
+    except Exception:
+        sa = ""
+    email = sa or "（service account email）"
+    return (
+        "一次性設定：\n"
+        "1. 用你自己嘅 Google 帳號開資料夾，例如「TIM TEAM 常用表格」\n"
+        f"2. 將資料夾分享俾 **{email}**（檢視者即可）\n"
+        "3. 複製資料夾連結或 Folder ID，貼喺下面儲存\n"
+        "4. 用自己帳號將文件放入資料夾 → 返 app 撳「同步 Drive 資料夾」"
+    )
+
+
+def _list_common_forms_drive_files(folder_id: str, limit: int = 100) -> list:
+    """Inline Drive list — works even if Cloud cached an old common_forms.py."""
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "list_drive_folder_files", None)
+            if callable(fn):
+                return list(fn(folder_id, limit=limit) or [])
+    except Exception:
+        pass
+
+    try:
+        service = _drive().get_drive_service()
+    except Exception:
+        service = None
+    folder_id = str(folder_id or "").strip()
+    if not service or not folder_id:
+        return []
+    q = (
+        f"'{folder_id}' in parents and trashed=false and "
+        "mimeType != 'application/vnd.google-apps.folder'"
+    )
+    try:
+        resp = (
+            service.files()
+            .list(
+                q=q,
+                spaces="drive",
+                fields="files(id,name,mimeType,modifiedTime,size)",
+                orderBy="modifiedTime desc",
+                pageSize=limit,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
+        files = resp.get("files", []) or []
+        out = []
+        for f in files:
+            name = str(f.get("name") or "")
+            ext = Path(name).suffix.lower()
+            if ext and ext not in _COMMON_FORMS_ALLOWED_EXT:
+                continue
+            out.append(f)
+        return out
+    except Exception as e:
+        st.session_state["_common_forms_drive_warn"] = str(e)[:240]
+        return []
+
+
+def _sync_common_forms_folder(
+    *,
+    category: str = "其他",
+    uploaded_by: str = "",
+    note: str = "",
+) -> dict:
+    """Sync Drive folder → Sheets. Inline fallback for stale Cloud modules."""
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "sync_folder_into_catalog", None)
+            if callable(fn):
+                return dict(
+                    fn(
+                        category=category,
+                        uploaded_by=uploaded_by,
+                        note=note,
+                    )
+                    or {}
+                )
+    except Exception:
+        pass
+
+    folder_id = _common_forms_folder_id()
+    if not folder_id:
+        return {"ok": False, "error": "未設定常用表格 Drive 資料夾", "added": 0, "skipped": 0}
+
+    files = _list_common_forms_drive_files(folder_id)
+    if not files:
+        err = st.session_state.pop("_common_forms_drive_warn", "")
+        if err:
+            return {"ok": False, "error": f"讀取資料夾失敗：{err}", "added": 0, "skipped": 0}
+        return {
+            "ok": True,
+            "added": 0,
+            "skipped": 0,
+            "message": "資料夾暫時未有可同步檔案（請先用自己帳號放入 PDF／Word／Excel）",
+        }
+
+    try:
+        existing = read_data("common_forms")
+    except Exception:
+        existing = pd.DataFrame()
+    known_ids = set()
+    if existing is not None and not existing.empty and "drive_file_id" in existing.columns:
+        known_ids = {
+            str(x).strip() for x in existing["drive_file_id"].tolist() if str(x).strip()
+        }
+
+    category = str(category or "其他").strip() or "其他"
+    note = str(note or "").strip()
+    added = 0
+    skipped = 0
+    now = str(datetime.datetime.now())
+
+    for f in files:
+        drive_id = str(f.get("id") or "").strip()
+        name = str(f.get("name") or "").strip()
+        if not drive_id or not name:
+            continue
+        if drive_id in known_ids:
+            skipped += 1
+            continue
+        title = Path(name).stem or name
+        mime = str(f.get("mimeType") or "application/octet-stream")
+        row = {
+            "title": title,
+            "category": category,
+            "filename": name,
+            "mime": mime,
+            "drive_file_id": drive_id,
+            "size_bytes": int(f.get("size") or 0),
+            "uploaded_by": str(uploaded_by or "").strip(),
+            "uploaded_at": str(f.get("modifiedTime") or now)[:19].replace("T", " "),
+            "note": note,
+        }
+        if run_query_gs("INSERT", "common_forms", row):
+            added += 1
+            known_ids.add(drive_id)
+        else:
+            return {
+                "ok": False,
+                "error": f"寫入清單失敗（已新增 {added} 份）",
+                "added": added,
+                "skipped": skipped,
+            }
+
+    return {
+        "ok": True,
+        "added": added,
+        "skipped": skipped,
+        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份",
+    }
+
+
 def page_common_forms():
     st.markdown("## 常用表格")
     st.caption("簽單／行政常用文件一站下載。Leader 放入 Drive 後同步；同事隨時下載。")
 
     cf = _common_forms()
-    if cf is None:
-        st.error("常用表格模組未能載入。請去 Streamlit Manage app → Reboot 後再試。")
-        return
-
-    categories = list(getattr(cf, "CATEGORIES", ["簽單表格", "行政文件", "培訓資料", "客戶文件", "其他"]))
-    folder_id = ""
-    try:
-        folder_id = str(cf.get_folder_id() or "").strip()
-    except Exception:
-        folder_id = ""
+    categories = list(getattr(cf, "CATEGORIES", None) or _COMMON_FORMS_CATEGORIES)
+    folder_id = _common_forms_folder_id()
 
     if is_leader:
         with st.expander("Leader：Drive 資料夾設定", expanded=not bool(folder_id)):
-            st.markdown(cf.setup_hint())
+            st.markdown(_common_forms_setup_hint())
             raw = st.text_input(
                 "常用表格 Folder ID / Drive 連結",
                 value=folder_id,
@@ -2252,7 +2467,7 @@ def page_common_forms():
                 key="common_forms_folder_input",
             )
             if st.button("儲存資料夾", type="primary", key="common_forms_save_folder"):
-                if cf.save_folder_id(raw):
+                if _save_common_forms_folder(raw):
                     st.toast("已儲存常用表格資料夾", icon="✅")
                     st.rerun()
                 else:
@@ -2280,7 +2495,7 @@ def page_common_forms():
                 )
                 if st.button("同步 Drive 資料夾", type="primary", key="common_forms_sync_btn"):
                     with st.spinner("掃描資料夾…"):
-                        result = cf.sync_folder_into_catalog(
+                        result = _sync_common_forms_folder(
                             category=sync_cat,
                             uploaded_by=st.session_state.get("user", ""),
                             note=sync_note,
@@ -2326,20 +2541,27 @@ def page_common_forms():
                             st.error("請先選擇檔案")
                         else:
                             display = (title or "").strip() or Path(uploaded.name).stem
-                            result = cf.upload_form(
-                                title=display,
-                                category=category,
-                                filename=uploaded.name,
-                                data=uploaded.getvalue(),
-                                uploaded_by=st.session_state.get("user", ""),
-                                note=note,
-                                mime=getattr(uploaded, "type", None) or None,
-                            )
-                            if result.get("ok"):
-                                st.toast(f"已上傳：{display}", icon="✅")
-                                st.rerun()
+                            upload_fn = getattr(cf, "upload_form", None) if cf else None
+                            if not callable(upload_fn):
+                                st.error(
+                                    "app 內上傳需要最新模組／共用雲端硬碟。"
+                                    "請改用上面「同步 Drive 資料夾」。"
+                                )
                             else:
-                                st.error(result.get("error") or "上傳失敗")
+                                result = upload_fn(
+                                    title=display,
+                                    category=category,
+                                    filename=uploaded.name,
+                                    data=uploaded.getvalue(),
+                                    uploaded_by=st.session_state.get("user", ""),
+                                    note=note,
+                                    mime=getattr(uploaded, "type", None) or None,
+                                )
+                                if result.get("ok"):
+                                    st.toast(f"已上傳：{display}", icon="✅")
+                                    st.rerun()
+                                else:
+                                    st.error(result.get("error") or "上傳失敗")
 
     filter_opts = ["全部"] + categories
     cat_filter = st.radio(
@@ -2350,7 +2572,13 @@ def page_common_forms():
     )
 
     try:
-        df = cf.list_forms(category=None if cat_filter == "全部" else cat_filter)
+        list_fn = getattr(cf, "list_forms", None) if cf else None
+        if callable(list_fn):
+            df = list_fn(category=None if cat_filter == "全部" else cat_filter)
+        else:
+            df = read_data("common_forms")
+            if df is not None and not df.empty and cat_filter != "全部":
+                df = df[df["category"].astype(str).str.strip() == cat_filter]
     except Exception as e:
         st.error(f"讀取清單失敗：{e}")
         return
@@ -2375,7 +2603,21 @@ def page_common_forms():
         note = str(row.get("note", "") or "").strip()
         by = str(row.get("uploaded_by", "") or "")
         at = str(row.get("uploaded_at", "") or "")[:16]
-        size_label = cf.format_size(row.get("size_bytes", 0))
+        fmt = getattr(cf, "format_size", None) if cf else None
+        if callable(fmt):
+            size_label = fmt(row.get("size_bytes", 0))
+        else:
+            try:
+                n = int(float(row.get("size_bytes", 0) or 0))
+                size_label = (
+                    f"{n} B"
+                    if n < 1024
+                    else f"{n/1024:.1f} KB"
+                    if n < 1024 * 1024
+                    else f"{n/(1024*1024):.1f} MB"
+                )
+            except Exception:
+                size_label = "—"
         drive_id = str(row.get("drive_file_id", "") or "").strip()
 
         st.markdown(
@@ -2401,7 +2643,11 @@ def page_common_forms():
                     if st.button("下載", key=f"prep_form_{rid}", use_container_width=True):
                         try:
                             with st.spinner("準備檔案…"):
-                                st.session_state[cache_key] = cf.download_form_bytes(drive_id)
+                                dl = getattr(cf, "download_form_bytes", None) if cf else None
+                                if callable(dl):
+                                    st.session_state[cache_key] = dl(drive_id)
+                                else:
+                                    st.session_state[cache_key] = download_file(drive_id)
                             st.rerun()
                         except Exception as e:
                             st.error(f"下載失敗：{e}")
@@ -2418,14 +2664,19 @@ def page_common_forms():
         if is_leader and len(cols) > 1:
             with cols[1]:
                 if st.button("刪除", key=f"del_form_{rid}", use_container_width=True):
-                    result = cf.delete_form(rid, drive_id or None)
+                    del_fn = getattr(cf, "delete_form", None) if cf else None
+                    if callable(del_fn):
+                        result = del_fn(rid, drive_id or None)
+                    else:
+                        result = {
+                            "ok": bool(run_query_gs("DELETE", "common_forms", row_id=rid))
+                        }
                     if result.get("ok"):
                         st.session_state.pop(cache_key, None)
                         st.toast("已刪除", icon="🗑️")
                         st.rerun()
                     else:
                         st.error(result.get("error") or "刪除失敗")
-
 
 def page_profile():
     st.markdown("## 個人設定")
