@@ -22,6 +22,7 @@ def test_categories_include_signing_and_admin():
     assert "產品資料" in CATEGORIES
     assert "Sales Kit" in CATEGORIES
     assert "培訓資料" not in CATEGORIES
+    assert "客戶文件" not in CATEGORIES
 
 
 def test_allowed_ext_covers_common_office_files():
