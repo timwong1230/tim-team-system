@@ -649,29 +649,26 @@ BRAND_SYSTEM = "TIM TEAM SYSTEM"
 
 
 def page_icon_arg():
+    """Return a PIL image when possible — more reliable than paths on Streamlit Cloud."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parent
     for rel in (
+        "static/app_icon_32.png",
+        "static/app_icon_48.png",
         "static/app_icon_180.png",
         "static/app_icon_512.png",
         "static/ace_team_logo.jpg",
     ):
-        if (root / rel).exists():
-            return rel
-    try:
-        import tt_core.branding as b
+        path = root / rel
+        if not path.exists():
+            continue
+        try:
+            from PIL import Image
 
-        fn = getattr(b, "page_icon_arg", None)
-        if callable(fn):
-            return fn()
-        logo = getattr(b, "logo_path", None)
-        if callable(logo):
-            p = str(logo() or "")
-            if p.endswith((".png", ".jpg", ".jpeg", ".webp")):
-                return p
-    except Exception:
-        pass
+            return Image.open(path)
+        except Exception:
+            return str(path)
     return "🃏"
 
 
