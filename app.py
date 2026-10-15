@@ -3324,9 +3324,16 @@ def page_protection_gap():
     )
 
     try:
+        import importlib
+
         from tt_core import protection_gap as pg
-    except Exception:
-        st.error("保障缺口模組未能載入，請 Reboot 後再試。")
+
+        # Streamlit Cloud can keep a stale module after partial redeploy
+        pg = importlib.reload(pg)
+        if not hasattr(pg, "pillar_status"):
+            raise AttributeError("protection_gap.pillar_status missing after reload")
+    except Exception as e:
+        st.error(f"保障缺口模組未能載入：{e}。請 Reboot app 後再試。")
         return
 
     main_types = ["人壽保險", "危疾保險", "醫療保險", "意外保險"]
@@ -3685,4 +3692,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T13:40Z
+# cloud_redeploy_stamp: 2026-10-15T15:35Z

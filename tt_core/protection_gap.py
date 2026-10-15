@@ -1,4 +1,7 @@
-"""保障缺口 — existing policies vs recommended cover for protection sales."""
+"""保障缺口 — existing policies vs recommended cover for protection sales.
+
+Redeploy stamp: 2026-10-15T15:35Z (pillar_status / svg_pillar_status_pie).
+"""
 
 from __future__ import annotations
 
