@@ -720,7 +720,6 @@ if not st.session_state["logged_in"]:
             <div class="login-panel">
               <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_APP}</div>
               <h1 style="margin:0 0 6px 0;">活動量 · 業績</h1>
-              <p style="color:#6B7280; margin:0 0 8px 0;">專為 iPhone / iPad 優化 · 加到主畫面更快</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -746,13 +745,13 @@ if not st.session_state["logged_in"]:
             """
             <div class="tt-install-card">
               <strong>想變主畫面 App？</strong><br>
-              Safari 打開 → 分享 □↑ →「加到主畫面」
+              Safari 打開 → 分享 →「加到主畫面」
             </div>
             """,
             unsafe_allow_html=True,
         )
         render_install_guide(compact=True)
-        st.caption("MDRT 目標：$512,800")
+        st.caption("每年目標：M + 2")
     else:
         c1, c2, c3 = st.columns([1, 1.4, 1])
         with c2:
