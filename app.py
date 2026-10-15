@@ -2426,7 +2426,8 @@ def page_quarterly_offers():
 _COMMON_FORMS_CATEGORIES = [
     "簽單表格",
     "行政文件",
-    "培訓資料",
+    "培訓工具",
+    "招募工具",
     "客戶文件",
     "產品資料",
     "Sales Kit",
