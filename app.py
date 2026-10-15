@@ -1,4 +1,6 @@
 """TIM TEAM System — activity + performance hub."""
+# redeploy_marker: force Streamlit Cloud restart
+
 
 from __future__ import annotations
 
@@ -758,7 +760,7 @@ if not st.session_state["logged_in"]:
         )
         render_install_guide(compact=True)
         st.caption("每年目標：M + 2")
-        st.caption("若見到 Oh no：Streamlit Cloud → Manage app → Reboot，再重新開啟。")
+        st.caption("若見到 Oh no：Streamlit Cloud 開 app → 右上 ⋮ → Reboot app（或等自動重新部署），再重新開啟。")
     else:
         c1, c2, c3 = st.columns([1, 1.4, 1])
         with c2:
@@ -2804,3 +2806,5 @@ elif "常用表格" in menu:
     _safe_page("常用表格", page_common_forms)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
+
+# cloud_redeploy_stamp: 2026-10-15T05:58Z
