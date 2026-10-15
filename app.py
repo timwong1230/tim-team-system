@@ -1150,22 +1150,18 @@ def page_home():
     # Compact KPI strip
     if snap:
         mdrt = mdrt_card_metrics(user)
-        k1, k2, k3, k4 = st.columns(4) if not MOBILE else st.columns(2)
-        k1.metric("今日要跟", len(due))
-        k2.metric("7日內", len(upcoming))
-        if not MOBILE:
-            k3.metric("本週活動", f"{snap['wk_count']}/{WEEKLY_MIN_ACTS}")
-            k4.metric("MDRT", f"{mdrt['mdrt_pct']:.0f}%")
-        else:
-            k3, k4 = st.columns(2)
-            k3.metric("本週活動", f"{snap['wk_count']}/{WEEKLY_MIN_ACTS}")
-            k4.metric("MDRT", f"{mdrt['mdrt_pct']:.0f}%")
+        r1 = st.columns(2)
+        r1[0].metric("今日要跟", len(due))
+        r1[1].metric("7日內", len(upcoming))
+        r2 = st.columns(2)
+        r2[0].metric("本週活動", f"{snap['wk_count']}/{WEEKLY_MIN_ACTS}")
+        r2[1].metric("MDRT", f"{mdrt['mdrt_pct']:.0f}%")
     else:
         calc = float(team["fyc"].sum()) if not team.empty else 0.0
-        k1, k2, k3 = st.columns(3)
-        k1.metric("今日要跟", len(due))
-        k2.metric("Team SC", f"${get_team_sc(calc):,.0f}")
-        k3.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
+        r1 = st.columns(2)
+        r1[0].metric("今日要跟", len(due))
+        r1[1].metric("Team SC", f"${get_team_sc(calc):,.0f}")
+        st.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
 
     st.markdown("### 今日要跟")
     if due.empty:
@@ -3719,4 +3715,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T17:15Z
+# cloud_redeploy_stamp: 2026-10-15T17:30Z
