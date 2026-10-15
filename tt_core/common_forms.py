@@ -213,6 +213,8 @@ def sync_folder_into_catalog(
         if run_query_gs("INSERT", SHEET, row):
             added += 1
             known_ids.add(drive_id)
+            # Anyone-with-link so teammates open without Request access
+            share_file_anyone(drive_id)
         else:
             return {
                 "ok": False,
@@ -225,7 +227,7 @@ def sync_folder_into_catalog(
         "ok": True,
         "added": added,
         "skipped": skipped,
-        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份",
+        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份（已嘗試開放連結分享）",
     }
 
 
@@ -317,28 +319,65 @@ def download_form_bytes(drive_file_id: str) -> bytes:
     return download_file(drive_file_id)
 
 
+def share_file_anyone(drive_file_id: str) -> bool:
+    """Make file readable by anyone with the link — no per-colleague approval."""
+    file_id = str(drive_file_id or "").strip()
+    if not file_id:
+        return False
+    service = get_drive_service()
+    if not service:
+        return False
+    try:
+        service.permissions().create(
+            fileId=file_id,
+            body={"type": "anyone", "role": "reader"},
+            supportsAllDrives=True,
+            fields="id",
+        ).execute()
+        return True
+    except Exception as e:
+        msg = str(e).lower()
+        if "already" in msg or "duplicate" in msg or "exists" in msg:
+            return True
+        st.session_state["_common_forms_share_warn"] = str(e)[:240]
+        return False
+
+
+def share_all_catalog_files() -> dict[str, Any]:
+    """Batch-enable link sharing for every catalogued Drive file."""
+    df = list_forms()
+    if df is None or df.empty or "drive_file_id" not in df.columns:
+        return {"ok": True, "shared": 0, "failed": 0, "message": "清單未有檔案"}
+    shared = 0
+    failed = 0
+    for raw_id in df["drive_file_id"].tolist():
+        drive_id = str(raw_id or "").strip()
+        if not drive_id:
+            continue
+        if share_file_anyone(drive_id):
+            shared += 1
+        else:
+            failed += 1
+    return {
+        "ok": failed == 0,
+        "shared": shared,
+        "failed": failed,
+        "message": f"已開放連結 {shared} 份" + (f"，失敗 {failed} 份" if failed else ""),
+    }
+
+
 def ensure_view_link(drive_file_id: str, *, share_anyone: bool = False) -> str:
     """
     Build a Drive view URL for opening in a new tab (iPhone-safe).
 
     By default this does NOT call the Drive API during page render.
-    Set share_anyone=True only from an explicit Leader action.
+    Set share_anyone=True only from an explicit Leader action / sync.
     """
     file_id = str(drive_file_id or "").strip()
     if not file_id:
         return ""
     if share_anyone:
-        service = get_drive_service()
-        if service:
-            try:
-                service.permissions().create(
-                    fileId=file_id,
-                    body={"type": "anyone", "role": "reader"},
-                    supportsAllDrives=True,
-                    fields="id",
-                ).execute()
-            except Exception:
-                pass
+        share_file_anyone(file_id)
     return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
 
 
@@ -384,7 +423,8 @@ def setup_hint() -> str:
     return (
         "一次性設定：\n"
         "1. 用你自己嘅 Google 帳號開資料夾，例如「TIM TEAM 常用表格」\n"
-        f"2. 將資料夾分享俾 **{email}**（檢視者即可；要 app 內上傳先要編輯者 + 共用雲端硬碟）\n"
+        f"2. 將資料夾分享俾 **{email}**（**編輯者** — 先可以自動開放下載連結）\n"
         "3. 複製資料夾連結或 Folder ID，貼喺下面儲存\n"
-        "4. 之後用自己帳號將文件放入資料夾 → 返 app 撳「同步 Drive 資料夾」"
+        "4. 用自己帳號放入文件 → app「同步 Drive 資料夾」→「開放全部連結」\n"
+        "5. 之後同事撳「開啟檔案」唔使再等你 approve"
     )

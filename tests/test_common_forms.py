@@ -9,6 +9,8 @@ from tt_core.common_forms import (
     _quota_error,
     ensure_view_link,
     format_size,
+    share_file_anyone,
+    share_all_catalog_files,
 )
 
 
@@ -50,3 +52,9 @@ def test_ensure_view_link_shape():
     url = ensure_view_link("abc123FileId")
     assert url.startswith("https://drive.google.com/file/d/abc123FileId/view")
     assert ensure_view_link("") == ""
+
+
+def test_share_helpers_exist():
+    assert callable(share_file_anyone)
+    assert callable(share_all_catalog_files)
+    assert share_file_anyone("") is False

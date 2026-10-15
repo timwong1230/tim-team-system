@@ -745,6 +745,8 @@ if not st.session_state["logged_in"]:
                         "avatar": d[0][5],
                     }
                 )
+                st.session_state.pop("_notif_checked_this_login", None)
+                st.session_state.pop("_notif_pending_payload", None)
                 st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
                 st.rerun()
             else:
@@ -789,6 +791,8 @@ if not st.session_state["logged_in"]:
                             "avatar": d[0][5],
                         }
                     )
+                    st.session_state.pop("_notif_checked_this_login", None)
+                    st.session_state.pop("_notif_pending_payload", None)
                     st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
                     st.rerun()
                 else:
@@ -2339,9 +2343,10 @@ def _common_forms_setup_hint() -> str:
     return (
         "一次性設定：\n"
         "1. 用你自己嘅 Google 帳號開資料夾，例如「TIM TEAM 常用表格」\n"
-        f"2. 將資料夾分享俾 **{email}**（檢視者即可）\n"
+        f"2. 將資料夾分享俾 **{email}**（**編輯者** — 先可以自動開放下載連結）\n"
         "3. 複製資料夾連結或 Folder ID，貼喺下面儲存\n"
-        "4. 用自己帳號將文件放入資料夾 → 返 app 撳「同步 Drive 資料夾」"
+        "4. 放入文件 →「同步 Drive 資料夾」→「開放全部連結」\n"
+        "5. 之後同事開啟唔使再等 approve"
     )
 
 
@@ -2474,6 +2479,18 @@ def _sync_common_forms_folder(
         if run_query_gs("INSERT", "common_forms", row):
             added += 1
             known_ids.add(drive_id)
+            # Best-effort anyone-with-link (same as module helper)
+            try:
+                service = _drive().get_drive_service()
+                if service:
+                    service.permissions().create(
+                        fileId=drive_id,
+                        body={"type": "anyone", "role": "reader"},
+                        supportsAllDrives=True,
+                        fields="id",
+                    ).execute()
+            except Exception:
+                pass
         else:
             return {
                 "ok": False,
@@ -2486,7 +2503,7 @@ def _sync_common_forms_folder(
         "ok": True,
         "added": added,
         "skipped": skipped,
-        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份",
+        "message": f"同步完成：新增 {added} 份，略過已有 {skipped} 份（已嘗試開放連結分享）",
     }
 
 
@@ -2549,6 +2566,25 @@ def page_common_forms():
                         st.rerun()
                     else:
                         st.error(result.get("error") or "同步失敗")
+                if st.button(
+                    "開放全部連結（免審批）",
+                    key="common_forms_share_all",
+                    use_container_width=True,
+                    help="將清單內每份檔案設為「知道連結即可檢視」，同事唔使再等你 approve",
+                ):
+                    with st.spinner("開放連結中…"):
+                        share_fn = getattr(cf, "share_all_catalog_files", None) if cf else None
+                        if callable(share_fn):
+                            result = share_fn()
+                        else:
+                            result = _share_all_common_forms()
+                    if result.get("ok"):
+                        st.toast(result.get("message") or "已開放", icon="✅")
+                    else:
+                        st.warning(result.get("message") or "部分檔案未能開放")
+                        err = st.session_state.pop("_common_forms_share_warn", "")
+                        if err:
+                            st.caption(f"詳情：{err}")
 
         with st.expander("Leader：app 內上傳（需共用雲端硬碟）", expanded=False):
             st.caption(
@@ -2682,7 +2718,7 @@ def page_common_forms():
             if not drive_id:
                 st.warning("缺少 Drive 檔案 ID")
             elif view_url:
-                # New tab / external Drive view — user can dismiss and return to app
+                # Shared Drive link — no Request access after Leader opens links
                 if hasattr(st, "link_button"):
                     st.link_button(
                         "開啟檔案",
@@ -2696,7 +2732,35 @@ def page_common_forms():
                         f"<strong>開啟檔案</strong></a>",
                         unsafe_allow_html=True,
                     )
-                st.caption("會用 Google Drive 開新頁；睇完關掉／返回即可返 app。")
+                # App-stream download as backup (no Google approval; SA reads the file)
+                cache_key = f"_form_dl_{rid}"
+                cached = st.session_state.get(cache_key)
+                if cached is None:
+                    if st.button(
+                        "App 內下載（免審批）",
+                        key=f"prep_form_{rid}",
+                        use_container_width=True,
+                    ):
+                        try:
+                            with st.spinner("準備檔案…"):
+                                dl = getattr(cf, "download_form_bytes", None) if cf else None
+                                if callable(dl):
+                                    st.session_state[cache_key] = dl(drive_id)
+                                else:
+                                    st.session_state[cache_key] = download_file(drive_id)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"下載失敗：{e}")
+                else:
+                    st.download_button(
+                        "儲存到裝置",
+                        data=cached,
+                        file_name=fname or f"{title}.bin",
+                        mime=str(row.get("mime") or "application/octet-stream"),
+                        key=f"dl_form_{rid}",
+                        use_container_width=True,
+                    )
+                    st.caption("手機若困喺預覽頁，關掉新頁即可返 app。")
             else:
                 st.warning("未能產生開啟連結")
         if is_leader and len(cols) > 1:
@@ -2721,6 +2785,57 @@ def _common_forms_view_link(drive_file_id: str) -> str:
     if not file_id:
         return ""
     return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+
+
+def _share_all_common_forms() -> dict:
+    """Inline fallback: anyone-with-link for every catalog file."""
+    cf = _common_forms()
+    try:
+        if cf is not None:
+            fn = getattr(cf, "share_all_catalog_files", None)
+            if callable(fn):
+                return dict(fn() or {})
+    except Exception:
+        pass
+    try:
+        existing = read_data("common_forms")
+    except Exception:
+        existing = pd.DataFrame()
+    if existing is None or existing.empty or "drive_file_id" not in existing.columns:
+        return {"ok": True, "shared": 0, "failed": 0, "message": "清單未有檔案"}
+    shared = 0
+    failed = 0
+    try:
+        service = _drive().get_drive_service()
+    except Exception:
+        service = None
+    if not service:
+        return {"ok": False, "shared": 0, "failed": 0, "message": "Drive 未連接"}
+    for raw_id in existing["drive_file_id"].tolist():
+        drive_id = str(raw_id or "").strip()
+        if not drive_id:
+            continue
+        try:
+            service.permissions().create(
+                fileId=drive_id,
+                body={"type": "anyone", "role": "reader"},
+                supportsAllDrives=True,
+                fields="id",
+            ).execute()
+            shared += 1
+        except Exception as e:
+            msg = str(e).lower()
+            if "already" in msg or "duplicate" in msg or "exists" in msg:
+                shared += 1
+            else:
+                failed += 1
+                st.session_state["_common_forms_share_warn"] = str(e)[:240]
+    return {
+        "ok": failed == 0,
+        "shared": shared,
+        "failed": failed,
+        "message": f"已開放連結 {shared} 份" + (f"，失敗 {failed} 份" if failed else ""),
+    }
 
 
 def page_profile():

@@ -479,16 +479,34 @@ def show_notification_modal(new_activities, current_user):
     st.markdown("---")
     if st.button("收到，知道了", type="primary", use_container_width=True):
         update_last_read_time(current_user)
+        st.session_state["_notif_pending_payload"] = None
+        st.session_state["_notif_checked_this_login"] = True
         st.rerun()
 
 
 def check_notifications(current_user: str):
+    """Show unread check-in feed at most once per login session."""
+    if not current_user:
+        return
+
+    # Keep dialog open across reruns until user dismisses it
+    pending = st.session_state.get("_notif_pending_payload")
+    if pending is not None:
+        show_notification_modal(pending, current_user)
+        return
+
+    # Already handled this login — never pop again while browsing
+    if st.session_state.get("_notif_checked_this_login"):
+        return
+
     users_df = get_clean_users()
     act_df = read_data("activities")
     if users_df.empty or act_df.empty:
+        st.session_state["_notif_checked_this_login"] = True
         return
     user_record = users_df[users_df["username"] == current_user]
     if user_record.empty:
+        st.session_state["_notif_checked_this_login"] = True
         return
     last_read_str = str(user_record.iloc[0].get("last_read", ""))
     try:
@@ -500,6 +518,7 @@ def check_notifications(current_user: str):
     except Exception:
         last_read = pd.to_datetime("2020-01-01")
     if "timestamp" not in act_df.columns:
+        st.session_state["_notif_checked_this_login"] = True
         return
     act_df["timestamp_dt"] = pd.to_datetime(act_df["timestamp"], errors="coerce")
     new_activities = act_df[
@@ -507,8 +526,13 @@ def check_notifications(current_user: str):
         & (act_df["username"] != current_user)
         & (~act_df["username"].isin(INACTIVE_MEMBERS))
     ]
+    st.session_state["_notif_checked_this_login"] = True
     if not new_activities.empty:
+        # Store payload so dialog can re-render until dismissed (once per login only)
+        st.session_state["_notif_pending_payload"] = new_activities
         show_notification_modal(new_activities, current_user)
+    else:
+        update_last_read_time(current_user)
 
 
 def get_activity_style(act_type: str):
