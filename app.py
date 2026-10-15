@@ -2732,35 +2732,6 @@ def page_common_forms():
                         f"<strong>開啟檔案</strong></a>",
                         unsafe_allow_html=True,
                     )
-                # App-stream download as backup (no Google approval; SA reads the file)
-                cache_key = f"_form_dl_{rid}"
-                cached = st.session_state.get(cache_key)
-                if cached is None:
-                    if st.button(
-                        "App 內下載（免審批）",
-                        key=f"prep_form_{rid}",
-                        use_container_width=True,
-                    ):
-                        try:
-                            with st.spinner("準備檔案…"):
-                                dl = getattr(cf, "download_form_bytes", None) if cf else None
-                                if callable(dl):
-                                    st.session_state[cache_key] = dl(drive_id)
-                                else:
-                                    st.session_state[cache_key] = download_file(drive_id)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"下載失敗：{e}")
-                else:
-                    st.download_button(
-                        "儲存到裝置",
-                        data=cached,
-                        file_name=fname or f"{title}.bin",
-                        mime=str(row.get("mime") or "application/octet-stream"),
-                        key=f"dl_form_{rid}",
-                        use_container_width=True,
-                    )
-                    st.caption("手機若困喺預覽頁，關掉新頁即可返 app。")
             else:
                 st.warning("未能產生開啟連結")
         if is_leader and len(cols) > 1:
