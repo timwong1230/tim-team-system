@@ -80,23 +80,62 @@ def add_act(u, d, t, n):
     )
 
 
-def add_ammo(u, d, cat, title, knowledge, story_context, nightmare, dream, scenario):
-    run_query_gs(
-        "INSERT",
-        "story_ammo",
-        {
-            "username": u,
-            "date": str(d),
-            "category": cat,
-            "title": title,
-            "knowledge": knowledge,
-            "story_context": story_context,
-            "nightmare": nightmare,
-            "dream": dream,
-            "scenario": scenario,
-            "timestamp": str(datetime.datetime.now()),
-        },
+def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
+    """Sheet rows override defaults when that quarter+kind has any saved rows."""
+    from tt_core.quarterly_offers import default_items
+
+    q = str(quarter or "").strip().upper()
+    k = str(kind or "").strip().lower()
+    if k not in {"customer", "agent"}:
+        return []
+    try:
+        df = read_data("quarterly_offers")
+    except Exception:
+        df = None
+    if df is not None and not df.empty and "quarter" in df.columns:
+        work = df.copy()
+        work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
+        work["kind"] = work["kind"].astype(str).str.strip().str.lower()
+        hit = work[(work["quarter"] == q) & (work["kind"] == k)]
+        if not hit.empty:
+            rows = []
+            for _, r in hit.iterrows():
+                rows.append(
+                    {
+                        "id": r.get("id", ""),
+                        "title": str(r.get("title", "") or "").strip(),
+                        "detail": str(r.get("detail", "") or "").strip(),
+                        "note": str(r.get("note", "") or "").strip(),
+                        "sort": int(pd.to_numeric(r.get("sort", 0), errors="coerce") or 0),
+                    }
+                )
+            rows = [x for x in rows if x["title"]]
+            return sorted(rows, key=lambda x: x["sort"])
+    return default_items(q, k)
+
+
+def add_quarterly_offer(quarter: str, kind: str, title: str, detail: str, note: str = "", sort: int = 0) -> bool:
+    return bool(
+        run_query_gs(
+            "INSERT",
+            "quarterly_offers",
+            {
+                "quarter": str(quarter).strip().upper(),
+                "kind": str(kind).strip().lower(),
+                "title": str(title or "").strip(),
+                "detail": str(detail or "").strip(),
+                "note": str(note or "").strip(),
+                "sort": int(sort or 0),
+                "updated_at": str(datetime.datetime.now()),
+            },
+        )
     )
+
+
+def delete_quarterly_offer(row_id) -> bool:
+    if row_id is None or str(row_id).strip() == "":
+        return False
+    return bool(run_query_gs("DELETE", "quarterly_offers", row_id=row_id))
 
 
 def upd_fyc(u, m, a, source: str = "manual"):

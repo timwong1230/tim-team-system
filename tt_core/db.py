@@ -33,6 +33,7 @@ CORE_SHEETS = [
     "monthly_fyc",
     "activities",
     "story_ammo",
+    "quarterly_offers",
     "iris_agent_map",
     "iris_sync_log",
     "system_settings",
@@ -277,6 +278,7 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
             "activities",
             "monthly_fyc",
             "story_ammo",
+            "quarterly_offers",
             "iris_sync_log",
             "system_settings",
         }:

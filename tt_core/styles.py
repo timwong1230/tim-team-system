@@ -185,8 +185,34 @@ div.stButton > button[kind="secondary"] {
   box-shadow: 0 4px 15px rgba(0,0,0,0.05);
   margin-bottom: 20px;
 }
-.ammo-nightmare { background-color: #fdedec; border-left: 4px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
-.ammo-dream { background-color: #eafaf1; border-left: 4px solid #2ecc71; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
+.offer-card {
+  background: #ffffff;
+  border: 1px solid #E8E2D4;
+  border-left: 5px solid #D4AF37;
+  border-radius: 12px;
+  padding: 16px 16px 14px;
+  margin: 0 0 12px 0;
+  box-shadow: 0 6px 18px rgba(28,36,48,0.05);
+}
+.offer-title {
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: #1C2430;
+  margin-bottom: 6px;
+}
+.offer-detail {
+  color: #3A4452;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+.offer-note {
+  margin-top: 10px;
+  color: #7A6420;
+  background: #FFF8E1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
 
 .login-panel {
   background: rgba(255,255,255,0.92);
