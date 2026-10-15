@@ -26,9 +26,7 @@ from tt_core.constants import (
 )
 from tt_core.data import (
     add_act,
-    add_quarterly_offer,
     check_notifications,
-    delete_quarterly_offer,
     get_activity_style,
     get_all_act,
     get_clean_users,
@@ -37,7 +35,6 @@ from tt_core.data import (
     get_member_snapshot,
     get_note_template,
     get_q1_data,
-    get_quarterly_offer_items,
     get_weekly_data,
     last_iris_sync,
     login,
@@ -47,7 +44,6 @@ from tt_core.data import (
     update_avt,
     update_pw,
 )
-from tt_core.quarterly_offers import QUARTERS, current_quarter_key
 from tt_core.db import (
     connection_banner_state,
     init_db_gs,
@@ -55,6 +51,142 @@ from tt_core.db import (
     run_query_gs,
     warm_cache,
 )
+
+# Inline fallbacks — Streamlit Cloud may cache an older tt_core.data without
+# quarterly helpers / miss tt_core.quarterly_offers on a partial reboot.
+_QUARTERS_FALLBACK = {
+    "Q1": {"label": "第一季", "period": "1月 – 3月", "months": (1, 2, 3)},
+    "Q2": {"label": "第二季", "period": "4月 – 6月", "months": (4, 5, 6)},
+    "Q3": {"label": "第三季", "period": "7月 – 9月", "months": (7, 8, 9)},
+    "Q4": {"label": "第四季", "period": "10月 – 12月", "months": (10, 11, 12)},
+}
+
+
+def _quarterly_mod():
+    try:
+        import tt_core.quarterly_offers as m
+
+        return m
+    except Exception:
+        return None
+
+
+def _quarters_map() -> dict:
+    m = _quarterly_mod()
+    return getattr(m, "QUARTERS", None) or _QUARTERS_FALLBACK
+
+
+def _current_quarter_key() -> str:
+    m = _quarterly_mod()
+    fn = getattr(m, "current_quarter_key", None) if m else None
+    if callable(fn):
+        try:
+            return str(fn())
+        except Exception:
+            pass
+    month = datetime.date.today().month
+    if month <= 3:
+        return "Q1"
+    if month <= 6:
+        return "Q2"
+    if month <= 9:
+        return "Q3"
+    return "Q4"
+
+
+def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
+    """Prefer tt_core.data; fall back to sheet + quarterly_offers if Cloud is stale."""
+    try:
+        import tt_core.data as d
+
+        fn = getattr(d, "get_quarterly_offer_items", None)
+        if callable(fn):
+            return list(fn(quarter, kind) or [])
+    except Exception:
+        pass
+
+    q = str(quarter or "").strip().upper()
+    k = str(kind or "").strip().lower()
+    if k not in {"customer", "agent"}:
+        return []
+    try:
+        df = read_data("quarterly_offers")
+        if df is not None and not df.empty and "quarter" in df.columns:
+            work = df.copy()
+            work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
+            work["kind"] = work["kind"].astype(str).str.strip().str.lower()
+            hit = work[(work["quarter"] == q) & (work["kind"] == k)]
+            if not hit.empty:
+                rows = []
+                for _, r in hit.iterrows():
+                    title = str(r.get("title", "") or "").strip()
+                    if not title:
+                        continue
+                    rows.append(
+                        {
+                            "id": r.get("id", ""),
+                            "title": title,
+                            "detail": str(r.get("detail", "") or "").strip(),
+                            "note": str(r.get("note", "") or "").strip(),
+                            "sort": int(pd.to_numeric(r.get("sort", 0), errors="coerce") or 0),
+                        }
+                    )
+                if rows:
+                    return sorted(rows, key=lambda x: x["sort"])
+    except Exception:
+        pass
+
+    m = _quarterly_mod()
+    default_items = getattr(m, "default_items", None) if m else None
+    if callable(default_items):
+        try:
+            return list(default_items(q, k) or [])
+        except Exception:
+            return []
+    return []
+
+
+def add_quarterly_offer(
+    quarter: str, kind: str, title: str, detail: str, note: str = "", sort: int = 0
+) -> bool:
+    try:
+        import tt_core.data as d
+
+        fn = getattr(d, "add_quarterly_offer", None)
+        if callable(fn):
+            return bool(fn(quarter, kind, title, detail, note, sort))
+    except Exception:
+        pass
+    # Direct Sheets write if data helper missing on stale Cloud cache
+    return bool(
+        run_query_gs(
+            "INSERT",
+            "quarterly_offers",
+            {
+                "quarter": str(quarter).strip().upper(),
+                "kind": str(kind).strip().lower(),
+                "title": str(title or "").strip(),
+                "detail": str(detail or "").strip(),
+                "note": str(note or "").strip(),
+                "sort": int(sort or 0),
+                "updated_at": str(datetime.datetime.now()),
+            },
+        )
+    )
+
+
+def delete_quarterly_offer(row_id) -> bool:
+    if row_id is None or str(row_id).strip() == "":
+        return False
+    try:
+        import tt_core.data as d
+
+        fn = getattr(d, "delete_quarterly_offer", None)
+        if callable(fn):
+            return bool(fn(row_id))
+    except Exception:
+        pass
+    return bool(run_query_gs("DELETE", "quarterly_offers", row_id=row_id))
 
 
 def get_team_sc(fallback: float = 0.0) -> float:
@@ -1767,10 +1899,11 @@ def page_quarterly_offers():
         "理財顧問獎賞 TA261048。僅供內部參考，條款以官方文件為準。"
     )
 
-    q_keys = list(QUARTERS.keys())
-    cur = current_quarter_key()
+    quarters = _quarters_map()
+    q_keys = list(quarters.keys())
+    cur = _current_quarter_key()
     default_idx = q_keys.index(cur) if cur in q_keys else 0
-    labels = [f"{k} {QUARTERS[k]['label']}（{QUARTERS[k]['period']}）" for k in q_keys]
+    labels = [f"{k} {quarters[k]['label']}（{quarters[k]['period']}）" for k in q_keys]
     choice = st.radio(
         "季度",
         options=q_keys,
@@ -1779,7 +1912,7 @@ def page_quarterly_offers():
         horizontal=not MOBILE,
         label_visibility="collapsed",
     )
-    meta = QUARTERS[choice]
+    meta = quarters[choice]
     st.markdown(
         f"""
         <div class="challenge-header-box">
