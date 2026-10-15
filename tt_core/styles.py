@@ -187,7 +187,7 @@ div.stButton > button[kind="secondary"] {
 }
 .offer-banner {
   background: linear-gradient(135deg, #1C2430 0%, #2C3A4E 100%);
-  color: #F8F4EA;
+  color: #F8F4EA !important;
   border-radius: 14px;
   padding: 14px 16px;
   font-size: 0.9rem;
@@ -195,6 +195,67 @@ div.stButton > button[kind="secondary"] {
   margin: 0 0 14px 0;
   border: 1px solid rgba(212,175,55,0.35);
   box-shadow: 0 10px 24px rgba(28,36,48,0.12);
+}
+.offer-section {
+  margin: 0 0 18px 0;
+}
+.offer-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 1.02rem;
+  color: #1C2430 !important;
+  margin: 0 0 8px 0;
+}
+.offer-section-bar {
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  border-radius: 4px;
+  background: #D4AF37;
+  flex-shrink: 0;
+}
+.offer-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #E8E2D4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(28,36,48,.05);
+  margin-bottom: 4px;
+}
+.offer-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
+}
+.offer-table th {
+  background: linear-gradient(180deg, #1C2430, #2A3444);
+  color: #F8F4EA !important;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.offer-table td {
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #2C3440 !important;
+  line-height: 1.45;
+  border-top: 1px solid #F0EBE0;
+  vertical-align: top;
+}
+.offer-table tr:nth-child(even) td {
+  background: #FCFAF5;
+}
+.offer-table td.offer-product {
+  font-weight: 700;
+  color: #1C2430 !important;
+  min-width: 110px;
 }
 .offer-card {
   background: #ffffff;

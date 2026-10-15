@@ -128,17 +128,68 @@ def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
 
 def get_quarterly_catalog(quarter: str, kind: str) -> dict:
     """Table-ready catalog: banner + sections[{title, columns, rows}]."""
-    from tt_core.quarterly_offers import catalog_from_flat_items, default_catalog
-
     q = str(quarter or "").strip().upper()
     k = str(kind or "").strip().lower()
     empty = {"banner": "", "footnote": "", "sections": []}
     if k not in {"customer", "agent"}:
         return empty
+
     sheet_items = _quarterly_sheet_items(q, k)
     if sheet_items:
-        return catalog_from_flat_items(sheet_items, kind=k)
-    return default_catalog(q, k)
+        try:
+            from tt_core.quarterly_offers import catalog_from_flat_items
+
+            cat = catalog_from_flat_items(sheet_items, kind=k)
+            if cat.get("sections"):
+                return cat
+        except Exception:
+            pass
+
+    try:
+        from tt_core.quarterly_offers import default_catalog
+
+        cat = default_catalog(q, k)
+        if isinstance(cat, dict) and cat.get("sections"):
+            return cat
+    except Exception:
+        pass
+
+    try:
+        from tt_core import quarterly_offers as qo
+
+        root = getattr(qo, "DEFAULT_CATALOG", None) or getattr(qo, "DEFAULT_OFFERS", None) or {}
+        block = (root.get(q) or {}).get(k)
+        if isinstance(block, dict) and block.get("sections"):
+            return {
+                "banner": str(block.get("banner", "") or ""),
+                "footnote": str(block.get("footnote", "") or ""),
+                "sections": list(block.get("sections") or []),
+            }
+        if isinstance(block, list) and block:
+            rows = [
+                [
+                    str(x.get("title", "") or ""),
+                    str(x.get("detail", "") or ""),
+                    str(x.get("note", "") or ""),
+                ]
+                for x in block
+                if isinstance(x, dict) and str(x.get("title", "") or "").strip()
+            ]
+            if rows:
+                return {
+                    "banner": "",
+                    "footnote": "",
+                    "sections": [
+                        {
+                            "title": "客戶優惠" if k == "customer" else "營業員獎賞",
+                            "columns": ["項目", "詳情", "備註"],
+                            "rows": rows,
+                        }
+                    ],
+                }
+    except Exception:
+        pass
+    return empty
 
 
 def add_quarterly_offer(quarter: str, kind: str, title: str, detail: str, note: str = "", sort: int = 0) -> bool:

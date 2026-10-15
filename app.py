@@ -146,46 +146,125 @@ def get_quarterly_offer_items(quarter: str, kind: str) -> list[dict]:
     return []
 
 
+def _legacy_list_to_catalog(items: list, *, kind: str) -> dict:
+    """Convert old title/detail card list into one table section."""
+    rows = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "") or "").strip()
+        if not title:
+            continue
+        rows.append(
+            [
+                title,
+                str(item.get("detail", "") or "").strip(),
+                str(item.get("note", "") or "").strip(),
+            ]
+        )
+    if not rows:
+        return {"banner": "", "footnote": "", "sections": []}
+    label = "客戶優惠" if kind == "customer" else "營業員獎賞"
+    return {
+        "banner": "",
+        "footnote": "",
+        "sections": [
+            {
+                "title": label,
+                "columns": ["項目", "詳情", "備註"],
+                "rows": rows,
+            }
+        ],
+    }
+
+
 def get_quarterly_catalog(quarter: str, kind: str) -> dict:
     """Table catalog with lazy fallbacks for Streamlit Cloud cache lag."""
     empty = {"banner": "", "footnote": "", "sections": []}
+    q = str(quarter or "").strip().upper()
+    k = str(kind or "").strip().lower()
+    if k not in {"customer", "agent"}:
+        return empty
+
+    # 1) Prefer tt_core.data helper when present and non-empty
     try:
         import tt_core.data as d
 
         fn = getattr(d, "get_quarterly_catalog", None)
         if callable(fn):
-            cat = fn(quarter, kind)
-            if isinstance(cat, dict):
+            cat = fn(q, k)
+            if isinstance(cat, dict) and (cat.get("sections") or []):
                 return cat
     except Exception:
         pass
 
     m = _quarterly_mod()
-    # Sheet override via flat items
-    items = get_quarterly_offer_items(quarter, kind)
     from_flat = getattr(m, "catalog_from_flat_items", None) if m else None
     default_catalog = getattr(m, "default_catalog", None) if m else None
-    # If items came from sheet they have no "section" key from defaults... hard to tell.
-    # Prefer default_catalog when available and sheet empty of custom-only signal:
+
+    # 2) Sheet override only when there are real titled rows
     try:
         df = read_data("quarterly_offers")
-        q = str(quarter or "").strip().upper()
-        k = str(kind or "").strip().lower()
-        has_sheet = False
         if df is not None and not df.empty and "quarter" in df.columns:
             work = df.copy()
             work["quarter"] = work["quarter"].astype(str).str.strip().str.upper()
             work["kind"] = work["kind"].astype(str).str.strip().str.lower()
-            has_sheet = not work[(work["quarter"] == q) & (work["kind"] == k)].empty
-        if has_sheet and callable(from_flat):
-            return from_flat(items, kind=k)
+            hit = work[(work["quarter"] == q) & (work["kind"] == k)]
+            sheet_items = []
+            for _, r in hit.iterrows():
+                title = str(r.get("title", "") or "").strip()
+                if not title:
+                    continue
+                sheet_items.append(
+                    {
+                        "title": title,
+                        "detail": str(r.get("detail", "") or "").strip(),
+                        "note": str(r.get("note", "") or "").strip(),
+                        "sort": int(pd.to_numeric(r.get("sort", 0), errors="coerce") or 0),
+                    }
+                )
+            if sheet_items and callable(from_flat):
+                cat = from_flat(sheet_items, kind=k)
+                if cat.get("sections"):
+                    return cat
+            if sheet_items:
+                return _legacy_list_to_catalog(sheet_items, kind=k)
     except Exception:
         pass
+
+    # 3) New catalog API
     if callable(default_catalog):
         try:
-            return default_catalog(quarter, kind)
+            cat = default_catalog(q, k)
+            if isinstance(cat, dict) and (cat.get("sections") or []):
+                return cat
         except Exception:
-            return empty
+            pass
+
+    # 4) Direct DEFAULT_CATALOG / legacy DEFAULT_OFFERS on the module
+    if m is not None:
+        try:
+            catalog_root = getattr(m, "DEFAULT_CATALOG", None) or getattr(m, "DEFAULT_OFFERS", None)
+            block = (catalog_root or {}).get(q, {}).get(k)
+            if isinstance(block, dict) and (block.get("sections") or []):
+                return {
+                    "banner": str(block.get("banner", "") or ""),
+                    "footnote": str(block.get("footnote", "") or ""),
+                    "sections": list(block.get("sections") or []),
+                }
+            if isinstance(block, dict) and isinstance(block.get("customer"), list):
+                pass
+            # Legacy: DEFAULT_OFFERS[Q4][customer] was a list of cards
+            if isinstance(block, list) and block:
+                return _legacy_list_to_catalog(block, kind=k)
+            # Even older nested shape {"customer": [...]} already handled above
+            if isinstance(catalog_root, dict):
+                legacy = catalog_root.get(q, {})
+                if isinstance(legacy, dict) and isinstance(legacy.get(k), list):
+                    return _legacy_list_to_catalog(legacy.get(k), kind=k)
+        except Exception:
+            pass
+
     return empty
 
 
@@ -1918,20 +1997,23 @@ def _offer_cell_html(val: str) -> str:
 
 
 def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4AF37") -> None:
+    """Render tables in the main Streamlit DOM (not iframe) so mobile always shows content."""
     sections = list((catalog or {}).get("sections") or [])
     if not sections:
-        st.info(empty_hint)
+        st.warning(empty_hint)
         return
 
     banner = str((catalog or {}).get("banner", "") or "").strip()
     footnote = str((catalog or {}).get("footnote", "") or "").strip()
+    n_rows = sum(len(s.get("rows") or []) for s in sections)
+    st.caption(f"{len(sections)} 個分類 · {n_rows} 項")
+
     if banner:
         st.markdown(
             f'<div class="offer-banner">{_esc(banner)}</div>',
             unsafe_allow_html=True,
         )
 
-    parts = []
     for section in sections:
         title = _esc(section.get("title", ""))
         cols = list(section.get("columns") or [])
@@ -1940,55 +2022,30 @@ def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4A
             continue
         thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
         body_rows = []
-        for i, row in enumerate(rows):
+        for row in rows:
             cells = list(row) + [""] * max(0, len(cols) - len(row))
             tds = "".join(
-                f'<td class="{"offer-product" if j == 0 else ""}">{_offer_cell_html(str(cells[j] if j < len(cells) else ""))}</td>'
+                f'<td class="{"offer-product" if j == 0 else ""}">'
+                f"{_offer_cell_html(str(cells[j] if j < len(cells) else ''))}</td>"
                 for j in range(len(cols))
             )
-            zebra = " class='alt'" if i % 2 else ""
-            body_rows.append(f"<tr{zebra}>{tds}</tr>")
-        parts.append(
-            "<div class='offer-section'>"
-            f"<div class='offer-section-title'><span style='background:{accent}'></span>{title}</div>"
-            "<div class='offer-table-wrap'><table class='offer-table'>"
-            f"<thead><tr>{thead}</tr></thead>"
-            f"<tbody>{''.join(body_rows)}</tbody>"
-            "</table></div></div>"
+            body_rows.append(f"<tr>{tds}</tr>")
+        st.markdown(
+            f"""
+            <div class="offer-section">
+              <div class="offer-section-title">
+                <span class="offer-section-bar" style="background:{accent}"></span>{title}
+              </div>
+              <div class="offer-table-wrap">
+                <table class="offer-table">
+                  <thead><tr>{thead}</tr></thead>
+                  <tbody>{''.join(body_rows)}</tbody>
+                </table>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-
-    html = (
-        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<style>"
-        "html,body{margin:0;padding:0;background:transparent;"
-        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans TC',sans-serif;}"
-        ".offer-section{margin:0 0 16px 0;}"
-        ".offer-section-title{display:flex;align-items:center;gap:10px;"
-        "font-weight:800;font-size:15px;color:#1C2430;margin:0 0 8px 0;letter-spacing:.02em;}"
-        ".offer-section-title span{display:inline-block;width:4px;height:16px;border-radius:4px;}"
-        ".offer-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;"
-        "border:1px solid #E8E2D4;border-radius:14px;background:#fff;"
-        "box-shadow:0 8px 22px rgba(28,36,48,.05);}"
-        ".offer-table{width:100%;border-collapse:collapse;min-width:520px;}"
-        ".offer-table th{background:linear-gradient(180deg,#1C2430,#2A3444);color:#F8F4EA;"
-        "font-size:12px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;"
-        "padding:12px 12px;text-align:left;white-space:nowrap;}"
-        f".offer-table th:first-child{{border-top-left-radius:13px;}}"
-        f".offer-table th:last-child{{border-top-right-radius:13px;}}"
-        ".offer-table td{padding:12px;font-size:13.5px;color:#2C3440;line-height:1.45;"
-        "border-top:1px solid #F0EBE0;vertical-align:top;}"
-        ".offer-table tr.alt td{background:#FCFAF5;}"
-        ".offer-table td.offer-product{font-weight:700;color:#1C2430;min-width:120px;}"
-        f".offer-table tbody tr:hover td{{background:rgba(212,175,55,.08);}}"
-        "</style></head><body>"
-        + "".join(parts)
-        + "</body></html>"
-    )
-    # Rough height: header + rows
-    n_rows = sum(len(s.get("rows") or []) for s in sections) + len(sections) * 2
-    height = min(max(220, 70 + n_rows * 52), 2200)
-    components.html(html, height=height, scrolling=True)
 
     if footnote:
         st.caption(footnote)
@@ -2025,21 +2082,23 @@ def page_quarterly_offers():
         unsafe_allow_html=True,
     )
 
-    customer_cat = get_quarterly_catalog(choice, "customer")
-    agent_cat = get_quarterly_catalog(choice, "agent")
-    tab_c, tab_a = st.tabs(["客戶優惠", "營業員獎賞"])
-    with tab_c:
-        _render_offer_catalog(
-            customer_cat,
-            empty_hint="呢季暫時未有客戶優惠資料。Leader 可喺下面加入，或再 upload 文件畀系統更新。",
-            accent="#D4AF37",
-        )
-    with tab_a:
-        _render_offer_catalog(
-            agent_cat,
-            empty_hint="呢季暫時未有營業員獎賞資料。Leader 可喺下面加入，或再 upload 文件畀系統更新。",
-            accent="#C4895A",
-        )
+    kind = st.radio(
+        "類型",
+        options=["customer", "agent"],
+        format_func=lambda k: "客戶優惠" if k == "customer" else "營業員獎賞",
+        horizontal=True,
+        key=f"offer_kind_{choice}",
+    )
+    catalog = get_quarterly_catalog(choice, kind)
+    _render_offer_catalog(
+        catalog,
+        empty_hint=(
+            "呢季暫時未有資料。請確認已選 Q4，或 Reboot 後再試。"
+            if choice != "Q4"
+            else "未能載入 Q4 表格。請去 Streamlit Manage app → Reboot 後再入。"
+        ),
+        accent="#D4AF37" if kind == "customer" else "#C4895A",
+    )
 
     if is_leader:
         with st.expander("Leader：新增 / 刪除優惠項目", expanded=False):
