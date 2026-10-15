@@ -989,6 +989,7 @@ menu_items = [
     "🤝 招募龍虎榜",
     "🎁 季度優惠 & 獎賞",
     "📁 常用表格",
+    "🩺 常見疾病核保",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -2985,6 +2986,195 @@ def _share_all_common_forms() -> dict:
     }
 
 
+def _medical_uw():
+    """Lazy-load medical underwriting helpers (Cloud-safe)."""
+    try:
+        import tt_core.medical_uw as m
+
+        return m
+    except Exception:
+        return None
+
+
+def page_medical_uw():
+    """見客用：按 Medical Manual 常見疾病一步步問答，顯示參考核保結果。"""
+    st.markdown("## 🩺 常見疾病核保")
+    st.caption("見客時按核保指引問症 → 即時睇各計劃參考結果（內部用）")
+
+    mu = _medical_uw()
+    if mu is None:
+        st.error("核保模組暫時未能載入。請 Reboot app 後再試。")
+        return
+
+    disclaimer = mu.disclaimer_text()
+    st.warning(disclaimer)
+
+    # Session wizard state
+    if "mu_disease_id" not in st.session_state:
+        st.session_state["mu_disease_id"] = None
+    if "mu_answers" not in st.session_state:
+        st.session_state["mu_answers"] = {}
+    if "mu_scenario_id" not in st.session_state:
+        st.session_state["mu_scenario_id"] = None
+
+    disease_id = st.session_state.get("mu_disease_id")
+
+    # ── Step 1: pick disease ──────────────────────────────────────────────
+    if not disease_id:
+        q = st.text_input(
+            "搜尋疾病（中／英）",
+            placeholder="例如：高血壓、脂肪肝、diabetes、asthma…",
+            key="mu_search",
+        )
+        diseases = mu.search_diseases(q)
+        if not diseases:
+            st.info("搵唔到相關疾病。試下其他關鍵字。")
+            return
+        st.caption(f"共 {len(diseases)} 項（來源：Medical Manual 常見疾病核保指引 v2.0）")
+        # Compact picker
+        labels = [f"{d['name_zh']}（{d['name_en']}）" for d in diseases]
+        pick = st.selectbox("選擇疾病", labels, key="mu_disease_pick")
+        if st.button("開始問症", type="primary", use_container_width=True):
+            idx = labels.index(pick)
+            st.session_state["mu_disease_id"] = diseases[idx]["id"]
+            st.session_state["mu_answers"] = {}
+            st.session_state["mu_scenario_id"] = None
+            st.rerun()
+        with st.expander("全部疾病一覽"):
+            for d in mu.list_diseases():
+                st.markdown(f"- **{d['name_zh']}** · {d['name_en']}")
+        return
+
+    disease = mu.get_disease(disease_id)
+    if not disease:
+        st.session_state["mu_disease_id"] = None
+        st.rerun()
+        return
+
+    top_l, top_r = st.columns([3, 1])
+    with top_l:
+        st.markdown(f"### {disease['name_zh']}")
+        st.caption(disease.get("name_en") or "")
+    with top_r:
+        if st.button("換疾病", use_container_width=True):
+            st.session_state["mu_disease_id"] = None
+            st.session_state["mu_answers"] = {}
+            st.session_state["mu_scenario_id"] = None
+            st.rerun()
+
+    if disease.get("description_zh"):
+        st.info(disease["description_zh"])
+
+    # ── Step 2: questions ─────────────────────────────────────────────────
+    st.markdown("#### ① 問客人（按核保先決要求）")
+    answers = dict(st.session_state.get("mu_answers") or {})
+    questions = disease.get("questions") or []
+    with st.form("mu_questions_form"):
+        for i, q in enumerate(questions):
+            opts = q.get("options") or []
+            opt_labels = [o["label"] for o in opts]
+            opt_values = [o["value"] for o in opts]
+            current = answers.get(q["id"])
+            try:
+                idx = opt_values.index(current) if current in opt_values else 0
+            except Exception:
+                idx = 0
+            choice = st.radio(
+                f"{i + 1}. {q.get('prompt') or q['id']}",
+                options=opt_labels,
+                index=idx,
+                key=f"mu_q_{disease_id}_{q['id']}",
+            )
+            answers[q["id"]] = opt_values[opt_labels.index(choice)]
+        submitted = st.form_submit_button("計核保參考結果", type="primary", use_container_width=True)
+
+    if submitted:
+        st.session_state["mu_answers"] = answers
+        auto = mu.match_scenarios(disease, answers, fallback_all=False)
+        if auto:
+            st.session_state["mu_scenario_id"] = auto[0]["id"]
+        else:
+            st.session_state["mu_scenario_id"] = None
+        st.rerun()
+
+    answers = dict(st.session_state.get("mu_answers") or {})
+    if not answers:
+        st.caption("請回答上面問題後撳「計核保參考結果」。")
+        return
+
+    # ── Step 3: scenario confirm + outcomes ───────────────────────────────
+    st.markdown("#### ② 對應核保情況")
+    auto = mu.match_scenarios(disease, answers, fallback_all=False)
+    matched = auto if auto else list(disease.get("scenarios") or [])
+    scenario_ids = [s["id"] for s in matched]
+    scenario_labels = [s["label_zh"] for s in matched]
+    if not matched:
+        st.warning("呢個疾病暫時未有對應情況，請聯絡核保或查閱原文指引。")
+        return
+
+    if auto:
+        st.success(f"根據答案，最接近：**{auto[0]['label_zh']}**")
+        default_id = st.session_state.get("mu_scenario_id") or auto[0]["id"]
+    else:
+        st.info("未能自動鎖定單一情況，請揀最接近客人狀況嘅一項：")
+        default_id = st.session_state.get("mu_scenario_id") or scenario_ids[0]
+
+    try:
+        default_idx = scenario_ids.index(default_id) if default_id in scenario_ids else 0
+    except Exception:
+        default_idx = 0
+    pick_label = st.selectbox(
+        "核保情況",
+        scenario_labels,
+        index=default_idx,
+        key=f"mu_scenario_pick_{disease_id}",
+    )
+    scenario = matched[scenario_labels.index(pick_label)]
+    st.session_state["mu_scenario_id"] = scenario["id"]
+
+    st.markdown("#### ③ 各計劃參考結果")
+    outcomes = scenario.get("outcomes") or {}
+    tone_colors = {
+        "good": "#059669",
+        "caution": "#D97706",
+        "warn": "#DC2626",
+        "bad": "#991B1B",
+        "neutral": "#4B5563",
+    }
+    cols = st.columns(5)
+    for col, key in zip(cols, ["life", "ci", "medical", "accident", "cancer"]):
+        label = mu.PRODUCT_LABELS.get(key, key)
+        val = outcomes.get(key, "—")
+        tone = mu.outcome_tone(val)
+        color = tone_colors.get(tone, "#4B5563")
+        with col:
+            st.markdown(
+                f"""
+                <div style="border:1px solid #E5E7EB;border-radius:10px;padding:10px 8px;text-align:center;min-height:96px;">
+                  <div style="font-size:12px;color:#6B7280;margin-bottom:6px;">{label}</div>
+                  <div style="font-size:14px;font-weight:700;color:{color};line-height:1.35;">{val}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    if scenario.get("note"):
+        st.caption(scenario["note"])
+
+    extra = disease.get("extra_reqs") or []
+    if extra:
+        st.markdown("#### 可能附加要求")
+        for line in extra:
+            st.markdown(f"- {line}")
+
+    with st.expander("今次問答摘要"):
+        for qlab, alab in mu.summarize_answers(disease, answers):
+            st.markdown(f"- **{qlab}**：{alab}")
+        st.markdown(f"- **對應情況**：{scenario.get('label_zh')}")
+
+    st.caption("結果只供內部參考，最終以 FWD 核保為準。")
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -3067,7 +3257,9 @@ elif "季度優惠" in menu:
     _safe_page("季度優惠", page_quarterly_offers)
 elif "常用表格" in menu:
     _safe_page("常用表格", page_common_forms)
+elif "常見疾病核保" in menu or "核保" in menu:
+    _safe_page("常見疾病核保", page_medical_uw)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T07:45Z
+# cloud_redeploy_stamp: 2026-10-15T13:05Z
