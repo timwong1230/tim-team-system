@@ -640,7 +640,7 @@ from tt_core.mobile import (
     mobile_top_nav,
     render_install_guide,
 )
-from tt_core.branding import BRAND_APP, BRAND_NAME, BRAND_SYSTEM, logo_path
+from tt_core.branding import BRAND_APP, BRAND_NAME, BRAND_SYSTEM, page_icon_arg
 from tt_core.styles import CUSTOM_CSS
 
 try:
@@ -648,10 +648,9 @@ try:
 except Exception:
     MOBILE = False
 
-_LOGO = logo_path()
 st.set_page_config(
     page_title=BRAND_NAME,
-    page_icon=_LOGO if _LOGO.endswith((".png", ".jpg", ".jpeg", ".webp")) else "🃏",
+    page_icon=page_icon_arg(),
     layout="centered" if MOBILE else "wide",
     initial_sidebar_state="collapsed" if MOBILE else "expanded",
 )
@@ -677,10 +676,6 @@ if "logged_in" not in st.session_state:
 if not st.session_state["logged_in"]:
     if MOBILE:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        lc1, lc2, lc3 = st.columns([1, 1.2, 1])
-        with lc2:
-            if _LOGO.endswith((".png", ".jpg", ".jpeg", ".webp")):
-                st.image(_LOGO, use_container_width=True)
         st.markdown(
             f"""
             <div class="login-panel">
@@ -704,7 +699,7 @@ if not st.session_state["logged_in"]:
                         "avatar": d[0][5],
                     }
                 )
-                st.toast(f"Welcome back, {d[0][0]}!", icon="🃏")
+                st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
                 st.rerun()
             else:
                 st.toast("登入失敗，請檢查帳密", icon="❌")
@@ -723,8 +718,6 @@ if not st.session_state["logged_in"]:
         c1, c2, c3 = st.columns([1, 1.4, 1])
         with c2:
             st.markdown("<br>", unsafe_allow_html=True)
-            if _LOGO.endswith((".png", ".jpg", ".jpeg", ".webp")):
-                st.image(_LOGO, width=220)
             st.markdown(
                 f"""
                 <div class="login-panel">
@@ -749,7 +742,7 @@ if not st.session_state["logged_in"]:
                             "avatar": d[0][5],
                         }
                     )
-                    st.toast(f"Welcome back, {d[0][0]}!", icon="🃏")
+                    st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
                     st.rerun()
                 else:
                     st.toast("登入失敗，請檢查帳密", icon="❌")

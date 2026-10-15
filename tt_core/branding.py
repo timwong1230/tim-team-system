@@ -9,10 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 
-BRAND_NAME = "ACE TEAM"
-BRAND_APP = "ACE TEAM APP"
-BRAND_SYSTEM = "ACE TEAM SYSTEM"
+# On-screen product name (login / home copy) — keep TIM TEAM
+BRAND_NAME = "TIM TEAM"
+BRAND_APP = "TIM TEAM APP"
+BRAND_SYSTEM = "TIM TEAM SYSTEM"
 
+# App icon art (replaces the old crown favicon / home-screen icon)
 LOGO_JPG = STATIC / "ace_team_logo.jpg"
 ICON_180 = STATIC / "app_icon_180.png"
 ICON_192 = STATIC / "app_icon_192.png"
@@ -20,10 +22,18 @@ ICON_512 = STATIC / "app_icon_512.png"
 
 
 def logo_path() -> str:
-    """Path for st.set_page_config(page_icon=...) / st.image."""
+    """Absolute path to icon file if present."""
     for p in (ICON_180, ICON_512, LOGO_JPG):
         if p.exists():
             return str(p)
+    return ""
+
+
+def page_icon_arg():
+    """Value for st.set_page_config(page_icon=...). Prefer repo-relative path."""
+    for rel in ("static/app_icon_180.png", "static/app_icon_512.png", "static/ace_team_logo.jpg"):
+        if (ROOT / rel).exists():
+            return rel
     return "🃏"
 
 
