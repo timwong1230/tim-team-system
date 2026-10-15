@@ -790,14 +790,30 @@ if not st.session_state["logged_in"]:
 
 
 # ─── Logged-in shell ─────────────────────────────────────────────────────────
+# Recover broken session (e.g. after a mid-upload crash) instead of Oh-no screen
+if not st.session_state.get("user"):
+    st.session_state["logged_in"] = False
+    st.session_state.pop("_menu_choice", None)
+    st.warning("登入狀態已失效，請重新登入。")
+    st.rerun()
+
 # Warm disk cache once per browser session so pages read locally (fast + offline-safe)
 if not st.session_state.get("_warmed_at"):
-    with st.spinner("正在載入團隊數據（首次會稍慢，之後會用快取）…"):
-        warm_cache(force=False)
+    try:
+        with st.spinner("正在載入團隊數據（首次會稍慢，之後會用快取）…"):
+            warm_cache(force=False)
+    except Exception:
+        st.session_state["_warmed_at"] = True
 
-check_notifications(st.session_state["user"])
-is_leader = st.session_state["role"] == "Leader"
-conn = connection_banner_state()
+try:
+    check_notifications(st.session_state.get("user"))
+except Exception:
+    pass
+is_leader = st.session_state.get("role") == "Leader"
+try:
+    conn = connection_banner_state()
+except Exception:
+    conn = {"level": "unknown", "label": "數據狀態未知", "age": None, "raw": {}}
 
 menu_items = [
     "🏠 我的主頁",
@@ -2242,18 +2258,22 @@ _COMMON_FORMS_ALLOWED_EXT = {
 
 
 def _common_forms():
-    """Lazy-load + reload 常用表格 helpers (Cloud often keeps a stale module)."""
+    """Lazy-load 常用表格 helpers. Reload only when Cloud cached a stale module."""
     import importlib
     import sys
 
     try:
-        if "tt_core.common_forms" in sys.modules:
-            return importlib.reload(sys.modules["tt_core.common_forms"])
         import tt_core.common_forms as m
-
-        return m
     except Exception:
         return None
+    # Only reload if critical helpers are missing (stale Cloud bytecode)
+    needed = ("sync_folder_into_catalog", "list_forms", "ensure_view_link", "get_folder_id")
+    if all(callable(getattr(m, name, None)) for name in needed[:2]):
+        return m
+    try:
+        return importlib.reload(sys.modules["tt_core.common_forms"])
+    except Exception:
+        return m
 
 
 def _common_forms_folder_id() -> str:
@@ -2642,12 +2662,19 @@ def page_common_forms():
                 st.warning("缺少 Drive 檔案 ID")
             elif view_url:
                 # New tab / external Drive view — user can dismiss and return to app
-                st.link_button(
-                    "開啟檔案",
-                    view_url,
-                    use_container_width=True,
-                    type="primary",
-                )
+                if hasattr(st, "link_button"):
+                    st.link_button(
+                        "開啟檔案",
+                        view_url,
+                        use_container_width=True,
+                        type="primary",
+                    )
+                else:
+                    st.markdown(
+                        f'<a href="{view_url}" target="_blank" rel="noopener noreferrer">'
+                        f"<strong>開啟檔案</strong></a>",
+                        unsafe_allow_html=True,
+                    )
                 st.caption("會用 Google Drive 開新頁；睇完關掉／返回即可返 app。")
             else:
                 st.warning("未能產生開啟連結")
@@ -2668,32 +2695,10 @@ def page_common_forms():
                         st.error(result.get("error") or "刪除失敗")
 
 def _common_forms_view_link(drive_file_id: str) -> str:
-    """Open Drive file in a new tab (avoids iOS download preview trap)."""
+    """Build a Drive view URL without calling Drive API (safe during page render)."""
     file_id = str(drive_file_id or "").strip()
     if not file_id:
         return ""
-    cf = _common_forms()
-    try:
-        if cf is not None:
-            fn = getattr(cf, "ensure_view_link", None)
-            if callable(fn):
-                return str(fn(file_id) or "")
-    except Exception:
-        pass
-    try:
-        service = _drive().get_drive_service()
-        if service:
-            try:
-                service.permissions().create(
-                    fileId=file_id,
-                    body={"type": "anyone", "role": "reader"},
-                    supportsAllDrives=True,
-                    fields="id",
-                ).execute()
-            except Exception:
-                pass
-    except Exception:
-        pass
     return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
 
 
@@ -2745,28 +2750,40 @@ def page_profile():
 
 
 # ─── Router ──────────────────────────────────────────────────────────────────
+def _safe_page(label: str, fn):
+    try:
+        fn()
+    except Exception as e:
+        st.error(f"{label} 暫時無法開啟：{e}")
+        st.caption("可以撳側欄其他功能，或登出再入。若持續出現請 Reboot app。")
+        # Escape sticky broken menu (e.g. 常用表格 after a bad deploy)
+        if "常用表格" in str(label):
+            st.session_state["_menu_choice"] = "🏠 我的主頁"
+            if st.button("返回主頁", type="primary"):
+                st.rerun()
+
 if "我的主頁" in menu:
-    page_home()
+    _safe_page("我的主頁", page_home)
 elif "打卡" in menu:
-    page_checkin()
+    _safe_page("打卡", page_checkin)
 elif "Dashboard" in menu:
-    page_dashboard()
+    _safe_page("Dashboard", page_dashboard)
 elif "業績報告" in menu or "Iris" in menu:
     if is_leader:
-        page_iris_sync()
+        _safe_page("業績報告同步", page_iris_sync)
     else:
         st.warning("只有 Leader 可以同步業績報告")
 elif "每月" in menu:
-    page_monthly()
+    _safe_page("每月業績", page_monthly)
 elif "年度" in menu:
-    page_year_goal()
+    _safe_page("年度挑戰", page_year_goal)
 elif "每週" in menu:
-    page_challenge()
+    _safe_page("每週挑戰", page_challenge)
 elif "招募" in menu:
-    page_recruit()
+    _safe_page("招募龍虎榜", page_recruit)
 elif "季度優惠" in menu:
-    page_quarterly_offers()
+    _safe_page("季度優惠", page_quarterly_offers)
 elif "常用表格" in menu:
-    page_common_forms()
+    _safe_page("常用表格", page_common_forms)
 elif "設定" in menu:
-    page_profile()
+    _safe_page("設定", page_profile)

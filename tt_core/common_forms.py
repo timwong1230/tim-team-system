@@ -313,26 +313,28 @@ def download_form_bytes(drive_file_id: str) -> bytes:
     return download_file(drive_file_id)
 
 
-def ensure_view_link(drive_file_id: str) -> str:
+def ensure_view_link(drive_file_id: str, *, share_anyone: bool = False) -> str:
     """
-    Make a Drive file openable via link (anyone with link → reader).
-    Opens in a new browser tab so iPhone/PWA users can dismiss and return to the app.
+    Build a Drive view URL for opening in a new tab (iPhone-safe).
+
+    By default this does NOT call the Drive API during page render.
+    Set share_anyone=True only from an explicit Leader action.
     """
     file_id = str(drive_file_id or "").strip()
     if not file_id:
         return ""
-    service = get_drive_service()
-    if service:
-        try:
-            service.permissions().create(
-                fileId=file_id,
-                body={"type": "anyone", "role": "reader"},
-                supportsAllDrives=True,
-                fields="id",
-            ).execute()
-        except Exception:
-            # Already shared, or SA cannot change ACL — still return the view URL.
-            pass
+    if share_anyone:
+        service = get_drive_service()
+        if service:
+            try:
+                service.permissions().create(
+                    fileId=file_id,
+                    body={"type": "anyone", "role": "reader"},
+                    supportsAllDrives=True,
+                    fields="id",
+                ).execute()
+            except Exception:
+                pass
     return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
 
 
