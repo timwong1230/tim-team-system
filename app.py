@@ -1996,6 +1996,21 @@ def _offer_cell_html(val: str) -> str:
     return text if text else "—"
 
 
+def _offer_col_class(col_name: str, index: int) -> str:
+    """Widen 詳情/優惠重點; keep 備註 narrow."""
+    name = str(col_name or "").strip()
+    if index == 0 or name in {"產品", "項目"}:
+        return "offer-product"
+    if name in {"備註", "說明"}:
+        return "offer-note-col"
+    if name in {"詳情", "優惠重點", "優惠", "獎賞", "特別獎金"}:
+        return "offer-detail-col"
+    if name in {"條件", "繳費", "繳費／條件", "合資格要求", "累積首年保費"}:
+        return "offer-mid-col"
+    # Default: treat middle content columns as detail-wide
+    return "offer-detail-col"
+
+
 def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4AF37") -> None:
     """Render tables in the main Streamlit DOM (not iframe) so mobile always shows content."""
     sections = list((catalog or {}).get("sections") or [])
@@ -2020,12 +2035,18 @@ def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4A
         rows = list(section.get("rows") or [])
         if not cols or not rows:
             continue
-        thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
+        col_classes = [_offer_col_class(c, i) for i, c in enumerate(cols)]
+        colgroup = "".join(
+            f'<col class="{cls}">' for cls in col_classes
+        )
+        thead = "".join(
+            f'<th class="{col_classes[i]}">{_esc(c)}</th>' for i, c in enumerate(cols)
+        )
         body_rows = []
         for row in rows:
             cells = list(row) + [""] * max(0, len(cols) - len(row))
             tds = "".join(
-                f'<td class="{"offer-product" if j == 0 else ""}">'
+                f'<td class="{col_classes[j]}">'
                 f"{_offer_cell_html(str(cells[j] if j < len(cells) else ''))}</td>"
                 for j in range(len(cols))
             )
@@ -2037,7 +2058,8 @@ def _render_offer_catalog(catalog: dict, *, empty_hint: str, accent: str = "#D4A
                 <span class="offer-section-bar" style="background:{accent}"></span>{title}
               </div>
               <div class="offer-table-wrap">
-                <table class="offer-table">
+                <table class="offer-table offer-table-fixed offer-cols-{len(cols)}">
+                  <colgroup>{colgroup}</colgroup>
                   <thead><tr>{thead}</tr></thead>
                   <tbody>{''.join(body_rows)}</tbody>
                 </table>
