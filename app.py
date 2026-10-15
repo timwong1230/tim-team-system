@@ -3187,17 +3187,25 @@ def page_cashflow_taccount():
         st.error("Cashflow 模組未能載入，請 Reboot 後再試。")
         return
 
+    # Reset MUST run before widgets that own these keys (Streamlit rule)
+    if st.session_state.pop("_cf_pending_reset", False):
+        for it in cf.INCOME_ITEMS + cf.EXPENSE_ITEMS:
+            st.session_state[f"cf_{it['id']}"] = 0.0
+        st.session_state["cf_client_name"] = ""
+
+    # Seed session defaults once (before number_input / text_input)
+    if "cf_client_name" not in st.session_state:
+        st.session_state["cf_client_name"] = ""
+    for it in cf.INCOME_ITEMS + cf.EXPENSE_ITEMS:
+        k = f"cf_{it['id']}"
+        if k not in st.session_state:
+            st.session_state[k] = 0.0
+
     client = st.text_input(
         "客戶名稱（可留空）",
         key="cf_client_name",
         placeholder="例如：陳生／陳太",
     )
-
-    # Seed session defaults once
-    for it in cf.INCOME_ITEMS + cf.EXPENSE_ITEMS:
-        k = f"cf_{it['id']}"
-        if k not in st.session_state:
-            st.session_state[k] = 0.0
 
     st.markdown(
         """
@@ -3300,9 +3308,7 @@ def page_cashflow_taccount():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("清空重計", use_container_width=True, key="cf_reset"):
-            for it in cf.INCOME_ITEMS + cf.EXPENSE_ITEMS:
-                st.session_state[f"cf_{it['id']}"] = 0.0
-            st.session_state["cf_client_name"] = ""
+            st.session_state["_cf_pending_reset"] = True
             st.rerun()
     with c2:
         st.caption("金額以港元／每月計。數字只留在此裝置 session，唔會自動上傳。")
@@ -3397,4 +3403,4 @@ elif "T-Account" in menu or "收入／支出" in menu or "Cashflow" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T13:20Z
+# cloud_redeploy_stamp: 2026-10-15T13:25Z
