@@ -1495,6 +1495,176 @@ def render_leaderboard(df: pd.DataFrame) -> None:
     render_rank_cards(df, mode="mdrt")
 
 
+def _render_rank_card_list(parts: list[str]) -> None:
+    """Shared iframe host for rank cards (mobile-safe, same look as MDRT board)."""
+    n = max(len(parts), 1)
+    height = 28 + n * 148
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<style>html,body{margin:0;padding:2px 0 8px;overflow:visible;"
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+        "background:transparent;}</style></head><body>"
+        + "".join(parts)
+        + "</body></html>"
+    )
+    components.html(html, height=height, scrolling=False)
+
+
+def _rank_shell(
+    *,
+    rank: int,
+    name: str,
+    avatar: str,
+    big: str,
+    sub: str,
+    right: str,
+    pct: float,
+    meta: str,
+    chip: str = "",
+) -> str:
+    rank_bg = (
+        "linear-gradient(135deg,#F0D078,#C5A028)"
+        if rank == 1
+        else "linear-gradient(135deg,#EEF1F4,#B8C0C8)"
+        if rank == 2
+        else "linear-gradient(135deg,#F0D3B8,#C4895A)"
+        if rank == 3
+        else "#F3F1EB"
+    )
+    border = "#E2C56A" if rank == 1 else "#E6E8EC"
+    bg = "linear-gradient(145deg,#FFFDF5 0%,#FFFFFF 55%)" if rank == 1 else "#FFFFFF"
+    top_bar = (
+        '<div style="position:absolute;left:0;top:0;right:0;height:4px;'
+        'background:linear-gradient(90deg,#D4AF37,#F0D078,#D4AF37);"></div>'
+        if rank == 1
+        else ""
+    )
+    return (
+        "<div style='position:relative;background:"
+        + bg
+        + ";border:1px solid "
+        + border
+        + ";border-radius:16px;padding:14px 14px 12px;margin:0 0 12px 0;"
+        + "box-shadow:0 8px 22px rgba(28,36,48,.06);overflow:hidden;'>"
+        + top_bar
+        + "<div style='display:flex;align-items:center;gap:12px;'>"
+        + "<div style='width:34px;height:34px;border-radius:50%;display:flex;align-items:center;"
+        + "justify-content:center;font-weight:800;font-size:14px;background:"
+        + rank_bg
+        + ";color:#1C2430;flex-shrink:0;'>"
+        + str(rank)
+        + "</div>"
+        + f"<img src='{avatar}' alt='{name}' style='width:48px;height:48px;border-radius:50%;"
+        + "object-fit:cover;border:2px solid #F0E6C4;flex-shrink:0;background:#eee;'>"
+        + "<div style='flex:1;min-width:0;'>"
+        + f"<div style='font-weight:700;font-size:16px;color:#1C2430;'>{name}{chip}</div>"
+        + f"<div style=\"font-family:Georgia,serif;font-size:22px;color:#1C2430;"
+        + f"line-height:1.2;margin-top:2px;\">{big}</div>"
+        + f"<div style='color:#6B7280;font-size:12px;margin-top:2px;'>{sub}</div>"
+        + "</div>"
+        + f"<div style='flex-shrink:0;text-align:right;font-weight:800;font-size:17px;"
+        + f"color:#9A7B1A;min-width:52px;'>{right}</div>"
+        + "</div>"
+        + "<div style='margin-top:10px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
+        + f"<div style='height:100%;width:{pct:.1f}%;border-radius:999px;"
+        + "background:linear-gradient(90deg,#D4AF37,#F0D078);'></div></div>"
+        + f"<div style='display:flex;gap:14px;margin-top:10px;color:#6B7280;font-size:13px;'>{meta}</div>"
+        + "</div>"
+    )
+
+
+def render_challenge_cards(df: pd.DataFrame) -> None:
+    """Weekly challenge leaderboard — score + activity count cards."""
+    if df is None or df.empty:
+        st.info("本週暫無數據")
+        return
+    ranked = df.sort_values(by="wk_score", ascending=False).reset_index(drop=True)
+    max_score = float(ranked["wk_score"].max() or 0)
+    bar_max = max(max_score, float(WEEKLY_MIN_ACTS), 1.0)
+    parts = []
+    for i, row in ranked.iterrows():
+        rank = i + 1
+        score = int(row.get("wk_score", 0) or 0)
+        count = int(row.get("wk_count", 0) or 0)
+        pct = min(max(score / bar_max * 100, 0), 100)
+        name = _esc(row.get("username", ""))
+        av = _esc(_avatar_url(row))
+        chip = ""
+        if rank == 1 and score > 0:
+            chip = (
+                '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">👑 MVP</span>'
+            )
+        if count < WEEKLY_MIN_ACTS:
+            chip += (
+                '<span style="display:inline-block;margin-left:6px;background:#FEE2E2;color:#991B1B;'
+                f'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">欠 {WEEKLY_MIN_ACTS - count} 次</span>'
+            )
+        else:
+            chip += (
+                '<span style="display:inline-block;margin-left:6px;background:#D1FAE5;color:#065F46;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">達標</span>'
+            )
+        meta = (
+            f"<span>活動次數 <strong style='color:#1C2430;'>{count}</strong></span>"
+            f"<span>最低要求 <strong style='color:#1C2430;'>{WEEKLY_MIN_ACTS}</strong></span>"
+        )
+        parts.append(
+            _rank_shell(
+                rank=rank,
+                name=name,
+                avatar=av,
+                big=f"{score} 分",
+                sub="本週活動分數",
+                right=f"#{rank}",
+                pct=pct,
+                meta=meta,
+                chip=chip,
+            )
+        )
+    _render_rank_card_list(parts)
+
+
+def render_recruit_cards(df: pd.DataFrame) -> None:
+    """Recruitment dragon-tiger board — card list by recruit count."""
+    if df is None or df.empty:
+        st.info("暫無招募數據")
+        return
+    ranked = df.sort_values(by="recruit", ascending=False).reset_index(drop=True)
+    max_rec = float(pd.to_numeric(ranked["recruit"], errors="coerce").fillna(0).max() or 0)
+    bar_max = max(max_rec, 5.0)
+    parts = []
+    for i, row in ranked.iterrows():
+        rank = i + 1
+        recruit = int(float(row.get("recruit", 0) or 0))
+        pct = min(max(recruit / bar_max * 100, 0), 100)
+        name = _esc(row.get("username", ""))
+        av = _esc(_avatar_url(row))
+        score = int(float(row.get("Total_Score", 0) or 0))
+        chip = ""
+        if rank == 1 and recruit > 0:
+            chip = (
+                '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">🏆 招募王</span>'
+            )
+        meta = f"<span>全年活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
+        parts.append(
+            _rank_shell(
+                rank=rank,
+                name=name,
+                avatar=av,
+                big=str(recruit),
+                sub="招募人數",
+                right=f"#{rank}",
+                pct=pct,
+                meta=meta,
+                chip=chip,
+            )
+        )
+    _render_rank_card_list(parts)
+
+
 def page_dashboard():
     st.markdown(f"## Dashboard · {st.session_state['user']}")
     if is_leader:
@@ -2260,44 +2430,20 @@ def page_challenge():
         f"### Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else WEEKLY_PENALTY}</span>",
         unsafe_allow_html=True,
     )
-    if not winners.empty:
-        cols = st.columns(len(winners))
-        for idx, row in winners.reset_index().iterrows():
-            cols[idx].image(row["avatar"], width=60)
-            cols[idx].caption(f"👑 {row['username']}")
-    st.dataframe(
-        df[["avatar", "username", "wk_score", "wk_count"]].sort_values(
-            by="wk_score", ascending=False
-        ),
-        column_config={
-            "avatar": st.column_config.ImageColumn("", width="small"),
-            "wk_score": st.column_config.ProgressColumn(
-                "Score", format="%d", max_value=max(10, int(max_score) if max_score else 10)
-            ),
-        },
-        use_container_width=True,
-        hide_index=True,
-    )
+    if not winners.empty and max_score > 0:
+        names = "、".join(str(u) for u in winners["username"].tolist())
+        st.caption(f"本週暫時領先：👑 {names}")
+    render_challenge_cards(df)
 
 
 def page_recruit():
     st.markdown("## 招募龍虎榜")
+    st.caption("按招募人數排名；第一名會標成招募王。")
     df = get_data("Yearly")
     if df.empty:
         st.info("暫無招募數據")
         return
-    st.dataframe(
-        df[["avatar", "username", "recruit"]].sort_values(by="recruit", ascending=False),
-        column_config={
-            "avatar": st.column_config.ImageColumn("Avatar", width="small"),
-            "username": "Agent",
-            "recruit": st.column_config.ProgressColumn(
-                "Recruits", format="%d", min_value=0, max_value=10
-            ),
-        },
-        use_container_width=True,
-        hide_index=True,
-    )
+    render_recruit_cards(df)
 
 
 def _offer_cell_html(val: str) -> str:
@@ -3808,4 +3954,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T23:40Z
+# cloud_redeploy_stamp: 2026-10-15T23:50Z
