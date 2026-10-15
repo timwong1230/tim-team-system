@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-from tt_core.constants import INACTIVE_MEMBERS, MDRT_TARGET
+from tt_core.constants import INACTIVE_MEMBERS, MDRT_TARGET, WEEKLY_MIN_ACTS
 from tt_core.db import read_data, run_query_gs, update_user_field
 
 
@@ -243,6 +243,178 @@ def mark_followup_done(followup_id) -> bool:
             {"status": "done", "updated_at": str(datetime.datetime.now())},
             row_id=followup_id,
         )
+    )
+
+
+# Stages that usually need manager coaching when overdue
+_STUCK_STAGE_REASONS = {
+    "Handling Rejection": "卡喺抗拒處理",
+    "Closing": "卡喺收單／Closing",
+    "落 concept": "Concept 未跟進落實",
+    "落 Sales Kit": "Sales Kit 已落未跟",
+    "Fact finding": "Fact find 後未推進",
+    "3Q": "3Q 後未約下一場",
+    "見經理": "約見經理未完成",
+    "報考試": "報考未跟進",
+    "講 Recruitment Kit": "Recruitment Kit 後未跟",
+    "Recruitment 3Q": "招募 3Q 後未約",
+    "Fact Finding": "招募 Fact find 後未推進",
+    "出 Code": "出 Code 前後需跟進",
+}
+
+
+def infer_stuck_reason(row: dict | pd.Series, *, today=None) -> str:
+    """Human-readable 卡關原因 from stage + overdue days."""
+    today = today or datetime.date.today()
+    stage = str(row.get("stage") or "").strip()
+    track = str(row.get("track") or "").strip()
+    action = str(row.get("next_action") or "").strip()
+    nd = row.get("next_date")
+    overdue_days = 0
+    try:
+        if pd.notna(nd):
+            d = pd.to_datetime(nd).date()
+            overdue_days = max((today - d).days, 0)
+    except Exception:
+        overdue_days = 0
+
+    bits: list[str] = []
+    if overdue_days > 0:
+        bits.append(f"過期 {overdue_days} 日未跟")
+    elif overdue_days == 0 and pd.notna(nd):
+        bits.append("今日到期要跟")
+
+    stage_hint = _STUCK_STAGE_REASONS.get(stage)
+    if stage_hint:
+        bits.append(stage_hint)
+    elif stage:
+        bits.append(f"停留：{stage}")
+
+    if track:
+        bits.append(track)
+    if action and len(bits) < 3:
+        bits.append(f"Next：{action}")
+    return " · ".join(bits) if bits else "待跟進"
+
+
+def get_stuck_cases(
+    username: str | None = None, *, on_or_before=None
+) -> pd.DataFrame:
+    """Open follow-ups due/overdue — the 卡案清單 for coach view."""
+    today = on_or_before or datetime.date.today()
+    due = get_due_followups(username, on_or_before=today) if username else None
+    if username is None:
+        # All members: filter open + due across sheet
+        df = get_followups(None)
+        if df.empty:
+            return df
+        cutoff = pd.Timestamp(today)
+        open_df = df[df["status"] == "open"].copy()
+        due = open_df[open_df["next_date"].notna() & (open_df["next_date"] <= cutoff)]
+        due = due.sort_values(by=["next_date", "username", "person"], ascending=True)
+
+    if due is None or due.empty:
+        return due if due is not None else pd.DataFrame()
+
+    work = due.copy()
+    reasons = []
+    overdue = []
+    for _, row in work.iterrows():
+        reasons.append(infer_stuck_reason(row, today=today))
+        try:
+            d = pd.to_datetime(row["next_date"]).date()
+            overdue.append(max((today - d).days, 0))
+        except Exception:
+            overdue.append(0)
+    work["stuck_reason"] = reasons
+    work["overdue_days"] = overdue
+    return work.sort_values(by=["overdue_days", "next_date"], ascending=[False, True])
+
+
+def get_mtd_fyc(username: str, month: str | None = None) -> float:
+    """Month-to-date completion FYC for one member."""
+    m = month or datetime.date.today().strftime("%Y-%m")
+    df = get_data(m)
+    if df.empty:
+        return 0.0
+    hit = df[df["username"].astype(str) == str(username)]
+    if hit.empty:
+        return 0.0
+    return float(hit.iloc[0].get("fyc") or 0)
+
+
+def get_coach_member_pack(username: str, *, today=None) -> dict:
+    """One-page coach pack: activity, FYC, stuck cases for a member."""
+    today = today or datetime.date.today()
+    month = today.strftime("%Y-%m")
+    snap = get_member_snapshot(username)
+    stuck = get_stuck_cases(username, on_or_before=today)
+    mtd = get_mtd_fyc(username, month)
+    open_all = get_followups(username)
+    open_n = 0
+    if not open_all.empty:
+        open_n = int((open_all["status"] == "open").sum())
+    return {
+        "username": username,
+        "wk_score": int(snap.get("wk_score") or 0),
+        "wk_count": int(snap.get("wk_count") or 0),
+        "wk_start": snap.get("wk_start"),
+        "wk_end": snap.get("wk_end"),
+        "mtd_fyc": mtd,
+        "ytd_fyc": float(snap.get("fyc") or 0),
+        "year_score": int(snap.get("score") or 0),
+        "recruit": int(snap.get("recruit") or 0),
+        "open_followups": open_n,
+        "stuck_count": int(len(stuck)),
+        "stuck_cases": stuck,
+        "needs_acts": int(snap.get("wk_count") or 0) < WEEKLY_MIN_ACTS,
+        "month": month,
+    }
+
+
+def get_team_coach_overview(*, today=None) -> pd.DataFrame:
+    """Leader summary row per member for weekly challenge coach view."""
+    today = today or datetime.date.today()
+    users = get_clean_users()
+    if users.empty:
+        return pd.DataFrame()
+    members = users[users["role"] == "Member"]["username"].astype(str).tolist()
+    weekly, _, _ = get_weekly_data()
+    wk_map = {}
+    if not weekly.empty:
+        for _, r in weekly.iterrows():
+            wk_map[str(r["username"])] = {
+                "wk_score": int(r.get("wk_score") or 0),
+                "wk_count": int(r.get("wk_count") or 0),
+            }
+    month = today.strftime("%Y-%m")
+    mtd_df = get_data(month)
+    mtd_map = {}
+    if not mtd_df.empty:
+        for _, r in mtd_df.iterrows():
+            mtd_map[str(r["username"])] = float(r.get("fyc") or 0)
+
+    rows = []
+    for u in members:
+        stuck = get_stuck_cases(u, on_or_before=today)
+        wk = wk_map.get(u, {"wk_score": 0, "wk_count": 0})
+        rows.append(
+            {
+                "username": u,
+                "wk_score": wk["wk_score"],
+                "wk_count": wk["wk_count"],
+                "mtd_fyc": mtd_map.get(u, 0.0),
+                "stuck_count": int(len(stuck)),
+                "needs_acts": wk["wk_count"] < WEEKLY_MIN_ACTS,
+                "max_overdue": int(stuck["overdue_days"].max()) if not stuck.empty else 0,
+            }
+        )
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    return out.sort_values(
+        by=["stuck_count", "max_overdue", "wk_score"],
+        ascending=[False, False, True],
     )
 
 

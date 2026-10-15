@@ -39,12 +39,15 @@ from tt_core.data import (
     get_activity_style,
     get_all_act,
     get_clean_users,
+    get_coach_member_pack,
     get_data,
     get_due_followups,
     get_last_week_data,
     get_member_snapshot,
     get_note_template,
     get_q1_data,
+    get_stuck_cases,
+    get_team_coach_overview,
     get_upcoming_followups,
     get_weekly_data,
     last_iris_sync,
@@ -2404,6 +2407,47 @@ def page_year_goal():
         )
 
 
+def _render_stuck_case_rows(stuck: pd.DataFrame, *, key_prefix: str) -> None:
+    """Compact 卡案 list with mark-done for coach view."""
+    if stuck is None or stuck.empty:
+        st.success("呢度暫時冇逾期／今日要跟嘅案。")
+        return
+    for _, row in stuck.iterrows():
+        nd = row.get("next_date")
+        try:
+            nd_str = pd.to_datetime(nd).strftime("%Y-%m-%d") if pd.notna(nd) else "—"
+        except Exception:
+            nd_str = str(nd or "—")
+        person = str(row.get("person") or "")
+        track = str(row.get("track") or "")
+        stage = str(row.get("stage") or "")
+        action = str(row.get("next_action") or "")
+        reason = str(row.get("stuck_reason") or "")
+        owner = str(row.get("username") or "")
+        overdue = int(row.get("overdue_days") or 0)
+        flag = "🔴" if overdue > 0 else "🟡"
+        owner_bit = f"**{owner}** · " if owner and key_prefix.startswith("team") else ""
+        st.markdown(
+            f"{flag} {owner_bit}**{person}**（{track}｜{stage}）  \n"
+            f"卡關：{reason}  \n"
+            f"Next：{action} · 日期 `{nd_str}`"
+        )
+        rid = row.get("id")
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("✓ 已跟進", key=f"{key_prefix}_done_{rid}", use_container_width=True):
+                mark_followup_done(rid)
+                st.toast(f"已完成：{person}", icon="✅")
+                st.rerun()
+        with b2:
+            if st.button("去打卡更新", key=f"{key_prefix}_go_{rid}", use_container_width=True):
+                st.session_state["_menu_choice"] = "📝 打卡 Check-in"
+                st.session_state["ci_prefill_person"] = person
+                st.session_state["ci_prefill_track"] = track
+                st.rerun()
+        st.divider()
+
+
 def page_challenge():
     df, start, end = get_weekly_data()
     st.markdown(f"## 每週挑戰 · {start} ~ {end}")
@@ -2415,25 +2459,117 @@ def page_challenge():
             <li>結算：逢星期日晚 23:59</li>
             <li>每週活動少於 <strong>{WEEKLY_MIN_ACTS} 次</strong> → 罰款 ${WEEKLY_PENALTY}</li>
             <li>罰款注入獎金池，由最高分者獨得</li>
+            <li>經理視圖會對住<strong>卡案清單</strong>（未跟案），唔淨係打卡次數</li>
           </ul>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if df.empty:
-        st.info("本週暫無數據")
-        return
-    max_score = df["wk_score"].max()
-    winners = df[df["wk_score"] == max_score] if max_score > 0 else pd.DataFrame()
-    pool = len(df[df["wk_count"] < WEEKLY_MIN_ACTS]) * WEEKLY_PENALTY
-    st.markdown(
-        f"### Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else WEEKLY_PENALTY}</span>",
-        unsafe_allow_html=True,
-    )
-    if not winners.empty and max_score > 0:
-        names = "、".join(str(u) for u in winners["username"].tolist())
-        st.caption(f"本週暫時領先：👑 {names}")
-    render_challenge_cards(df)
+
+    show_rank = True
+    if is_leader:
+        tab_rank, tab_coach = st.tabs(["本週排行", "經理視圖"])
+    else:
+        tab_rank = st.container()
+        tab_coach = None
+
+    with tab_rank:
+        if df.empty:
+            st.info("本週暫無數據")
+            show_rank = False
+        if show_rank:
+            max_score = df["wk_score"].max()
+            winners = df[df["wk_score"] == max_score] if max_score > 0 else pd.DataFrame()
+            pool = len(df[df["wk_count"] < WEEKLY_MIN_ACTS]) * WEEKLY_PENALTY
+            st.markdown(
+                f"### Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else WEEKLY_PENALTY}</span>",
+                unsafe_allow_html=True,
+            )
+            if not winners.empty and max_score > 0:
+                names = "、".join(str(u) for u in winners["username"].tolist())
+                st.caption(f"本週暫時領先：👑 {names}")
+            render_challenge_cards(df)
+
+    if is_leader and tab_coach is not None:
+        with tab_coach:
+            st.caption(
+                "一人一頁睇活動分、本月 FYC、未跟案同卡關原因；"
+                "優先跟卡案，而唔淨係追打卡次數。"
+            )
+            overview = get_team_coach_overview()
+            stuck_all = get_stuck_cases()
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("團隊卡案", int(len(stuck_all)))
+            c2.metric(
+                "欠活動人數",
+                int(overview["needs_acts"].sum()) if not overview.empty else 0,
+            )
+            c3.metric(
+                "有卡案同事",
+                int((overview["stuck_count"] > 0).sum()) if not overview.empty else 0,
+            )
+
+            sub_stuck, sub_one = st.tabs(["卡案清單", "一人一頁"])
+
+            with sub_stuck:
+                st.markdown("#### 全隊未跟／逾期案")
+                if overview.empty:
+                    st.info("未有成員資料。")
+                else:
+                    # Quick triage chips
+                    hot = overview[overview["stuck_count"] > 0]
+                    if hot.empty:
+                        st.success("全隊暫無逾期卡案 — 好！")
+                    else:
+                        for _, r in hot.iterrows():
+                            st.markdown(
+                                f"- **{r['username']}**：{int(r['stuck_count'])} 宗卡案"
+                                f"（最長過期 {int(r['max_overdue'])} 日）"
+                                f" · 本週 {int(r['wk_count'])}/{WEEKLY_MIN_ACTS} 次"
+                                f" · MTD FYC ${float(r['mtd_fyc']):,.0f}"
+                            )
+                st.markdown("##### 明細")
+                _render_stuck_case_rows(stuck_all, key_prefix="team_stuck")
+
+            with sub_one:
+                members = (
+                    overview["username"].tolist()
+                    if not overview.empty
+                    else get_clean_users()
+                    .query("role == 'Member'")["username"]
+                    .astype(str)
+                    .tolist()
+                )
+                if not members:
+                    st.info("未有成員。")
+                else:
+                    # Default to most stuck member
+                    default_idx = 0
+                    pick = st.selectbox("揀同事", members, index=default_idx, key="coach_member_pick")
+                    pack = get_coach_member_pack(pick)
+                    st.markdown(f"### {pick}")
+                    m1, m2, m3, m4 = st.columns(4) if not MOBILE else st.columns(2)
+                    m1.metric("本週活動分", pack["wk_score"])
+                    m2.metric("本週次數", f'{pack["wk_count"]}/{WEEKLY_MIN_ACTS}')
+                    if not MOBILE:
+                        m3.metric("本月 FYC", f'${pack["mtd_fyc"]:,.0f}')
+                        m4.metric("未跟案", pack["stuck_count"])
+                    else:
+                        m3, m4 = st.columns(2)
+                        m3.metric("本月 FYC", f'${pack["mtd_fyc"]:,.0f}')
+                        m4.metric("未跟案", pack["stuck_count"])
+                    st.caption(
+                        f"YTD FYC ${pack['ytd_fyc']:,.0f} · 全年活動分 {pack['year_score']}"
+                        f" · 進行中跟進 {pack['open_followups']} 宗 · {pack['month']}"
+                    )
+                    if pack["needs_acts"]:
+                        st.warning(
+                            f"本週活動未達 {WEEKLY_MIN_ACTS} 次 — 有罰款風險；"
+                            "同時优先清卡案。"
+                        )
+                    st.markdown("#### 卡案清單（未跟／逾期）")
+                    _render_stuck_case_rows(pack["stuck_cases"], key_prefix=f"one_{pick}")
 
 
 def page_recruit():
@@ -3954,4 +4090,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T23:50Z
+# cloud_redeploy_stamp: 2026-10-16T00:00Z
