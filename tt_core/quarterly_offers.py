@@ -1,7 +1,8 @@
 """Quarterly customer offers & salesperson rewards.
 
+Content is organised as table sections for field lookup.
 Seeded from FWD Flash Reports (internal use). Leaders can override via the
-`quarterly_offers` Google Sheet.
+`quarterly_offers` Google Sheet (flat title/detail/note rows).
 """
 
 from __future__ import annotations
@@ -31,258 +32,337 @@ QUARTERS = {
     },
 }
 
-# kind: "customer" = 客戶優惠, "agent" = 營業員獎賞
-# Sources:
-# - PDM76/2026 — 2026 年第 4 季客戶優惠 (30 Sep 2026)
-# - TA261048 — 2026 年第四季理財顧問獎賞 (7 Oct 2026)
-DEFAULT_OFFERS: dict[str, dict[str, list[dict]]] = {
-    "Q1": {"customer": [], "agent": []},
-    "Q2": {"customer": [], "agent": []},
-    "Q3": {"customer": [], "agent": []},
+# Catalog shape per quarter/kind:
+# {
+#   "banner": str,
+#   "footnote": str,
+#   "sections": [
+#     {"title": str, "columns": [str, ...], "rows": [[str, ...], ...]},
+#   ],
+# }
+# Sources: PDM76/2026 (客戶優惠), TA261048 (理財顧問獎賞)
+DEFAULT_CATALOG: dict[str, dict[str, dict]] = {
+    "Q1": {"customer": {"banner": "", "footnote": "", "sections": []}, "agent": {"banner": "", "footnote": "", "sections": []}},
+    "Q2": {"customer": {"banner": "", "footnote": "", "sections": []}, "agent": {"banner": "", "footnote": "", "sections": []}},
+    "Q3": {"customer": {"banner": "", "footnote": "", "sections": []}, "agent": {"banner": "", "footnote": "", "sections": []}},
     "Q4": {
-        "customer": [
-            {
-                "sort": 1,
-                "title": "推廣期總覽（延長優惠）",
-                "detail": (
-                    "除另有說明，現行客戶優惠延長至 2026-12-31"
-                    "（保單須於 2027-03-31 或之前繕發）。\n"
-                    "適用任何保費繳付方式（月供／半年供／年供，如適用）。\n"
-                    "Ref：PDM76/2026"
-                ),
-                "note": "詳細條款以 Agency Portal 宣傳單張及官方 Flash Report 為準",
-            },
-            {
-                "sort": 2,
-                "title": "確衛您／更衛您醫療計劃",
-                "detail": (
-                    "• 首個保單年度：3 個月保費折扣\n"
-                    "• 與家人同時投保：首年各享額外 1 個月保費折扣"
-                ),
-                "note": "",
-            },
-            {
-                "sort": 3,
-                "title": "倍衛您／尊衛您（寰譽版）醫療計劃",
-                "detail": (
-                    "自付費 0：首年 3 個月折扣\n"
-                    "自付費 < $100,000：首年 5 個月／次年 3 個月／第 3 年 2 個月\n"
-                    "自付費 ≥ $100,000：首年 5 個月／次年 4 個月／第 3 年 3 個月\n"
-                    "• 與家人同時投保：首年各享額外 1 個月保費折扣"
-                ),
-                "note": "自付費檔位見 Flash Report（16k／25k／50k／100k 等）",
-            },
-            {
-                "sort": 4,
-                "title": "醫家保醫療計劃（含「9+9」）",
-                "detail": (
-                    "無子女之家添守護：首年 3 個月保費折扣\n"
-                    "連子女之家添守護「9+9」：\n"
-                    "• 主計劃首兩年各 3 個月折扣\n"
-                    "• 子女選項首兩年各 6 個月折扣（合計每年 9 個月）\n"
-                    "• 與家人齊投保：主計劃首年額外 1 個月（不適用於子女選項保費）"
-                ),
-                "note": "子女之家添守護非 VHIS 認可部分，不適用稅務扣減／無索償折扣",
-            },
-            {
-                "sort": 5,
-                "title": "危疾系列優惠",
-                "detail": (
-                    "危疾應援保／緻尚保／優易保–摯護您「雙 18」：\n"
-                    "• 第 2 年 18% 保費折扣＋第 3 年 18% 保費折扣\n"
-                    "危疾優易保—癌護您／心護您：第 2 年 2 個月保費折扣\n"
-                    "好易揀危疾：首年及第 2 年各 3 個月保費折扣"
-                ),
-                "note": "",
-            },
-            {
-                "sort": 6,
-                "title": "意外／精神健康／門診／臻薈",
-                "detail": (
-                    "全意守護意外（計劃／附約）：首兩年各 2 個月保費折扣\n"
-                    "智•守衛精神健康（計劃／附約）：首年 5 個月保費折扣\n"
-                    "跨越．無界醫療臻薈：首年 3 個月保費折扣\n"
-                    "大灣區智通行門診：第 2 年 2 個月保費折扣"
-                ),
-                "note": "附約須連同新基本計劃於推廣期內一併遞交",
-            },
-            {
-                "sort": 7,
-                "title": "人仁保醫療保險計劃「雙重賞」",
-                "detail": (
-                    "年繳投保人仁保／附約／父母之家添守護可享：\n"
-                    "入門：首兩年各 6 個月折扣；第 2／3 年各 $200 疫苗券\n"
-                    "昇華：首兩年各 3 個月折扣；第 2 年 $600 疫苗券\n"
-                    "薈亞：首兩年各 3 個月折扣；第 2 年 $1,000 疫苗券\n"
-                    "父母之家添守護：首兩年各 6 個月；第 2 年 $400 疫苗券\n"
-                    "人仁保附約：首兩年各 6 個月折扣"
-                ),
-                "note": "父母之家添守護僅適用薈亞級別自選保障",
-            },
-            {
-                "sort": 8,
-                "title": "智員善—智．升計劃",
-                "detail": "首年及第 2 年各 6 個月保費折扣",
-                "note": "保單須於 2027-01-31 或之前繕發",
-            },
-            {
-                "sort": 9,
-                "title": "壽險／定期壽險折扣",
-                "detail": (
-                    "家·年華：躉繳 SI<$125k／$1M → 2.5%；≥ 則 5%\n"
-                    "定期供：5／10 年 → 次年保費 10%；20 年 → 次年 20%\n"
-                    "承譽定期（10／20 年）：次年保費 50% 折扣\n"
-                    "自主保／附約（5／10／20 年）：首年 25%；第 2–5 年 20%"
-                ),
-                "note": "",
-            },
-            {
-                "sort": 10,
-                "title": "非凡匯聚 (HK)／智盈匯聚／創逸致富",
-                "detail": (
-                    "非凡匯聚(HK) 躉繳：<$200k 1%；$200k–<$500k 2%；≥$500k 4%\n"
-                    "智盈匯聚(優越版) III／V 躉繳：<$200k 4%；$200k–<$500k 6%；≥$500k 8%\n"
-                    "創逸致富(豐裕版) II：躉繳 SI<$3M 2%／≥$3M 3%；"
-                    "5 年供首年 5%；10 年供次年 10%"
-                ),
-                "note": "智盈 V 另設人民幣檔位（見官方表）",
-            },
-            {
-                "sort": 11,
-                "title": "盈∙歲悅延期年金",
-                "detail": (
-                    "一般：5 年供年繳 ≥USD5k 或 10 年供 ≥USD2.5k → 首年 10%＋次年 5%（合共 15%）\n"
-                    "合資格 QDAP 客戶特別優惠：次年升至 8%（合共 18%）"
-                ),
-                "note": "合資格客戶定義見 Flash Report 註腳",
-            },
-            {
-                "sort": 12,
-                "title": "盈聚‧天下 II（延長優惠）",
-                "detail": (
-                    "躉繳按保費層級 2%–更高檔（見官方多貨幣表）\n"
-                    "2 年供：首年約 4%–更高檔\n"
-                    "5／10 年供：首兩年折扣（例：年繳 <USD10k → 首年 8%／次年 0%；"
-                    "更高保費層級可達首年 10%+／次年 4%+）"
-                ),
-                "note": "完整貨幣／層級表請查 Agency Portal 單張",
-            },
-            {
-                "sort": 13,
-                "title": "智盈·超凡／智悅未來",
-                "detail": (
-                    "智盈·超凡躉繳：<$1M USD（或等值）5%；≥ 則 7%\n"
-                    "智悅未來：第 7 個保單年度完結時可獲特別獎賞"
-                    "（躉繳保費 × 獎賞率；USD≥2.5M／HKD≥20M → 7%）"
-                ),
-                "note": "智悅未來須於 2027-01-31 或之前繕發；首 7 年不可部分提款",
-            },
-            {
-                "sort": 14,
-                "title": "更改優惠：智優盛儲蓄（限時）",
-                "detail": (
-                    "推廣期 2026-10-01 至 12-31（須於 2027-01-31 或之前繕發）\n"
-                    "• 7.4% 躉繳保費折扣\n"
-                    "• 高達每年 5% 保證期滿回報率\n"
-                    "限額發售，或會提早結束"
-                ),
-                "note": "Ref：PDM76/2026 第 2 部分",
-            },
-            {
-                "sort": 15,
-                "title": "更改優惠：盈聚‧天下 II（3 年供）",
-                "detail": (
-                    "推廣期 2026-10-01 至 12-31（須於 2027-03-31 或之前繕發）\n"
-                    "3 年保費供款年期—首年保費折扣：\n"
-                    "年繳 <USD50k → 25%\n"
-                    "USD50k–<100k → 30%\n"
-                    "USD100k 或以上 → 35%\n"
-                    "（其他貨幣等值檔位見官方表）"
-                ),
-                "note": "條款以宣傳單張為準；查詢 product_marketing.hk@fwd.com",
-            },
-        ],
-        "agent": [
-            {
-                "sort": 1,
-                "title": "2026 Q4 理財顧問獎賞總覽",
-                "detail": (
-                    "富衛 2026 年第四季理財顧問獎賞計劃\n"
-                    "業績期：2026-10-01 至 2026-12-31（遞交及繕發）\n"
-                    "• TA261048.1 盈聚•天下特別獎金\n"
-                    "• TA261048.2 高端客戶保險業務特別獎金\n"
-                    "特別獎金可用作計算 2027 MDRT 資格"
-                ),
-                "note": "僅供內部傳閱 · Ref：TA261048 · Version 202610",
-            },
-            {
-                "sort": 2,
-                "title": "盈聚•天下特別獎金（TA261048.1）",
-                "detail": (
-                    "指定計劃：盈聚•天下壽險計劃 II\n"
-                    "繕發要求：年繳；供款年期 2／3／5 年\n"
-                    "累積首年保費 → 特別獎金（佔首年佣金）：\n"
-                    "• ≥ USD200k → 40%\n"
-                    "• USD75k – <200k → 30%\n"
-                    "• USD50k – <75k → 20%\n"
-                    "• USD6k – <50k → 10%\n"
-                    "不設最低保單數；個人上限 HKD 4,000,000"
-                ),
-                "note": "續保率截至 2026-12-31 須 ≥85%；預計 2027-02 發放",
-            },
-            {
-                "sort": 3,
-                "title": "高端客戶特別獎金—智盈／創逸（TA261048.2）",
-                "detail": (
-                    "指定計劃（躉繳）：\n"
-                    "1. 智盈匯聚（優越版）V\n"
-                    "2. 創逸致富（豐裕版）II\n"
-                    "3. 智盈·超凡保險計劃\n"
-                    "獎賞：首年保費額外 2%（首年保費 × 2%）"
-                ),
-                "note": "業績期 2026-10-01 至 12-31；遞交及繕發",
-            },
-            {
-                "sort": 4,
-                "title": "非凡匯聚 (HK) 特別獎金（TA261048.2）",
-                "detail": (
-                    "指定計劃：非凡匯聚 (HK)［Imperial Wealth (HK)］· 躉繳\n"
-                    "按每張保單首次躉繳保費：\n"
-                    "• ≥ USD500k → 額外 5% 佣金\n"
-                    "• USD200k – <500k → 額外 4% 佣金\n"
-                    "• < USD200k → 額外 3% 佣金"
-                ),
-                "note": "計算：首次躉繳保費 × 額外佣金百分比",
-            },
-            {
-                "sort": 5,
-                "title": "非凡致富 (HK) 特別獎金（TA261048.2）",
-                "detail": (
-                    "指定計劃：非凡致富 (HK)［Imperial Fortune (HK)］\n"
-                    "繳費：躉繳／5 年繳／10 年繳\n"
-                    "躉繳或 5 年繳（最低保額 US$4,000,000）：\n"
-                    "• 第 1 年：目標保費額外 10% 佣金\n"
-                    "10 年繳：\n"
-                    "• 第 1 年：已繳目標保費額外 10%\n"
-                    "• 第 2 年：未繳目標保費額外 10%"
-                ),
-                "note": "冷靜期退保等不獲計算；詳見一般規則",
-            },
-            {
-                "sort": 6,
-                "title": "領獎常見規則（摘要）",
-                "detail": (
-                    "• 個人續保率截至 2026-12-31 須達 85% 或以上\n"
-                    "• 獎賞預計 2027-02 發放（2027-01 薪酬）；須仍持有效合約\n"
-                    "• 特別獎金可計入 2027 MDRT，但一般不計年終評核／上線佣金等\n"
-                    "• 上訴截止暫定 2027-02-15 17:00（電郵 Zone Head 並 CC 直屬經理／區域總監）\n"
-                    "• 富衛保留最終解釋及決定權"
-                ),
-                "note": "完整條款以官方 Flash Report 為準",
-            },
-        ],
+        "customer": {
+            "banner": (
+                "推廣期至 2026-12-31（保單一般須於 2027-03-31 或之前繕發）· "
+                "適用月供／半年供／年供（如適用）· Ref：PDM76/2026"
+            ),
+            "footnote": "詳細條款以 Agency Portal 宣傳單張及官方 Flash Report 為準。",
+            "sections": [
+                {
+                    "title": "自願醫保／醫療計劃",
+                    "columns": ["產品", "優惠重點", "備註"],
+                    "rows": [
+                        [
+                            "確衛您／更衛您",
+                            "首年 3 個月保費折扣；與家人齊投保各加 1 個月",
+                            "",
+                        ],
+                        [
+                            "倍衛您／尊衛您（寰譽版）",
+                            "自付費 0：首年 3 個月\n"
+                            "自付費 <$100k：首年 5／次年 3／第 3 年 2 個月\n"
+                            "自付費 ≥$100k：首年 5／次年 4／第 3 年 3 個月\n"
+                            "齊投保：首年各加 1 個月",
+                            "自付費檔位見官方表",
+                        ],
+                        [
+                            "醫家保（無子女選項）",
+                            "首年 3 個月保費折扣",
+                            "",
+                        ],
+                        [
+                            "醫家保 + 子女之家添守護「9+9」",
+                            "主計劃首兩年各 3 個月；子女選項首兩年各 6 個月\n"
+                            "齊投保：主計劃首年加 1 個月（不含子女選項保費）",
+                            "子女選項非 VHIS／不適用稅務扣減",
+                        ],
+                        [
+                            "人仁保「雙重賞」（年繳）",
+                            "入門：首兩年各 6 個月 + 疫苗券 $200（第 2／3 年）\n"
+                            "昇華：首兩年各 3 個月 + 疫苗券 $600（第 2 年）\n"
+                            "薈亞：首兩年各 3 個月 + 疫苗券 $1,000（第 2 年）\n"
+                            "父母之家添守護：首兩年各 6 個月 + 疫苗券 $400",
+                            "父母選項僅薈亞級別",
+                        ],
+                        [
+                            "智員善—智．升",
+                            "首年及第 2 年各 6 個月保費折扣",
+                            "須於 2027-01-31 或之前繕發",
+                        ],
+                        [
+                            "跨越．無界醫療臻薈",
+                            "首年 3 個月保費折扣",
+                            "",
+                        ],
+                        [
+                            "大灣區智通行門診",
+                            "第 2 年 2 個月保費折扣",
+                            "",
+                        ],
+                    ],
+                },
+                {
+                    "title": "危疾／意外／精神健康",
+                    "columns": ["產品", "優惠重點", "備註"],
+                    "rows": [
+                        [
+                            "危疾應援保／緻尚保／優易保–摯護您",
+                            "「雙 18」：第 2 年 18% + 第 3 年 18% 保費折扣",
+                            "",
+                        ],
+                        [
+                            "危疾優易保—癌護您／心護您",
+                            "第 2 年 2 個月保費折扣",
+                            "",
+                        ],
+                        [
+                            "好易揀危疾",
+                            "首年及第 2 年各 3 個月保費折扣",
+                            "",
+                        ],
+                        [
+                            "全意守護意外（計劃／附約）",
+                            "首年及第 2 年各 2 個月保費折扣",
+                            "附約須連新基本計劃遞交",
+                        ],
+                        [
+                            "智•守衛精神健康（計劃／附約）",
+                            "首年 5 個月保費折扣",
+                            "附約須連新基本計劃遞交",
+                        ],
+                    ],
+                },
+                {
+                    "title": "壽險／定期壽險",
+                    "columns": ["產品", "繳費／條件", "優惠", "備註"],
+                    "rows": [
+                        [
+                            "家·年華",
+                            "躉繳 SI <$125k／$1M",
+                            "躉繳保費 2.5%",
+                            "",
+                        ],
+                        [
+                            "家·年華",
+                            "躉繳 SI ≥$125k／$1M",
+                            "躉繳保費 5%",
+                            "",
+                        ],
+                        [
+                            "家·年華",
+                            "5／10 年供",
+                            "次年保費 10%",
+                            "抵銷次年每期保費",
+                        ],
+                        [
+                            "家·年華",
+                            "20 年供",
+                            "次年保費 20%",
+                            "抵銷次年每期保費",
+                        ],
+                        [
+                            "承譽定期",
+                            "10／20 年",
+                            "次年保費 50%",
+                            "",
+                        ],
+                        [
+                            "自主保／附約",
+                            "5／10／20 年",
+                            "首年 25%；第 2–5 年 20%",
+                            "",
+                        ],
+                    ],
+                },
+                {
+                    "title": "儲蓄／財富產品",
+                    "columns": ["產品", "條件", "優惠", "備註"],
+                    "rows": [
+                        [
+                            "非凡匯聚 (HK)",
+                            "躉繳 <$200k",
+                            "1%",
+                            "",
+                        ],
+                        [
+                            "非凡匯聚 (HK)",
+                            "躉繳 $200k–<$500k",
+                            "2%",
+                            "",
+                        ],
+                        [
+                            "非凡匯聚 (HK)",
+                            "躉繳 ≥$500k",
+                            "4%",
+                            "",
+                        ],
+                        [
+                            "智盈匯聚（優越版）III／V",
+                            "躉繳 <$200k（或等值）",
+                            "4%",
+                            "V 另設人民幣檔",
+                        ],
+                        [
+                            "智盈匯聚（優越版）III／V",
+                            "躉繳 $200k–<$500k",
+                            "6%",
+                            "",
+                        ],
+                        [
+                            "智盈匯聚（優越版）III／V",
+                            "躉繳 ≥$500k",
+                            "8%",
+                            "",
+                        ],
+                        [
+                            "創逸致富（豐裕版）II",
+                            "躉繳 SI <$3M／≥$3M",
+                            "2%／3%",
+                            "",
+                        ],
+                        [
+                            "創逸致富（豐裕版）II",
+                            "5 年供／10 年供",
+                            "首年 5%／次年 10%",
+                            "",
+                        ],
+                        [
+                            "盈∙歲悅延期年金",
+                            "5 年 ≥USD5k 或 10 年 ≥USD2.5k",
+                            "首年 10% + 次年 5%（合共 15%）",
+                            "合資格 QDAP 客戶次年 8%（合共 18%）",
+                        ],
+                        [
+                            "盈聚‧天下 II",
+                            "躉繳／2／5／10 年供",
+                            "按保費層級 2%–更高檔",
+                            "完整貨幣表見 Portal",
+                        ],
+                        [
+                            "智盈·超凡",
+                            "躉繳 <$1M USD（或等值）／≥",
+                            "5%／7%",
+                            "",
+                        ],
+                        [
+                            "智悅未來",
+                            "第 7 年完結；USD≥2.5M／HKD≥20M",
+                            "特別獎賞率 7%（× 躉繳保費）",
+                            "須於 2027-01-31 前繕發；首 7 年不可部分提款",
+                        ],
+                    ],
+                },
+                {
+                    "title": "Q4 更改／限時優惠（2026-10-01 至 12-31）",
+                    "columns": ["產品", "條件", "優惠", "備註"],
+                    "rows": [
+                        [
+                            "智優盛儲蓄",
+                            "須於 2027-01-31 前繕發",
+                            "7.4% 躉繳折扣 + 高達每年 5% 保證期滿回報",
+                            "限額發售，或會提早結束",
+                        ],
+                        [
+                            "盈聚‧天下 II（3 年供）",
+                            "年繳 <USD50k",
+                            "首年 25%",
+                            "其他貨幣等值見官方表",
+                        ],
+                        [
+                            "盈聚‧天下 II（3 年供）",
+                            "年繳 USD50k–<$100k",
+                            "首年 30%",
+                            "",
+                        ],
+                        [
+                            "盈聚‧天下 II（3 年供）",
+                            "年繳 ≥USD100k",
+                            "首年 35%",
+                            "",
+                        ],
+                    ],
+                },
+            ],
+        },
+        "agent": {
+            "banner": (
+                "業績期：2026-10-01 至 2026-12-31（遞交及繕發）· "
+                "特別獎金可計入 2027 MDRT · Ref：TA261048"
+            ),
+            "footnote": (
+                "續保率截至 2026-12-31 須 ≥85%；預計 2027-02 發放。"
+                "完整一般規則以官方 Flash Report 為準。"
+            ),
+            "sections": [
+                {
+                    "title": "盈聚•天下特別獎金（TA261048.1）",
+                    "columns": ["累積首年保費", "特別獎金", "合資格要求"],
+                    "rows": [
+                        ["≥ USD200k", "首年佣金 40%", "盈聚•天下 II · 年繳 · 2／3／5 年供"],
+                        ["USD75k – <200k", "首年佣金 30%", "同上"],
+                        ["USD50k – <75k", "首年佣金 20%", "同上"],
+                        ["USD6k – <50k", "首年佣金 10%", "同上"],
+                    ],
+                },
+                {
+                    "title": "高端客戶特別獎金（TA261048.2）",
+                    "columns": ["產品", "繳費", "獎賞"],
+                    "rows": [
+                        [
+                            "智盈匯聚（優越版）V／創逸致富（豐裕版）II／智盈·超凡",
+                            "躉繳",
+                            "首年保費額外 2%",
+                        ],
+                        [
+                            "非凡匯聚 (HK)",
+                            "躉繳 ≥ USD500k",
+                            "額外 5% 佣金",
+                        ],
+                        [
+                            "非凡匯聚 (HK)",
+                            "躉繳 USD200k – <500k",
+                            "額外 4% 佣金",
+                        ],
+                        [
+                            "非凡匯聚 (HK)",
+                            "躉繳 < USD200k",
+                            "額外 3% 佣金",
+                        ],
+                        [
+                            "非凡致富 (HK)",
+                            "躉繳／5 年繳（SI ≥ US$4M）",
+                            "第 1 年：目標保費額外 10%",
+                        ],
+                        [
+                            "非凡致富 (HK)",
+                            "10 年繳",
+                            "第 1 年已繳目標保費 +10%；第 2 年未繳目標保費 +10%",
+                        ],
+                    ],
+                },
+                {
+                    "title": "領獎須知（摘要）",
+                    "columns": ["項目", "說明"],
+                    "rows": [
+                        ["個人上限", "盈聚•天下特別獎金上限 HKD 4,000,000"],
+                        ["續保率", "截至 2026-12-31 須達 85% 或以上"],
+                        ["發放", "預計 2027-02（2027-01 薪酬）；須仍持有效合約"],
+                        ["MDRT", "特別獎金可計入 2027 MDRT 資格"],
+                        ["上訴", "暫定 2027-02-15 17:00 前電郵 Zone Head（CC 直屬經理／區域總監）"],
+                    ],
+                },
+            ],
+        },
     },
 }
+
+# Backward-compatible alias used by older helpers / tests
+DEFAULT_OFFERS = DEFAULT_CATALOG
 
 OFFER_COLUMNS = [
     "id",
@@ -308,7 +388,88 @@ def current_quarter_key(today: date | None = None) -> str:
     return "Q4"
 
 
+def default_catalog(quarter: str, kind: str) -> dict:
+    """Return {banner, footnote, sections} for a quarter/kind."""
+    q = str(quarter or "").strip().upper()
+    k = str(kind or "").strip().lower()
+    empty = {"banner": "", "footnote": "", "sections": []}
+    block = DEFAULT_CATALOG.get(q, {}).get(k)
+    if not isinstance(block, dict):
+        return empty
+    return {
+        "banner": str(block.get("banner", "") or ""),
+        "footnote": str(block.get("footnote", "") or ""),
+        "sections": list(block.get("sections") or []),
+    }
+
+
 def default_items(quarter: str, kind: str) -> list[dict]:
-    q = DEFAULT_OFFERS.get(str(quarter).upper(), {})
-    items = list(q.get(kind, []) or [])
-    return sorted(items, key=lambda x: int(x.get("sort", 0) or 0))
+    """Flat list for Leader sheet merge / legacy callers."""
+    catalog = default_catalog(quarter, kind)
+    items: list[dict] = []
+    sort = 0
+    if catalog.get("banner"):
+        sort += 1
+        items.append(
+            {
+                "sort": sort,
+                "title": "推廣期／總覽",
+                "detail": catalog["banner"],
+                "note": catalog.get("footnote", ""),
+            }
+        )
+    for section in catalog.get("sections") or []:
+        cols = section.get("columns") or []
+        for row in section.get("rows") or []:
+            sort += 1
+            cells = list(row) + [""] * max(0, len(cols) - len(row))
+            if not cols:
+                continue
+            title = str(cells[0] if cells else section.get("title", "")).strip()
+            detail_parts = []
+            for i, col in enumerate(cols[1:], start=1):
+                val = str(cells[i] if i < len(cells) else "").strip()
+                if val:
+                    detail_parts.append(f"{col}：{val}")
+            items.append(
+                {
+                    "sort": sort,
+                    "title": f"{section.get('title', '')} · {title}".strip(" ·"),
+                    "detail": "\n".join(detail_parts),
+                    "note": "",
+                    "section": section.get("title", ""),
+                    "columns": cols,
+                    "row": cells[: len(cols)],
+                }
+            )
+    return items
+
+
+def catalog_from_flat_items(items: list[dict], *, kind: str) -> dict:
+    """Build a single table section from Sheet title/detail/note rows."""
+    rows = []
+    for item in sorted(items or [], key=lambda x: int(x.get("sort", 0) or 0)):
+        title = str(item.get("title", "") or "").strip()
+        if not title:
+            continue
+        rows.append(
+            [
+                title,
+                str(item.get("detail", "") or "").strip(),
+                str(item.get("note", "") or "").strip(),
+            ]
+        )
+    if not rows:
+        return {"banner": "", "footnote": "", "sections": []}
+    label = "客戶優惠" if kind == "customer" else "營業員獎賞"
+    return {
+        "banner": "以下為 Leader 自訂項目（Google Sheet）",
+        "footnote": "",
+        "sections": [
+            {
+                "title": f"自訂{label}",
+                "columns": ["項目", "詳情", "備註"],
+                "rows": rows,
+            }
+        ],
+    }
