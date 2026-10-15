@@ -1997,17 +1997,19 @@ def _offer_cell_html(val: str) -> str:
 
 
 def _offer_col_class(col_name: str, index: int) -> str:
-    """Widen 詳情/優惠重點; keep 備註 narrow."""
+    """Widen 詳情/說明; keep 備註／項目 label columns narrow."""
     name = str(col_name or "").strip()
-    if index == 0 or name in {"產品", "項目"}:
-        return "offer-product"
-    if name in {"備註", "說明"}:
+    if name == "備註":
         return "offer-note-col"
-    if name in {"詳情", "優惠重點", "優惠", "獎賞", "特別獎金"}:
+    if name == "項目":
+        # 領獎須知等兩欄表：項目窄、說明闊
+        return "offer-label-col"
+    if index == 0 or name == "產品":
+        return "offer-product"
+    if name in {"詳情", "說明", "優惠重點", "優惠", "獎賞", "特別獎金"}:
         return "offer-detail-col"
     if name in {"條件", "繳費", "繳費／條件", "合資格要求", "累積首年保費"}:
         return "offer-mid-col"
-    # Default: treat middle content columns as detail-wide
     return "offer-detail-col"
 
 
