@@ -54,18 +54,19 @@ def update_pw(u, p):
     update_user_field(u, "password", p)
 
 
+def _act_points(t: str) -> int:
+    if "出code" in t or "出 Code" in t:
+        return 8
+    if "簽單" in t:
+        return 5
+    if "報考試" in t:
+        return 3
+    if "傾" in t:
+        return 2
+    return 1
+
+
 def add_act(u, d, t, n):
-    pts = (
-        8
-        if "出code" in t
-        else 5
-        if "簽單" in t
-        else 3
-        if "報考試" in t
-        else 2
-        if "傾" in t
-        else 1
-    )
     run_query_gs(
         "INSERT",
         "activities",
@@ -73,10 +74,175 @@ def add_act(u, d, t, n):
             "username": u,
             "date": str(d),
             "type": t,
-            "points": pts,
+            "points": _act_points(t),
             "note": n,
             "timestamp": str(datetime.datetime.now()),
         },
+    )
+
+
+def compose_pipeline_note(
+    *,
+    track: str,
+    person: str,
+    stage: str,
+    next_action: str,
+    next_date,
+    factfind: str,
+) -> str:
+    """Structured note for activity feed + searchable follow-up context."""
+    nd = str(next_date)
+    header = (
+        f"【{track}｜{stage}】{person}\n"
+        f"Next action: {next_action}\n"
+        f"跟進日期: {nd}\n"
+    )
+    body = (factfind or "").strip()
+    return f"{header}\n{body}" if body else header
+
+
+def add_pipeline_checkin(
+    username: str,
+    *,
+    act_date,
+    act_type: str,
+    track: str,
+    person: str,
+    stage: str,
+    next_action: str,
+    next_date,
+    factfind: str,
+) -> None:
+    """Log activity points + open a follow-up for the home action list."""
+    person = str(person or "").strip()
+    stage = str(stage or "").strip()
+    next_action = str(next_action or "").strip()
+    if not person or not stage or not next_action or not next_date:
+        raise ValueError("必須填寫對象、階段、Next action、跟進日期")
+
+    note = compose_pipeline_note(
+        track=track,
+        person=person,
+        stage=stage,
+        next_action=next_action,
+        next_date=next_date,
+        factfind=factfind,
+    )
+    add_act(username, act_date, act_type, note)
+    close_open_followups(username, person, track)
+    now = str(datetime.datetime.now())
+    run_query_gs(
+        "INSERT",
+        "followups",
+        {
+            "username": username,
+            "track": track,
+            "person": person,
+            "stage": stage,
+            "next_action": next_action,
+            "next_date": str(next_date),
+            "status": "open",
+            "act_type": act_type,
+            "note": note,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+
+
+def get_followups(username: str | None = None) -> pd.DataFrame:
+    df = read_data("followups")
+    cols = [
+        "id",
+        "username",
+        "track",
+        "person",
+        "stage",
+        "next_action",
+        "next_date",
+        "status",
+        "act_type",
+        "note",
+        "created_at",
+        "updated_at",
+    ]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    work = df.copy()
+    work["status"] = work["status"].astype(str).str.strip().str.lower()
+    work["next_date"] = pd.to_datetime(work["next_date"], errors="coerce")
+    if username:
+        work = work[work["username"].astype(str) == str(username)]
+    return work
+
+
+def get_due_followups(username: str, *, on_or_before=None) -> pd.DataFrame:
+    """Open follow-ups due on/before date (default: today) — 今日要跟."""
+    today = on_or_before or datetime.date.today()
+    cutoff = pd.Timestamp(today)
+    df = get_followups(username)
+    if df.empty:
+        return df
+    open_df = df[df["status"] == "open"].copy()
+    if open_df.empty:
+        return open_df
+    due = open_df[open_df["next_date"].notna() & (open_df["next_date"] <= cutoff)]
+    return due.sort_values(by=["next_date", "person"], ascending=True)
+
+
+def get_upcoming_followups(
+    username: str, *, days: int = 7, after=None
+) -> pd.DataFrame:
+    """Open follow-ups after `after` (default today) within N days."""
+    start = pd.Timestamp(after or datetime.date.today())
+    end = start + pd.Timedelta(days=days)
+    df = get_followups(username)
+    if df.empty:
+        return df
+    open_df = df[df["status"] == "open"].copy()
+    upcoming = open_df[
+        open_df["next_date"].notna()
+        & (open_df["next_date"] > start)
+        & (open_df["next_date"] <= end)
+    ]
+    return upcoming.sort_values(by=["next_date", "person"], ascending=True)
+
+
+def close_open_followups(username: str, person: str, track: str | None = None) -> int:
+    """Mark previous open follow-ups for same person as done (replaced by newer check-in)."""
+    df = get_followups(username)
+    if df.empty:
+        return 0
+    mask = (df["status"] == "open") & (df["person"].astype(str).str.strip() == str(person).strip())
+    if track:
+        mask = mask & (df["track"].astype(str) == str(track))
+    closed = 0
+    now = str(datetime.datetime.now())
+    for _, row in df[mask].iterrows():
+        rid = row.get("id")
+        if rid is None or str(rid).strip() == "":
+            continue
+        run_query_gs(
+            "UPDATE",
+            "followups",
+            {"status": "done", "updated_at": now},
+            row_id=rid,
+        )
+        closed += 1
+    return closed
+
+
+def mark_followup_done(followup_id) -> bool:
+    return bool(
+        run_query_gs(
+            "UPDATE",
+            "followups",
+            {"status": "done", "updated_at": str(datetime.datetime.now())},
+            row_id=followup_id,
+        )
     )
 
 
@@ -585,19 +751,22 @@ def get_activity_style(act_type: str):
     return "card-admin", "badge-default"
 
 
-def get_note_template(act_type: str) -> str:
+def get_note_template(act_type: str = "") -> str:
+    """Both 做數 and 招募 use the same 15-question Fact find template."""
     import importlib
 
     import tt_core.constants as _c
 
-    # Streamlit Cloud may keep a stale constants module in sys.modules
     _c = importlib.reload(_c)
+    return getattr(_c, "TEMPLATE_FACTFIND", None) or _c.TEMPLATE_SALES
 
-    if "招募" in act_type:
-        return _c.TEMPLATE_RECRUIT
-    if "新人" in act_type:
-        return _c.TEMPLATE_NEWBIE
-    return _c.TEMPLATE_SALES
+
+def track_for_activity(act_type: str) -> str:
+    from tt_core.constants import TRACK_RECRUIT, TRACK_SALES
+
+    if any(k in act_type for k in ("招募", "新人", "出code", "報考試")):
+        return TRACK_RECRUIT
+    return TRACK_SALES
 
 
 def last_iris_sync():

@@ -32,6 +32,7 @@ CORE_SHEETS = [
     "users",
     "monthly_fyc",
     "activities",
+    "followups",
     "story_ammo",
     "quarterly_offers",
     "iris_agent_map",
@@ -245,13 +246,18 @@ def soft_invalidate(sheet_name: str | None = None):
 
 
 def ensure_headers(ws, sheet_name: str):
-    headers = ws.row_values(1)
-    if headers:
-        return headers
     schema = SHEET_SCHEMAS.get(sheet_name, [])
-    if schema:
-        ws.append_row(schema, value_input_option="USER_ENTERED")
-    return schema
+    headers = list(ws.row_values(1) or [])
+    if not headers:
+        if schema:
+            ws.append_row(schema, value_input_option="USER_ENTERED")
+        return list(schema)
+    # Append any new schema columns missing from an existing sheet
+    for col in schema:
+        if col not in headers:
+            ws.update_cell(1, len(headers) + 1, col)
+            headers.append(col)
+    return headers
 
 
 def _with_sheet_retry(fn, retries: int = MAX_RETRIES):
@@ -274,6 +280,7 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
     if action == "INSERT":
         if sheet_name in {
             "activities",
+            "followups",
             "monthly_fyc",
             "story_ammo",
             "quarterly_offers",

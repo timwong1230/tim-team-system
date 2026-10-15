@@ -23,23 +23,33 @@ from tt_core.constants import (
     ACTIVITY_TYPES,
     MDRT_TARGET,
     Q1_TARGET,
+    RECRUIT_ACTIVITY_TYPES,
+    RECRUIT_STAGES,
+    SALES_ACTIVITY_TYPES,
+    SALES_STAGES,
+    TRACK_RECRUIT,
+    TRACK_SALES,
     WEEKLY_MIN_ACTS,
     WEEKLY_PENALTY,
 )
 from tt_core.data import (
     add_act,
+    add_pipeline_checkin,
     check_notifications,
     get_activity_style,
     get_all_act,
     get_clean_users,
     get_data,
+    get_due_followups,
     get_last_week_data,
     get_member_snapshot,
     get_note_template,
     get_q1_data,
+    get_upcoming_followups,
     get_weekly_data,
     last_iris_sync,
     login,
+    mark_followup_done,
     proc_img,
     upd_fyc,
     upd_rec,
@@ -1075,6 +1085,49 @@ if is_leader:
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
+def _render_followup_item(row, *, key_prefix: str) -> None:
+    """One follow-up card with mark-done control."""
+    nd = row.get("next_date")
+    try:
+        nd_str = pd.to_datetime(nd).strftime("%Y-%m-%d") if pd.notna(nd) else "—"
+    except Exception:
+        nd_str = str(nd or "—")
+    today = datetime.date.today()
+    try:
+        overdue = pd.notna(nd) and pd.to_datetime(nd).date() < today
+    except Exception:
+        overdue = False
+    due_today = False
+    try:
+        due_today = pd.notna(nd) and pd.to_datetime(nd).date() == today
+    except Exception:
+        pass
+    flag = "🔴 已過期" if overdue else ("🟡 今日到期" if due_today else "🟢 即將")
+    track = str(row.get("track") or "")
+    person = str(row.get("person") or "")
+    stage = str(row.get("stage") or "")
+    action = str(row.get("next_action") or "")
+    st.markdown(
+        f"**{flag} · {person}**（{track}｜{stage}）  \n"
+        f"Next：{action}  \n"
+        f"日期：`{nd_str}`"
+    )
+    rid = row.get("id")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("✓ 已跟進", key=f"{key_prefix}_done_{rid}", use_container_width=True):
+            mark_followup_done(rid)
+            st.toast(f"已完成：{person}", icon="✅")
+            st.rerun()
+    with c2:
+        if st.button("去打卡更新", key=f"{key_prefix}_go_{rid}", use_container_width=True):
+            st.session_state["_menu_choice"] = "📝 打卡 Check-in"
+            st.session_state["ci_prefill_person"] = person
+            st.session_state["ci_prefill_track"] = track
+            st.rerun()
+    st.divider()
+
+
 def page_home():
     user = st.session_state["user"]
     snap = get_member_snapshot(user) if st.session_state["role"] == "Member" else None
@@ -1084,183 +1137,149 @@ def page_home():
         f"""
         <div class="tt-hero">
           <div class="tt-kicker">{BRAND_APP if MOBILE else BRAND_SYSTEM}</div>
-          <h1 style="margin:0;">你好，{user}</h1>
-          <p class="tt-sub">{"一撳打卡 · 即睇進度" if MOBILE else "今日目標：完成活動打卡 · 睇清楚自己同團隊進度"}</p>
+          <h1 style="margin:0;">今日行動清單</h1>
+          <p class="tt-sub">你好，{user} · 過期同今日要跟嘅案會出現喺呢度</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    due = get_due_followups(user)
+    upcoming = get_upcoming_followups(user, days=7)
+
+    # Compact KPI strip
     if snap:
-        # Same MDRT_2027 source as Leaderboard (do not use YTD FYC here)
         mdrt = mdrt_card_metrics(user)
-        mdrt_hint = (
-            f"MDRT {mdrt['mdrt_pct']:.1f}% · 已達標"
-            if mdrt["mdrt_met"]
-            else f"MDRT {mdrt['mdrt_pct']:.1f}% · 尚欠 ${mdrt['mdrt_remaining']:,.0f}"
-        )
-        row1 = st.columns(2) if MOBILE else st.columns(4)
-        cards = [
-            (
-                "本週活動",
-                f"{snap['wk_count']} / {WEEKLY_MIN_ACTS}",
-                f"分數 {snap['wk_score']} · {snap['wk_start']} 起",
-                None,
-            ),
-            (
-                "我的 MDRT 進度",
-                f"${mdrt['mdrt_progress']:,.0f}",
-                mdrt_hint,
-                mdrt["mdrt_pct"],
-            ),
-            ("活動分數", f"{snap['score']}", "全年累積", None),
-            ("招募", f"{snap['recruit']}", f"Team SC ${get_team_sc(snap['team_fyc']):,.0f}", None),
-        ]
-        if MOBILE:
-            for col, card in zip(row1, cards[:2]):
-                label, value, hint, pct = card
-                bar = (
-                    f'<div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{pct}%"></div></div>'
-                    if pct is not None
-                    else ""
-                )
-                col.markdown(
-                    f'<div class="tt-card"><div class="tt-label">{label}</div>'
-                    f'<div class="tt-value">{value}</div>'
-                    f'<div class="tt-hint">{hint}</div>{bar}</div>',
-                    unsafe_allow_html=True,
-                )
-            row2 = st.columns(2)
-            for col, card in zip(row2, cards[2:]):
-                label, value, hint, pct = card
-                col.markdown(
-                    f'<div class="tt-card"><div class="tt-label">{label}</div>'
-                    f'<div class="tt-value">{value}</div>'
-                    f'<div class="tt-hint">{hint}</div></div>',
-                    unsafe_allow_html=True,
-                )
+        k1, k2, k3, k4 = st.columns(4) if not MOBILE else st.columns(2)
+        k1.metric("今日要跟", len(due))
+        k2.metric("7日內", len(upcoming))
+        if not MOBILE:
+            k3.metric("本週活動", f"{snap['wk_count']}/{WEEKLY_MIN_ACTS}")
+            k4.metric("MDRT", f"{mdrt['mdrt_pct']:.0f}%")
         else:
-            for col, card in zip(row1, cards):
-                label, value, hint, pct = card
-                bar = (
-                    f'<div class="tt-progress-wrap"><div class="tt-progress-bar" style="width:{pct}%"></div></div>'
-                    if pct is not None
-                    else ""
-                )
-                col.markdown(
-                    f'<div class="tt-card"><div class="tt-label">{label}</div>'
-                    f'<div class="tt-value">{value}</div>'
-                    f'<div class="tt-hint">{hint}</div>{bar}</div>',
-                    unsafe_allow_html=True,
-                )
+            k3, k4 = st.columns(2)
+            k3.metric("本週活動", f"{snap['wk_count']}/{WEEKLY_MIN_ACTS}")
+            k4.metric("MDRT", f"{mdrt['mdrt_pct']:.0f}%")
     else:
-        # Admin / Leader home: 2 metrics on phone, 3 on desktop
         calc = float(team["fyc"].sum()) if not team.empty else 0.0
-        team_sc_home = get_team_sc(calc)
-        if MOBILE:
-            c1, c2 = st.columns(2)
-            c1.metric("Team SC", f"${team_sc_home:,.0f}")
-            c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
-            st.metric(
-                "Activities",
-                int(team["Total_Score"].sum()) if not team.empty else 0,
-            )
-        else:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Team SC", f"${team_sc_home:,.0f}")
-            c2.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
-            c3.metric("Activities", int(team["Total_Score"].sum()) if not team.empty else 0)
+        k1, k2, k3 = st.columns(3)
+        k1.metric("今日要跟", len(due))
+        k2.metric("Team SC", f"${get_team_sc(calc):,.0f}")
+        k3.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
 
-    st.markdown("### 快速打卡")
-
-    @st.fragment
-    def _quick_checkin():
-        with st.form("quick_checkin", clear_on_submit=True):
-            if MOBILE:
-                d = st.date_input("日期", value=datetime.date.today())
-                t = st.selectbox("活動種類", ACTIVITY_TYPES)
-                n = st.text_area(
-                    "重點備註",
-                    height=100,
-                    placeholder="客戶名 / 下一步 / 結果…",
-                )
-            else:
-                c1, c2 = st.columns([1, 2])
-                with c1:
-                    d = st.date_input("日期", value=datetime.date.today())
-                    t = st.selectbox("活動種類", ACTIVITY_TYPES)
-                with c2:
-                    n = st.text_area(
-                        "重點備註（可簡短）",
-                        height=120,
-                        placeholder="客戶名 / 下一步 / 結果…",
-                    )
-            if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
-                if n.strip():
-                    add_act(user, d, t, n.strip())
-                    st.toast("打卡成功！", icon="✅")
-                    st.rerun(scope="app")
-                else:
-                    st.error("請寫至少一句備註")
-
-    _quick_checkin()
-
-    st.markdown("### 團隊最新動態")
-    acts = get_all_act().head(5)
-    users_df = get_clean_users()
-    if acts.empty:
-        st.info("暫時未有動態 — 去「打卡」寫第一筆啦。")
+    st.markdown("### 今日要跟")
+    if due.empty:
+        st.success("暫時冇逾期／今日到期項目 — 保持！")
     else:
-        acts = pd.merge(acts, users_df[["username", "avatar"]], on="username", how="left")
-        for _, row in acts.iterrows():
-            act_date = pd.to_datetime(row["date"]).strftime("%Y-%m-%d")
-            avatar_url = (
-                row["avatar"]
-                if isinstance(row.get("avatar"), str) and str(row["avatar"]).startswith("http")
-                else f"https://ui-avatars.com/api/?background=d4af37&color=fff&name={row['username']}"
-            )
-            card_class, badge_class = get_activity_style(row["type"])
-            note_html = str(row["note"]).replace("\n", "<br>")
-            st.markdown(
-                f"""
-                <div class="activity-card {card_class}">
-                  <div class="act-header">
-                    <div style="display:flex;align-items:center;">
-                      <img src="{avatar_url}" class="act-avatar">
-                      <div><div class="act-name">{row['username']}</div>
-                      <div class="act-time">{act_date}</div></div>
-                    </div>
-                    <div class="act-badge {badge_class}">{row['type']}</div>
-                  </div>
-                  <div class="act-content">{note_html}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        st.caption(f"共 {len(due)} 項（已過期或今日到期）")
+        for _, row in due.iterrows():
+            _render_followup_item(row, key_prefix="home_due")
+
+    st.markdown("### 未來 7 日")
+    if upcoming.empty:
+        st.info("未有未來 7 日跟進。去打卡時記得填 Next action + 日期。")
+    else:
+        for _, row in upcoming.iterrows():
+            _render_followup_item(row, key_prefix="home_up")
+
+    if st.button("＋ 去打卡（做數／招募）", type="primary", use_container_width=True, key="home_go_checkin"):
+        st.session_state["_menu_choice"] = "📝 打卡 Check-in"
+        st.rerun()
+
+    with st.expander("團隊最新動態", expanded=False):
+        acts = get_all_act().head(5)
+        users_df = get_clean_users()
+        if acts.empty:
+            st.info("暫時未有動態。")
+        else:
+            acts = pd.merge(acts, users_df[["username", "avatar"]], on="username", how="left")
+            for _, row in acts.iterrows():
+                act_date = pd.to_datetime(row["date"]).strftime("%Y-%m-%d")
+                note_preview = str(row.get("note") or "").split("\n")[:3]
+                st.markdown(
+                    f"**{row['username']}** · {row['type']} · {act_date}  \n"
+                    + "  \n".join(note_preview)
+                )
 
 
 def page_checkin():
     st.markdown("## 打卡中心")
-    st.caption("用 Fact find background 範本記面談重點，提交後即時出現喺團隊動態。")
+    st.caption(
+        "做數／招募都填 15 條 Fact find；必須選階段、Next action、跟進日期 — "
+        "過期會出現喺主頁「今日要跟」。"
+    )
     tab_new, tab_hist = st.tabs(["立即打卡", "團隊動態"])
 
     with tab_new:
-        t = st.selectbox("活動種類", ACTIVITY_TYPES, key="ci_type")
-        default_note = get_note_template(t)
-        note_h = 520 if "招募" not in t and "新人" not in t else 260
-        # Versioned key: forces fresh default when template text changes
-        note_key = "ci_note_ff15" if "招募" not in t and "新人" not in t else "ci_note_other"
-        with st.form("checkin_form_ff15", clear_on_submit=True):
-            d = st.date_input("日期", value=datetime.date.today())
-            n = st.text_area(
-                "內容詳情",
-                value=default_note,
-                height=note_h,
-                key=note_key,
+        prefill_track = st.session_state.pop("ci_prefill_track", None)
+        prefill_person = st.session_state.pop("ci_prefill_person", None)
+        track_options = [TRACK_SALES, TRACK_RECRUIT]
+        if prefill_track in track_options:
+            st.session_state["ci_track"] = prefill_track
+        if "ci_track" not in st.session_state:
+            st.session_state["ci_track"] = TRACK_SALES
+        track = st.radio(
+            "軌道",
+            track_options,
+            horizontal=True,
+            key="ci_track",
+        )
+        types = SALES_ACTIVITY_TYPES if track == TRACK_SALES else RECRUIT_ACTIVITY_TYPES
+        stages = SALES_STAGES if track == TRACK_SALES else RECRUIT_STAGES
+        person_label = "客戶名稱" if track == TRACK_SALES else "準增員／新人名稱"
+        default_ff = get_note_template("")
+        if prefill_person is not None:
+            st.session_state["ci_person"] = str(prefill_person)
+        if "ci_person" not in st.session_state:
+            st.session_state["ci_person"] = ""
+
+        with st.form("checkin_pipeline_v1", clear_on_submit=True):
+            d = st.date_input("活動日期", value=datetime.date.today())
+            t = st.selectbox("活動種類", types)
+            person = st.text_input(
+                person_label,
+                placeholder="例如：陳生／陳太",
+                key="ci_person",
             )
-            if st.form_submit_button("提交打卡", type="primary", use_container_width=True):
-                add_act(st.session_state["user"], d, t, n)
-                st.toast("提交成功！", icon="✅")
+            stage = st.selectbox("邊個階段", stages)
+            next_action = st.text_input(
+                "Next action（必填）",
+                placeholder="例如：WhatsApp 約簽單／帶去見經理",
+            )
+            next_date = st.date_input(
+                "跟進日期（必填）",
+                value=datetime.date.today() + datetime.timedelta(days=3),
+            )
+            factfind = st.text_area(
+                "Fact find background（15 條）",
+                value=default_ff,
+                height=480,
+            )
+            submitted = st.form_submit_button("提交打卡", type="primary", use_container_width=True)
+            if submitted:
+                if not str(person or "").strip():
+                    st.error(f"請填寫{person_label}")
+                elif not str(next_action or "").strip():
+                    st.error("請填寫 Next action")
+                elif not next_date:
+                    st.error("請選擇跟進日期")
+                else:
+                    try:
+                        add_pipeline_checkin(
+                            st.session_state["user"],
+                            act_date=d,
+                            act_type=t,
+                            track=track,
+                            person=person,
+                            stage=stage,
+                            next_action=next_action,
+                            next_date=next_date,
+                            factfind=factfind,
+                        )
+                        st.toast("打卡成功！已加入跟進清單", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"提交失敗：{e}")
 
     with tab_hist:
         users_df = get_clean_users()
@@ -3700,4 +3719,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-15T16:28Z
+# cloud_redeploy_stamp: 2026-10-15T17:15Z

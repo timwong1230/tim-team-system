@@ -16,7 +16,32 @@ ACTIVITY_TYPES = [
     "新人出code (8分)",
 ]
 
-TEMPLATE_SALES = (
+# Pipeline tracks for check-in
+TRACK_SALES = "做數"
+TRACK_RECRUIT = "招募"
+
+SALES_ACTIVITY_TYPES = ["見面 (1分)", "傾保險 (2分)", "簽單 (5分)"]
+RECRUIT_ACTIVITY_TYPES = ["傾招募 (2分)", "新人報考試 (3分)", "新人出code (8分)"]
+
+SALES_STAGES = [
+    "3Q",
+    "Fact finding",
+    "落 concept",
+    "落 Sales Kit",
+    "Handling Rejection",
+    "Closing",
+]
+
+RECRUIT_STAGES = [
+    "Recruitment 3Q",
+    "Fact Finding",
+    "講 Recruitment Kit",
+    "見經理",
+    "報考試",
+    "出 Code",
+]
+
+TEMPLATE_FACTFIND = (
     "【Fact find background】\n"
     "Name: \n\n"
     "1. 性格：\n\n"
@@ -36,30 +61,11 @@ TEMPLATE_SALES = (
     "15. ⚠️ 約 next appointment／活動：日子："
 )
 
-TEMPLATE_RECRUIT = (
-    "【準增員資料】\n"
-    "Name: \n"
-    "背景/現職: \n"
-    "對現狀不滿 (Pain Points): \n"
-    "對行業最大顧慮: \n\n"
-    "【面談內容】\n"
-    "Sell 左咩 Vision?: \n"
-    "有無邀請去Team Dinner / Recruitment Talk? \n\n"
-    "【下一步】\n"
-    "下次跟進日期: \n"
-    "Action Items: "
-)
+# Alias — sales + recruit both use the same 15 fact-find questions
+TEMPLATE_SALES = TEMPLATE_FACTFIND
+TEMPLATE_RECRUIT = TEMPLATE_FACTFIND
 
-TEMPLATE_NEWBIE = (
-    "【新人跟進】\n"
-    "新人 Name: \n"
-    "今日進度 (考牌/Training/出Code): \n"
-    "遇到咩困難?: \n"
-    "Leader 俾左咩建議?: \n\n"
-    "【下一步】\n"
-    "Target: \n"
-    "下次 Review 日期: "
-)
+TEMPLATE_NEWBIE = TEMPLATE_FACTFIND
 
 # Common FWD Iris / production-report header aliases (case-insensitive match)
 IRIS_AGENT_ALIASES = [
@@ -200,6 +206,20 @@ SHEET_SCHEMAS = {
     "users": ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
     "monthly_fyc": ["id", "username", "month", "amount", "source", "updated_at"],
     "activities": ["id", "username", "date", "type", "points", "note", "timestamp"],
+    "followups": [
+        "id",
+        "username",
+        "track",
+        "person",
+        "stage",
+        "next_action",
+        "next_date",
+        "status",
+        "act_type",
+        "note",
+        "created_at",
+        "updated_at",
+    ],
     "story_ammo": [
         "id",
         "username",
