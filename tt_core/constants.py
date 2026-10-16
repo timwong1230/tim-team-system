@@ -6,6 +6,8 @@ MDRT_TARGET = 512_800
 Q1_TARGET = 88_000
 WEEKLY_MIN_ACTS = 3
 WEEKLY_PENALTY = 100
+# Per-member yearly recruit goal (Dashboard progress bar)
+RECRUIT_YEAR_TARGET = 2
 
 ACTIVITY_TYPES = [
     "見面 (1分)",

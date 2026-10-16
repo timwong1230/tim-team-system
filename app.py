@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T07:10Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T08:00Z
 
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from tt_core.constants import (
     Q1_TARGET,
     RECRUIT_ACTIVITY_TYPES,
     RECRUIT_STAGES,
+    RECRUIT_YEAR_TARGET,
     SALES_ACTIVITY_TYPES,
     SALES_STAGES,
     TRACK_RECRUIT,
@@ -975,10 +976,7 @@ menu_items = [
     "🏠 我的主頁",
     "📝 打卡 Check-in",
     "📊 團隊 Dashboard",
-    "📅 每月業績",
-    "🏆 年度挑戰",
-    "⚖️ 每週挑戰",
-    "🤝 招募龍虎榜",
+    "🏅 業績龍虎榜",
     "🎁 季度優惠 & 獎賞",
     "📁 常用表格",
     "🩺 常見疾病核保",
@@ -1433,6 +1431,44 @@ def render_rank_cards(
         )
         sub = target_label_fn(fyc)
         pct_text = f"{pct:.0f}%" if mode == "mdrt" else (f"#{rank}" if fyc > 0 else "—")
+        rec_target = float(RECRUIT_YEAR_TARGET) if RECRUIT_YEAR_TARGET else 0.0
+        rec_pct = (
+            min(max(recruit / rec_target * 100, 0), 100) if rec_target else 0.0
+        )
+        if mode == "mdrt" and recruit >= RECRUIT_YEAR_TARGET:
+            chip += (
+                '<span style="display:inline-block;margin-left:6px;background:#D1FAE5;color:#065F46;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">招募達標</span>'
+            )
+        # Dashboard MDRT cards: performance bar + recruit bar (goal 2/year)
+        if mode == "mdrt":
+            bars = (
+                "<div style='margin-top:10px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
+                + f"<div style='height:100%;width:{pct:.1f}%;border-radius:999px;"
+                + "background:linear-gradient(90deg,#D4AF37,#F0D078);'></div></div>"
+                + "<div style='display:flex;justify-content:space-between;align-items:center;"
+                + "margin-top:8px;color:#6B7280;font-size:12px;'>"
+                + f"<span>招募進度</span>"
+                + f"<span><strong style='color:#1C2430;'>{recruit}</strong> / {RECRUIT_YEAR_TARGET} 人／年</span>"
+                + "</div>"
+                + "<div style='margin-top:4px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
+                + f"<div style='height:100%;width:{rec_pct:.1f}%;border-radius:999px;"
+                + "background:linear-gradient(90deg,#3D5A4C,#6B8F71);'></div></div>"
+                + "<div style='display:flex;gap:14px;margin-top:10px;color:#6B7280;font-size:13px;'>"
+                + f"<span>活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
+                + f"<span>招募 {rec_pct:.0f}%</span>"
+                + "</div>"
+            )
+        else:
+            bars = (
+                "<div style='margin-top:10px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
+                + f"<div style='height:100%;width:{pct:.1f}%;border-radius:999px;"
+                + "background:linear-gradient(90deg,#D4AF37,#F0D078);'></div></div>"
+                + "<div style='display:flex;gap:14px;margin-top:10px;color:#6B7280;font-size:13px;'>"
+                + f"<span>招募 <strong style='color:#1C2430;'>{recruit}</strong></span>"
+                + f"<span>活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
+                + "</div>"
+            )
         parts.append(
             "<div style='position:relative;background:"
             + bg
@@ -1459,17 +1495,12 @@ def render_rank_cards(
             + f"<div style='flex-shrink:0;text-align:right;font-weight:800;font-size:17px;"
             + f"color:#9A7B1A;min-width:52px;'>{pct_text}</div>"
             + "</div>"
-            + "<div style='margin-top:10px;height:9px;border-radius:999px;background:#ECE7DC;overflow:hidden;'>"
-            + f"<div style='height:100%;width:{pct:.1f}%;border-radius:999px;"
-            + "background:linear-gradient(90deg,#D4AF37,#F0D078);'></div></div>"
-            + "<div style='display:flex;gap:14px;margin-top:10px;color:#6B7280;font-size:13px;'>"
-            + f"<span>招募 <strong style='color:#1C2430;'>{recruit}</strong></span>"
-            + f"<span>活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
-            + "</div></div>"
+            + bars
+            + "</div>"
         )
 
     n = max(len(parts), 1)
-    height = 28 + n * 152
+    height = 28 + n * (178 if mode == "mdrt" else 152)
     html = (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -1618,13 +1649,12 @@ def render_challenge_cards(df: pd.DataFrame) -> None:
 
 
 def render_recruit_cards(df: pd.DataFrame) -> None:
-    """Recruitment dragon-tiger board — card list by recruit count."""
+    """Recruitment dragon-tiger board — card list by recruit count vs yearly goal."""
     if df is None or df.empty:
         st.info("暫無招募數據")
         return
     ranked = df.sort_values(by="recruit", ascending=False).reset_index(drop=True)
-    max_rec = float(pd.to_numeric(ranked["recruit"], errors="coerce").fillna(0).max() or 0)
-    bar_max = max(max_rec, 5.0)
+    bar_max = float(max(RECRUIT_YEAR_TARGET, 1))
     parts = []
     for i, row in ranked.iterrows():
         rank = i + 1
@@ -1639,15 +1669,23 @@ def render_recruit_cards(df: pd.DataFrame) -> None:
                 '<span style="display:inline-block;margin-left:6px;background:#F7F1DE;color:#7A6420;'
                 'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">🏆 招募王</span>'
             )
-        meta = f"<span>全年活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
+        if recruit >= RECRUIT_YEAR_TARGET:
+            chip += (
+                '<span style="display:inline-block;margin-left:6px;background:#D1FAE5;color:#065F46;'
+                'border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;">達標</span>'
+            )
+        meta = (
+            f"<span>目標 <strong style='color:#1C2430;'>{RECRUIT_YEAR_TARGET}</strong> 人／年</span>"
+            f"<span>全年活動分 <strong style='color:#1C2430;'>{score}</strong></span>"
+        )
         parts.append(
             _rank_shell(
                 rank=rank,
                 name=name,
                 avatar=av,
-                big=str(recruit),
-                sub="招募人數",
-                right=f"#{rank}",
+                big=f"{recruit} / {RECRUIT_YEAR_TARGET}",
+                sub="招募進度（年度目標）",
+                right=f"{pct:.0f}%",
                 pct=pct,
                 meta=meta,
                 chip=chip,
@@ -1730,7 +1768,10 @@ def page_dashboard():
                     st.error("儲存失敗，請稍後再試")
 
     st.markdown("### Leaderboard")
-    st.caption(f"2027 MDRT 目標 ${MDRT_TARGET:,.0f} 暫時進度")
+    st.caption(
+        f"2027 MDRT 目標 ${MDRT_TARGET:,.0f} 暫時進度 · "
+        f"招募目標每人 {RECRUIT_YEAR_TARGET} 人／年（進度條按比例顯示）"
+    )
     user_list = df["username"].tolist() if not df.empty else []
     progress_map = get_mdrt_progress_map()
     if df.empty:
@@ -1739,6 +1780,13 @@ def page_dashboard():
         lb = df.copy()
         lb["fyc"] = lb["username"].map(lambda u: lookup_mdrt_progress(u, progress_map))
         render_leaderboard(lb)
+
+    st.markdown("### 招募龍虎榜")
+    st.caption(f"按招募人數排名 · 年度目標每人 {RECRUIT_YEAR_TARGET} 人")
+    if df.empty:
+        st.info("暫無招募數據")
+    else:
+        render_recruit_cards(df)
 
     if is_leader:
         with st.expander("編輯各人 2027 MDRT 暫時進度", expanded=False):
@@ -2285,12 +2333,13 @@ def page_iris_sync():
             )
 
 
-def page_monthly():
-    st.markdown("## 每月業績")
+def _section_monthly():
+    """每月業績 content (used inside 業績龍虎榜 tabs)."""
     m = st.selectbox(
         "月份",
         [f"2026-{i:02d}" for i in range(1, 13)],
         index=datetime.date.today().month - 1,
+        key="perf_lb_month",
     )
     df = get_data(month=m)
     if df.empty:
@@ -2302,7 +2351,6 @@ def page_monthly():
     top_name = str(leaders.iloc[0]["username"]) if not leaders.empty else "—"
     top_fyc = float(leaders.iloc[0]["fyc"]) if not leaders.empty else 0.0
 
-    # Monthly summary strip
     summary_html = f"""
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
@@ -2330,8 +2378,8 @@ def page_monthly():
     render_rank_cards(df, mode="monthly", month_label=m)
 
 
-def page_year_goal():
-    st.markdown("## 2026 年度挑戰")
+def _section_year_goal():
+    """年度挑戰 content (used inside 業績龍虎榜 tabs)."""
     q1_df = get_q1_data()
     st.markdown(
         f"""
@@ -2436,9 +2484,10 @@ def _render_stuck_case_rows(stuck: pd.DataFrame, *, key_prefix: str) -> None:
         st.divider()
 
 
-def page_challenge():
+def _section_weekly_challenge():
+    """每週挑戰 content (used inside 業績龍虎榜 tabs)."""
     df, start, end = get_weekly_data()
-    st.markdown(f"## 每週挑戰 · {start} ~ {end}")
+    st.caption(f"本週結算區間：{start} ~ {end}")
     st.markdown(
         f"""
         <div class="challenge-header-box">
@@ -2505,10 +2554,9 @@ def page_challenge():
                 if overview.empty:
                     st.info("未有成員資料。")
                 else:
-                    # Quick triage chips
                     hot = overview[overview["stuck_count"] > 0]
                     if hot.empty:
-                        st.success("全隊暫無逾期卡案 — 好！")
+                        st.success("全隊暫無逾期卡案 — 加油！")
                     else:
                         for _, r in hot.iterrows():
                             st.markdown(
@@ -2532,7 +2580,6 @@ def page_challenge():
                 if not members:
                     st.info("未有成員。")
                 else:
-                    # Default to most stuck member
                     default_idx = 0
                     pick = st.selectbox("揀同事", members, index=default_idx, key="coach_member_pick")
                     pack = get_coach_member_pack(pick)
@@ -2556,14 +2603,18 @@ def page_challenge():
                     _render_stuck_case_rows(pack["stuck_cases"], key_prefix=f"one_{pick}")
 
 
-def page_recruit():
-    st.markdown("## 招募龍虎榜")
-    st.caption("按招募人數排名；第一名會標成招募王。")
-    df = get_data("Yearly")
-    if df.empty:
-        st.info("暫無招募數據")
-        return
-    render_recruit_cards(df)
+def page_performance_leaderboard():
+    """Merged 每週挑戰 + 每月業績 + 年度挑戰."""
+    st.markdown("## 業績龍虎榜")
+    st.caption("每週挑戰 · 每月業績 · 年度挑戰 — 一個入口睇晒業績排名")
+    tab_week, tab_month, tab_year = st.tabs(["⚖️ 每週挑戰", "📅 每月業績", "🏆 年度挑戰"])
+    with tab_week:
+        _section_weekly_challenge()
+    with tab_month:
+        _section_monthly()
+    with tab_year:
+        _section_year_goal()
+
 
 
 def _offer_cell_html(val: str) -> str:
@@ -4651,14 +4702,8 @@ elif "業績報告" in menu or "Iris" in menu:
         _safe_page("業績報告同步", page_iris_sync)
     else:
         st.warning("只有 Leader 可以同步業績報告")
-elif "每月" in menu:
-    _safe_page("每月業績", page_monthly)
-elif "年度" in menu:
-    _safe_page("年度挑戰", page_year_goal)
-elif "每週" in menu:
-    _safe_page("每週挑戰", page_challenge)
-elif "招募" in menu:
-    _safe_page("招募龍虎榜", page_recruit)
+elif "業績龍虎榜" in menu:
+    _safe_page("業績龍虎榜", page_performance_leaderboard)
 elif "季度優惠" in menu:
     _safe_page("季度優惠", page_quarterly_offers)
 elif "常用表格" in menu:
@@ -4678,4 +4723,4 @@ elif "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T07:10Z
+# cloud_redeploy_stamp: 2026-10-16T08:00Z
