@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T06:45Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T06:50Z
 
 
 from __future__ import annotations
@@ -985,7 +985,7 @@ menu_items = [
     "💹 收入／支出 T-Account",
     "🛡️ 保障缺口",
     "🏥 醫療融資計算機",
-    "🆚 同行新人 Package 對比",
+    "🆚 保險公司新人 Package 對比",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -4212,10 +4212,10 @@ def page_medical_finance():
 
 def page_recruit_package_compare():
     """見客用：FWD FLDP 2.0 vs AIA／宏利／永明新人計劃。"""
-    st.markdown("## 🆚 同行新人 Package 對比")
+    st.markdown("## 🆚 保險公司新人 Package 對比")
     st.caption(
         "招募面談時，若 prospect 想同其他保險公司比較新人 package，"
-        "用呢頁清楚展示點解 **FWD FLDP 2.0** 通常更適合新人。"
+        "揀對應公司，清楚展示點解 **FWD FLDP 2.0** 通常更適合新人。"
     )
 
     try:
@@ -4421,9 +4421,9 @@ elif "保障缺口" in menu:
     _safe_page("保障缺口", page_protection_gap)
 elif "醫療融資" in menu:
     _safe_page("醫療融資計算機", page_medical_finance)
-elif "同行新人" in menu or "Package 對比" in menu:
-    _safe_page("同行新人 Package 對比", page_recruit_package_compare)
+elif "保險公司新人" in menu or "Package 對比" in menu:
+    _safe_page("保險公司新人 Package 對比", page_recruit_package_compare)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T06:45Z
+# cloud_redeploy_stamp: 2026-10-16T06:50Z
