@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T06:55Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T07:10Z
 
 
 from __future__ import annotations
@@ -986,6 +986,7 @@ menu_items = [
     "🛡️ 保障缺口",
     "🏥 醫療融資計算機",
     "🆚 保險公司新人 Package 對比",
+    "📋 Prospect List",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -1162,9 +1163,15 @@ def page_home():
         for _, row in upcoming.iterrows():
             _render_followup_item(row, key_prefix="home_up")
 
-    if st.button("＋ 去打卡（做數／招募）", type="primary", use_container_width=True, key="home_go_checkin"):
-        st.session_state["_menu_choice"] = "📝 打卡 Check-in"
-        st.rerun()
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("＋ 去打卡（做數／招募）", type="primary", use_container_width=True, key="home_go_checkin"):
+            st.session_state["_menu_choice"] = "📝 打卡 Check-in"
+            st.rerun()
+    with b2:
+        if st.button("📋 Prospect List", use_container_width=True, key="home_go_prospects"):
+            st.session_state["_menu_choice"] = "📋 Prospect List"
+            st.rerun()
 
     with st.expander("團隊最新動態", expanded=False):
         acts = get_all_act().head(5)
@@ -4330,6 +4337,250 @@ def page_recruit_package_compare():
     st.caption(data.get("disclaimer") or "")
 
 
+def page_prospect_list():
+    """簽單／招募 Prospect List — 各自同事可見；Leader 可睇全隊。"""
+    try:
+        from tt_core import prospects as pr
+        import importlib
+
+        importlib.reload(pr)
+    except Exception as e:
+        st.error(f"Prospect List 未能載入：{e}。請 Reboot 後再試。")
+        return
+
+    user = st.session_state["user"]
+    leader = st.session_state.get("role") == "Leader"
+
+    st.markdown("## 📋 Prospect List")
+    st.caption(
+        "分開 **簽單** 同 **招募** 兩個 list，按季度跟進；每人只睇自己嘅名單。"
+        + (" Leader 可揀同事檢視全隊。" if leader else "")
+    )
+
+    year = st.selectbox(
+        "年份",
+        options=list(range(pr.current_year(), pr.current_year() - 3, -1)),
+        key="pl_year",
+    )
+
+    view_user = user
+    if leader:
+        users_df = get_clean_users()
+        names = sorted(users_df["username"].astype(str).tolist()) if not users_df.empty else [user]
+        pick = st.selectbox(
+            "睇邊位同事？",
+            options=["（我自己）"] + [n for n in names if n != user],
+            key="pl_owner",
+        )
+        view_user = user if pick == "（我自己）" else pick
+        if view_user != user:
+            st.info(f"而家睇緊 **{view_user}** 嘅 Prospect List")
+
+    all_rows = pr.get_prospects(username=view_user, year=int(year))
+    tab_sales, tab_recruit = st.tabs(["📝 簽單 List", "🤝 招募 List"])
+
+    can_edit = view_user == user  # Leader viewing others: read-only unless own
+
+    with tab_sales:
+        sales = all_rows[all_rows["list_type"] == pr.LIST_SALES] if not all_rows.empty else all_rows
+        year_total = pr.year_fyc_total(sales, int(year))
+        st.markdown(
+            f"""
+            <div style="border:1px solid #E2C56A;border-radius:14px;padding:14px 16px;
+            background:linear-gradient(180deg,#FFFDF5,#FFFFFF);margin-bottom:12px;">
+              <div style="color:#6B7280;font-size:0.85rem;">{year} 年簽單 FYC 總數</div>
+              <div style="font-family:Georgia,serif;font-size:1.7rem;font-weight:700;color:#1C2430;">
+                ${year_total:,.0f}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if can_edit:
+            with st.expander("＋ 新增簽單 Prospect", expanded=False):
+                with st.form("pl_add_sales", clear_on_submit=True):
+                    aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
+                    an = st.text_input("Name", key="pl_as_name")
+                    ap = st.text_input("Selling Products", key="pl_as_prod", placeholder="例如：醫家保 + 盈聚")
+                    af = st.number_input("FYC (HKD)", min_value=0.0, step=1000.0, key="pl_as_fyc")
+                    aff = st.text_area(
+                        "Fact find（15 條）",
+                        value=pr.factfind_template(),
+                        height=220,
+                        key="pl_as_ff",
+                    )
+                    if st.form_submit_button("新增", type="primary", use_container_width=True):
+                        try:
+                            pr.add_sales_prospect(
+                                user,
+                                year=int(year),
+                                quarter=int(aq),
+                                name=an,
+                                selling_products=ap,
+                                fyc=float(af),
+                                factfind=aff,
+                            )
+                            st.success(f"已加入 {an}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(str(e))
+
+        for q in pr.QUARTERS:
+            qdf = sales[sales["quarter"] == q] if not sales.empty else sales
+            q_total = float(qdf["fyc"].sum()) if not qdf.empty else 0.0
+            n = len(qdf) if not qdf.empty else 0
+            with st.expander(f"Q{q} · {n} 位 · FYC ${q_total:,.0f}", expanded=(q == ((datetime.date.today().month - 1) // 3 + 1))):
+                if qdf.empty:
+                    st.caption("呢季未有 prospect。")
+                    continue
+                for _, row in qdf.iterrows():
+                    rid = row["id"]
+                    st.markdown(
+                        f"**{row['name']}** · {row.get('selling_products') or '—'} · "
+                        f"FYC **${float(row['fyc']):,.0f}**"
+                    )
+                    with st.expander("Fact find 15 條", expanded=False):
+                        ff_key = f"pl_ff_s_{rid}"
+                        ff_val = st.text_area(
+                            "Fact find",
+                            value=str(row.get("factfind") or pr.factfind_template()),
+                            height=200,
+                            key=ff_key,
+                            label_visibility="collapsed",
+                            disabled=not can_edit,
+                        )
+                        if can_edit:
+                            c_edit = st.columns([1, 1, 1, 1])
+                            with c_edit[0]:
+                                new_fyc = st.number_input(
+                                    "FYC",
+                                    min_value=0.0,
+                                    value=float(row["fyc"]),
+                                    step=1000.0,
+                                    key=f"pl_fyc_s_{rid}",
+                                )
+                            with c_edit[1]:
+                                new_prod = st.text_input(
+                                    "Products",
+                                    value=str(row.get("selling_products") or ""),
+                                    key=f"pl_prod_s_{rid}",
+                                )
+                            with c_edit[2]:
+                                if st.button("儲存", key=f"pl_save_s_{rid}", use_container_width=True):
+                                    try:
+                                        pr.update_prospect(
+                                            rid,
+                                            {
+                                                "factfind": ff_val,
+                                                "fyc": new_fyc,
+                                                "selling_products": new_prod,
+                                            },
+                                        )
+                                        st.toast("已儲存", icon="✅")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with c_edit[3]:
+                                if st.button("刪除", key=f"pl_del_s_{rid}", use_container_width=True):
+                                    pr.delete_prospect(rid)
+                                    st.rerun()
+                    st.divider()
+
+    with tab_recruit:
+        recruit = (
+            all_rows[all_rows["list_type"] == pr.LIST_RECRUIT] if not all_rows.empty else all_rows
+        )
+        counts = pr.quarter_counts(recruit, int(year), pr.LIST_RECRUIT)
+        st.markdown(
+            f"**{year} 年招募人數**："
+            + " · ".join(f"Q{q} {counts[q]} 人" for q in pr.QUARTERS)
+            + f" · 全年 **{sum(counts.values())}** 人"
+        )
+
+        if can_edit:
+            with st.expander("＋ 新增招募 Prospect", expanded=False):
+                with st.form("pl_add_recruit", clear_on_submit=True):
+                    aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_ar_q")
+                    an = st.text_input("Name", key="pl_ar_name")
+                    ac = st.selectbox("類別", pr.RECRUIT_CATEGORIES, key="pl_ar_cat")
+                    aff = st.text_area(
+                        "Fact find（15 條）",
+                        value=pr.factfind_template(),
+                        height=220,
+                        key="pl_ar_ff",
+                    )
+                    if st.form_submit_button("新增", type="primary", use_container_width=True):
+                        try:
+                            pr.add_recruit_prospect(
+                                user,
+                                year=int(year),
+                                quarter=int(aq),
+                                name=an,
+                                category=ac,
+                                factfind=aff,
+                            )
+                            st.success(f"已加入 {an}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(str(e))
+
+        for q in pr.QUARTERS:
+            qdf = recruit[recruit["quarter"] == q] if not recruit.empty else recruit
+            n = len(qdf) if not qdf.empty else 0
+            with st.expander(
+                f"Q{q} · {n} 位",
+                expanded=(q == ((datetime.date.today().month - 1) // 3 + 1)),
+            ):
+                if qdf.empty:
+                    st.caption("呢季未有 prospect。")
+                    continue
+                for _, row in qdf.iterrows():
+                    rid = row["id"]
+                    cat = row.get("recruit_category") or "—"
+                    st.markdown(f"**{row['name']}** · `{cat}`")
+                    with st.expander("Fact find 15 條", expanded=False):
+                        ff_key = f"pl_ff_r_{rid}"
+                        ff_val = st.text_area(
+                            "Fact find",
+                            value=str(row.get("factfind") or pr.factfind_template()),
+                            height=200,
+                            key=ff_key,
+                            label_visibility="collapsed",
+                            disabled=not can_edit,
+                        )
+                        if can_edit:
+                            c_edit = st.columns([1, 1, 1])
+                            with c_edit[0]:
+                                new_cat = st.selectbox(
+                                    "類別",
+                                    pr.RECRUIT_CATEGORIES,
+                                    index=max(
+                                        0,
+                                        pr.RECRUIT_CATEGORIES.index(cat)
+                                        if cat in pr.RECRUIT_CATEGORIES
+                                        else 0,
+                                    ),
+                                    key=f"pl_cat_r_{rid}",
+                                )
+                            with c_edit[1]:
+                                if st.button("儲存", key=f"pl_save_r_{rid}", use_container_width=True):
+                                    try:
+                                        pr.update_prospect(
+                                            rid,
+                                            {"factfind": ff_val, "recruit_category": new_cat},
+                                        )
+                                        st.toast("已儲存", icon="✅")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with c_edit[2]:
+                                if st.button("刪除", key=f"pl_del_r_{rid}", use_container_width=True):
+                                    pr.delete_prospect(rid)
+                                    st.rerun()
+                    st.divider()
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -4422,7 +4673,9 @@ elif "醫療融資" in menu:
     _safe_page("醫療融資計算機", page_medical_finance)
 elif "保險公司新人" in menu or "Package 對比" in menu:
     _safe_page("保險公司新人 Package 對比", page_recruit_package_compare)
+elif "Prospect List" in menu:
+    _safe_page("Prospect List", page_prospect_list)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T06:55Z
+# cloud_redeploy_stamp: 2026-10-16T07:10Z

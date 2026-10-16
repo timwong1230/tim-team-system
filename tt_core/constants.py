@@ -269,4 +269,18 @@ SHEET_SCHEMAS = {
         "uploaded_at",
         "note",
     ],
+    "prospects": [
+        "id",
+        "username",
+        "list_type",
+        "year",
+        "quarter",
+        "name",
+        "selling_products",
+        "fyc",
+        "recruit_category",
+        "factfind",
+        "created_at",
+        "updated_at",
+    ],
 }
