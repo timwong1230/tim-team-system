@@ -389,33 +389,18 @@ div.stButton > button[kind="secondary"] {
   mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 72%);
   pointer-events: none;
 }
-.tt-login-logo {
-  width: 88px;
-  height: 88px;
-  object-fit: contain;
-  border-radius: 18px;
-  margin: 0 auto 18px;
-  display: block;
-  border: 1px solid rgba(212,175,55,0.35);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+.tt-login-shell .tt-kicker,
+.tt-login-shell [style*="letter-spacing"] {
   position: relative;
   z-index: 1;
-}
-.tt-login-shell .tt-kicker {
-  position: relative;
-  z-index: 1;
-  color: #E2C56A !important;
-  letter-spacing: 0.22em;
-  font-size: 0.82rem;
-  margin-bottom: 10px;
 }
 .tt-login-shell h1 {
   position: relative;
   z-index: 1;
   margin: 0 !important;
   color: #F8F4EA !important;
-  font-size: 2.55rem !important;
-  line-height: 1.15 !important;
+  font-size: 2.6rem !important;
+  line-height: 1.12 !important;
   font-weight: 400 !important;
 }
 .tt-login-rule {
@@ -593,14 +578,8 @@ div.stButton > button[kind="secondary"] {
     padding: 28px 18px 24px;
     margin-bottom: 14px;
   }
-  .tt-login-logo {
-    width: 72px;
-    height: 72px;
-    border-radius: 14px;
-    margin-bottom: 14px;
-  }
   .tt-login-shell h1 {
-    font-size: 1.85rem !important;
+    font-size: 1.9rem !important;
   }
   .activity-card { padding: 12px; }
   .act-badge { font-size: 0.72em; max-width: 46%; text-align: right; }

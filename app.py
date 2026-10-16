@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T03:05Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T03:20Z
 
 
 from __future__ import annotations
@@ -867,22 +867,8 @@ except Exception:
     pass
 
 if not st.session_state["logged_in"]:
-    try:
-        from tt_core.branding import icon_data_uri as _icon_data_uri
-
-        _login_logo = _icon_data_uri(180)
-    except Exception:
-        _login_logo = ""
-
     def _render_login_brand() -> None:
-        logo_html = (
-            f'<img class="tt-login-logo" src="{_login_logo}" alt="TIM TEAM" '
-            f'style="width:88px;height:88px;object-fit:contain;border-radius:18px;'
-            f'margin:0 auto 18px;display:block;border:1px solid rgba(212,175,55,0.35);" />'
-            if _login_logo
-            else ""
-        )
-        # Inline critical styles so Cloud / stale CSS cache still shows the ink shell
+        # Text-only brand hero — no logo (cleaner, stronger wordmark)
         st.markdown(
             f"""
             <div class="tt-login-shell" style="
@@ -890,14 +876,14 @@ if not st.session_state["logged_in"]:
               background:radial-gradient(720px 320px at 50% -8%, rgba(212,175,55,0.22), transparent 58%),
                          linear-gradient(165deg, #10161F 0%, #1C2430 52%, #2A2314 100%);
               border:1px solid rgba(212,175,55,0.32);border-radius:22px;
-              padding:40px 28px 34px;margin-bottom:18px;
+              padding:44px 28px 38px;margin-bottom:18px;
               box-shadow:0 28px 64px rgba(16,22,31,0.28);">
-              {logo_html}
-              <div class="tt-kicker" style="color:#E2C56A !important;letter-spacing:0.22em;
-                font-size:0.82rem;margin-bottom:10px;text-transform:uppercase;">{BRAND_SYSTEM}</div>
-              <h1 style="margin:0 !important;color:#F8F4EA !important;font-size:2.45rem !important;
-                line-height:1.15 !important;font-weight:400 !important;">M+2 管理系統</h1>
-              <div class="tt-login-rule" style="width:56px;height:2px;margin:18px auto 0;
+              <div style="position:relative;z-index:1;color:#E2C56A !important;
+                font-family:'DM Sans',sans-serif;font-weight:600;letter-spacing:0.28em;
+                font-size:1.05rem;margin:0 0 14px 0;text-transform:uppercase;">{BRAND_SYSTEM}</div>
+              <h1 style="position:relative;z-index:1;margin:0 !important;color:#F8F4EA !important;
+                font-size:2.6rem !important;line-height:1.12 !important;font-weight:400 !important;">M+2 管理系統</h1>
+              <div class="tt-login-rule" style="width:56px;height:2px;margin:20px auto 0;
                 background:linear-gradient(90deg, transparent, #D4AF37, transparent);"></div>
             </div>
             """,
@@ -4326,4 +4312,4 @@ elif "醫療融資" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T03:05Z
+# cloud_redeploy_stamp: 2026-10-16T03:20Z
