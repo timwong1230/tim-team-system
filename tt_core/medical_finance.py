@@ -16,6 +16,8 @@ DEFAULT_FX = 7.85
 DEFAULT_INFLATION = 0.03
 K5_DEFAULT = 2.9727
 G_DEFAULT = 0.1189
+# 盈聚‧天下 II（5年供）公司最低年繳保費
+MIN_ANNUAL_SAVINGS_HKD = 31_000
 
 # plan_id -> catalog metadata + optional unisex CSV (level/deductible/age)
 PLAN_CATALOG: dict[str, dict[str, Any]] = {
@@ -376,15 +378,28 @@ def min_annual_savings_usd(
     import math
 
     best_r = float(math.ceil(best / 10.0) * 10)
+    # Company product floor: 盈聚 5年供 最低年繳 HKD $31,000
+    hkd_raw = round(best_r * fx, 0)
+    floor_applied = hkd_raw < float(MIN_ANNUAL_SAVINGS_HKD)
+    if floor_applied:
+        hkd_out = float(MIN_ANNUAL_SAVINGS_HKD)
+        # USD equivalent of the HKD floor (keep HKD display exact at $31,000)
+        best_r = round(hkd_out / fx, 2)
+    else:
+        hkd_out = hkd_raw
+
     sim = simulate_fund(best_r, wds)
     peak = max(w["premium_hkd"] for w in wds)
     total_wd_hkd = sum(w["premium_hkd"] for w in wds)
     label = plan_label(meta["id"], level=lv, deductible=ded)
     return {
         "annual_prem_usd": best_r,
-        "annual_prem_hkd": round(best_r * fx, 0),
+        "annual_prem_hkd": hkd_out,
+        "funding_prem_hkd": hkd_raw,  # before company floor (for transparency)
+        "min_plan_floor_hkd": float(MIN_ANNUAL_SAVINGS_HKD),
+        "floor_applied": floor_applied,
         "total_5yr_usd": round(best_r * 5, 0),
-        "total_5yr_hkd": round(best_r * 5 * fx, 0),
+        "total_5yr_hkd": round(hkd_out * 5, 0),
         "fx": fx,
         "inflation": float(inflation),
         "start_age": int(start_age),
@@ -430,10 +445,18 @@ def whatsapp_summary(result: dict[str, Any], *, client: str = "") -> str:
         f"· {format_usd(result.get('annual_prem_usd') or 0)}／年",
         f"· 約 {format_hkd(result.get('annual_prem_hkd') or 0)}／年（匯率 {result.get('fx')}）",
         f"· 5 年合共約 {format_hkd(result.get('total_5yr_hkd') or 0)}",
-        "",
-        f"期間最高一年醫保保費約 {format_hkd(result.get('peak_medical_hkd') or 0)}",
-        f"提款年度合計（通脹後）約 {format_hkd(result.get('total_medical_withdraw_hkd') or 0)}",
-        "",
-        "_試算基於現行醫保標準保費表及盈聚計劃書校準假設，非保證回報／非正式報價。_",
     ]
+    if result.get("floor_applied"):
+        lines.append(
+            f"· _已套用公司最低年供 {format_hkd(result.get('min_plan_floor_hkd') or MIN_ANNUAL_SAVINGS_HKD)}_"
+        )
+    lines.extend(
+        [
+            "",
+            f"期間最高一年醫保保費約 {format_hkd(result.get('peak_medical_hkd') or 0)}",
+            f"提款年度合計（通脹後）約 {format_hkd(result.get('total_medical_withdraw_hkd') or 0)}",
+            "",
+            "_試算基於現行醫保標準保費表及盈聚計劃書校準假設，非保證回報／非正式報價。_",
+        ]
+    )
     return "\n".join(lines)
