@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T02:52Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T02:55Z
 
 
 from __future__ import annotations
@@ -872,8 +872,8 @@ if not st.session_state["logged_in"]:
         st.markdown(
             f"""
             <div class="login-panel">
-              <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_APP}</div>
-              <h1 style="margin:0 0 6px 0;">活動量管理系統</h1>
+              <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_SYSTEM}</div>
+              <h1 style="margin:0 0 6px 0;">M+2 管理系統</h1>
             </div>
             """,
             unsafe_allow_html=True,
@@ -917,8 +917,7 @@ if not st.session_state["logged_in"]:
                 f"""
                 <div class="login-panel">
                   <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_SYSTEM}</div>
-                  <h1 style="margin:0 0 6px 0;">活動量管理系統</h1>
-                  <p style="color:#6B7280; margin:0 0 18px 0;">打卡更快 · 戰報更清晰 · Iris 業績自動同步</p>
+                  <h1 style="margin:0 0 6px 0;">M+2 管理系統</h1>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -4088,14 +4087,14 @@ def page_medical_finance():
     # Quick presets must use on_click: Streamlit forbids writing widget keys
     # after the slider with key="mf_infl" has already been instantiated.
     if "mf_infl" not in st.session_state:
-        st.session_state["mf_infl"] = 2.61
+        st.session_state["mf_infl"] = 3.0
 
     def _mf_set_infl(v: float) -> None:
         st.session_state["mf_infl"] = float(v)
 
     quick = st.columns(3)
     quick[0].button("0%", key="mf_i0", on_click=_mf_set_infl, args=(0.0,))
-    quick[1].button("2.61%", key="mf_i261", on_click=_mf_set_infl, args=(2.61,))
+    quick[1].button("3%", key="mf_i3", on_click=_mf_set_infl, args=(3.0,))
     quick[2].button("5%", key="mf_i5", on_click=_mf_set_infl, args=(5.0,))
     inflation_pct = st.slider(
         "未來每年保費加幅 %（疊加喺年齡跳價之上）",
