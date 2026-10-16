@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T03:25Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T06:45Z
 
 
 from __future__ import annotations
@@ -985,6 +985,7 @@ menu_items = [
     "💹 收入／支出 T-Account",
     "🛡️ 保障缺口",
     "🏥 醫療融資計算機",
+    "🆚 同行新人 Package 對比",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -4209,6 +4210,127 @@ def page_medical_finance():
     )
 
 
+def page_recruit_package_compare():
+    """見客用：FWD FLDP 2.0 vs AIA／宏利／永明新人計劃。"""
+    st.markdown("## 🆚 同行新人 Package 對比")
+    st.caption(
+        "招募面談時，若 prospect 想同其他保險公司比較新人 package，"
+        "用呢頁清楚展示點解 **FWD FLDP 2.0** 通常更適合新人。"
+    )
+
+    try:
+        from tt_core import recruit_compare as rc
+        import importlib
+
+        importlib.reload(rc)
+    except Exception as e:
+        st.error(f"對比模組未能載入：{e}。請 Reboot 後再試。")
+        return
+
+    data = rc.load_packages()
+    home = rc.get_home()
+    competitors = rc.list_competitors()
+    comp_opts = {c["id"]: f"{c['name']} · {c['package']}" for c in competitors}
+
+    st.markdown(
+        f"""
+        <div style="border:1px solid rgba(212,175,55,0.35);border-radius:16px;padding:18px 20px;
+        background:linear-gradient(165deg,#10161F 0%,#1C2430 55%,#2A2314 100%);margin-bottom:14px;">
+          <div style="color:#F0D078;font-size:0.78rem;letter-spacing:0.18em;text-transform:uppercase;">
+            招募武器 · {data.get('hero')}
+          </div>
+          <div style="color:#F8F4EA;font-family:Georgia,serif;font-size:1.55rem;margin-top:6px;">
+            {home['name']} · {home['package']}
+          </div>
+          <div style="color:rgba(248,244,234,0.78);margin-top:6px;font-size:0.95rem;">
+            {home['tagline']} · 合約 {home['contract_label']} · 津貼 {home['allowance_range']}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        prospect = st.text_input("Prospect 名稱（可留空）", key="rpc_prospect", placeholder="例如：Alex")
+    with c2:
+        selected = st.multiselect(
+            "對比邊間公司？",
+            options=list(comp_opts.keys()),
+            default=list(comp_opts.keys()),
+            format_func=lambda x: comp_opts[x],
+            key="rpc_comps",
+        )
+
+    if not selected:
+        st.info("請至少揀一間公司作對比。")
+        return
+
+    st.markdown("#### 一覽表")
+    snap = pd.DataFrame(rc.snapshot_table(selected))
+    st.dataframe(snap, use_container_width=True, hide_index=True)
+
+    st.markdown("#### 四大關卡")
+    for gate in data.get("gates") or []:
+        gid = gate["id"]
+        with st.expander(f"{gate['name']} — {gate['question']}", expanded=(gid == "entry")):
+            rows = rc.gate_rows(gid, selected)
+            for row in rows:
+                block = row["block"] or {}
+                border = "#E2C56A" if row["is_home"] else "#E6E8EC"
+                bg = "linear-gradient(180deg,#FFFDF5 0%,#FFFFFF 100%)" if row["is_home"] else "#FFFFFF"
+                badge = "⭐ FWD" if row["is_home"] else "同行"
+                tips = "".join(f"<li>{h}</li>" for h in (block.get("highlights") or [])[:4])
+                extra = ""
+                if gid == "survival":
+                    extra = (
+                        f"<div style='margin-top:8px;color:#6B7280;font-size:0.9rem;'>"
+                        f"對數：<b>{block.get('ratio','')}</b> · 追補：{block.get('catchup','')}</div>"
+                    )
+                elif gid == "clawback":
+                    extra = (
+                        f"<div style='margin-top:8px;color:#6B7280;font-size:0.9rem;'>"
+                        f"一般離職：{block.get('normal_exit','')}</div>"
+                    )
+                st.markdown(
+                    f"""
+                    <div style="border:1px solid {border};border-radius:14px;padding:14px 16px;
+                    background:{bg};margin-bottom:10px;">
+                      <div style="font-size:0.75rem;color:#9A7B1A;font-weight:700;">{badge}</div>
+                      <div style="font-weight:700;color:#1C2430;margin:2px 0 6px;">{row['label']}</div>
+                      <div style="color:#374151;line-height:1.45;">{block.get('summary','')}</div>
+                      {extra}
+                      <ul style="margin:8px 0 0 18px;color:#4B5563;font-size:0.92rem;">{tips}</ul>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    st.markdown("#### 見客結論（可照講）")
+    for p in data.get("verdict_points") or []:
+        st.markdown(f"- {p}")
+
+    st.markdown("#### FWD 最適合邊類人？")
+    for b in home.get("best_for") or []:
+        st.markdown(f"- {b}")
+
+    try:
+        wa = rc.whatsapp_summary(
+            selected,
+            prospect=prospect,
+            agent=str(st.session_state.get("user") or ""),
+        )
+        _render_whatsapp_share(
+            wa,
+            key="rpc_wa",
+            caption="招募面談摘要；傳前可改字。記得聲明非正式報價／以公司條款為準。",
+        )
+    except Exception as e:
+        st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
+
+    st.caption(data.get("disclaimer") or "")
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -4299,7 +4421,9 @@ elif "保障缺口" in menu:
     _safe_page("保障缺口", page_protection_gap)
 elif "醫療融資" in menu:
     _safe_page("醫療融資計算機", page_medical_finance)
+elif "同行新人" in menu or "Package 對比" in menu:
+    _safe_page("同行新人 Package 對比", page_recruit_package_compare)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T03:25Z
+# cloud_redeploy_stamp: 2026-10-16T06:45Z
