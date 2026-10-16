@@ -2549,16 +2549,12 @@ def page_challenge():
                     pick = st.selectbox("揀同事", members, index=default_idx, key="coach_member_pick")
                     pack = get_coach_member_pack(pick)
                     st.markdown(f"### {pick}")
-                    m1, m2, m3, m4 = st.columns(4) if not MOBILE else st.columns(2)
-                    m1.metric("本週活動分", pack["wk_score"])
-                    m2.metric("本週次數", f'{pack["wk_count"]}/{WEEKLY_MIN_ACTS}')
-                    if not MOBILE:
-                        m3.metric("本月 FYC", f'${pack["mtd_fyc"]:,.0f}')
-                        m4.metric("未跟案", pack["stuck_count"])
-                    else:
-                        m3, m4 = st.columns(2)
-                        m3.metric("本月 FYC", f'${pack["mtd_fyc"]:,.0f}')
-                        m4.metric("未跟案", pack["stuck_count"])
+                    r1 = st.columns(2)
+                    r1[0].metric("本週活動分", pack["wk_score"])
+                    r1[1].metric("本週次數", f'{pack["wk_count"]}/{WEEKLY_MIN_ACTS}')
+                    r2 = st.columns(2)
+                    r2[0].metric("本月 FYC", f'${pack["mtd_fyc"]:,.0f}')
+                    r2[1].metric("未跟案", pack["stuck_count"])
                     st.caption(
                         f"YTD FYC ${pack['ytd_fyc']:,.0f} · 全年活動分 {pack['year_score']}"
                         f" · 進行中跟進 {pack['open_followups']} 宗 · {pack['month']}"
@@ -4090,4 +4086,4 @@ elif "保障缺口" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T00:00Z
+# cloud_redeploy_stamp: 2026-10-16T00:20Z
