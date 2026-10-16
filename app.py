@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T08:25Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T08:35Z
 
 
 from __future__ import annotations
@@ -974,10 +974,10 @@ except Exception as e:
 
 menu_items = [
     "🏠 我的主頁",
+    "📊 團隊 Dashboard",
     "📋 Prospect List",
     "📝 打卡 Check-in",
-    "📊 團隊 Dashboard",
-    "🏅 業績龍虎榜",
+    "🏅 龍虎榜",
     "🎁 季度優惠 & 獎賞",
     "📁 常用表格",
     "🩺 常見疾病核保",
@@ -987,8 +987,8 @@ menu_items = [
     "🆚 保險公司新人 Package 對比",
 ]
 if is_leader:
-    # After Dashboard, before 業績龍虎榜
-    menu_items.insert(4, "🔄 業績報告同步")
+    # Right after Dashboard
+    menu_items.insert(2, "🔄 業績報告同步")
 menu_items.append("👤 設定")
 
 with st.sidebar:
@@ -1781,13 +1781,6 @@ def page_dashboard():
         lb = df.copy()
         lb["fyc"] = lb["username"].map(lambda u: lookup_mdrt_progress(u, progress_map))
         render_leaderboard(lb)
-
-    st.markdown("### 招募龍虎榜")
-    st.caption(f"按招募人數排名 · 年度目標每人 {RECRUIT_YEAR_TARGET} 人")
-    if df.empty:
-        st.info("暫無招募數據")
-    else:
-        render_recruit_cards(df)
 
     if is_leader:
         with st.expander("編輯各人 2027 MDRT 暫時進度", expanded=False):
@@ -2604,17 +2597,31 @@ def _section_weekly_challenge():
                     _render_stuck_case_rows(pack["stuck_cases"], key_prefix=f"one_{pick}")
 
 
+def _section_recruit():
+    """招募龍虎榜 content (used inside 龍虎榜 tabs)."""
+    st.caption(f"按招募人數排名 · 年度目標每人 {RECRUIT_YEAR_TARGET} 人")
+    df = get_data("Yearly")
+    if df.empty:
+        st.info("暫無招募數據")
+        return
+    render_recruit_cards(df)
+
+
 def page_performance_leaderboard():
-    """Merged 每週挑戰 + 每月業績 + 年度挑戰."""
-    st.markdown("## 業績龍虎榜")
-    st.caption("每週挑戰 · 每月業績 · 年度挑戰 — 一個入口睇晒業績排名")
-    tab_week, tab_month, tab_year = st.tabs(["⚖️ 每週挑戰", "📅 每月業績", "🏆 年度挑戰"])
+    """Merged 每週 / 每月 / 年度 / 招募 → 龍虎榜."""
+    st.markdown("## 龍虎榜")
+    st.caption("每週挑戰 · 每月業績 · 年度挑戰 · 招募 — 一個入口睇晒排名")
+    tab_week, tab_month, tab_year, tab_rec = st.tabs(
+        ["⚖️ 每週挑戰", "📅 每月業績", "🏆 年度挑戰", "🤝 招募"]
+    )
     with tab_week:
         _section_weekly_challenge()
     with tab_month:
         _section_monthly()
     with tab_year:
         _section_year_goal()
+    with tab_rec:
+        _section_recruit()
 
 
 
@@ -4703,8 +4710,8 @@ elif "業績報告" in menu or "Iris" in menu:
         _safe_page("業績報告同步", page_iris_sync)
     else:
         st.warning("只有 Leader 可以同步業績報告")
-elif "業績龍虎榜" in menu:
-    _safe_page("業績龍虎榜", page_performance_leaderboard)
+elif "龍虎榜" in menu:
+    _safe_page("龍虎榜", page_performance_leaderboard)
 elif "季度優惠" in menu:
     _safe_page("季度優惠", page_quarterly_offers)
 elif "常用表格" in menu:
@@ -4724,4 +4731,4 @@ elif "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T08:25Z
+# cloud_redeploy_stamp: 2026-10-16T08:35Z

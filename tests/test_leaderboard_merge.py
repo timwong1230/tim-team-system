@@ -1,4 +1,4 @@
-"""業績龍虎榜 merge + Dashboard recruit progress target."""
+"""龍虎榜 merge + Dashboard recruit progress target."""
 
 from __future__ import annotations
 
@@ -29,7 +29,8 @@ def test_recruit_progress_ratio():
 def test_app_menu_merged():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     block = src.split("menu_items = [")[1].split("]")[0]
-    assert "🏅 業績龍虎榜" in src
+    assert "🏅 龍虎榜" in block
+    assert "業績龍虎榜" not in block
     assert "page_performance_leaderboard" in src
     assert "📅 每月業績" not in block
     assert "🏆 年度挑戰" not in block
@@ -37,12 +38,13 @@ def test_app_menu_merged():
     assert "🤝 招募龍虎榜" not in block
     assert "招募進度" in src
     assert "RECRUIT_YEAR_TARGET" in src
-    # Prospect List sits directly under 我的主頁
+    assert '_section_recruit()' in src or "_section_recruit" in src
+    # Dashboard sits directly under 我的主頁
     home_i = block.index("🏠 我的主頁")
-    prospect_i = block.index("📋 Prospect List")
-    assert prospect_i > home_i
-    between = block[home_i:prospect_i]
-    assert between.count("\n") <= 2  # next item after home
+    dash_i = block.index("📊 團隊 Dashboard")
+    assert dash_i > home_i
+    between = block[home_i:dash_i]
+    assert between.count('"') <= 2  # no other menu item between
 
 
 if __name__ == "__main__":
