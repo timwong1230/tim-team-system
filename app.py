@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T06:50Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T06:55Z
 
 
 from __future__ import annotations
@@ -4266,9 +4266,8 @@ def page_recruit_package_compare():
         st.info("請至少揀一間公司作對比。")
         return
 
-    st.markdown("#### 一覽表")
-    snap = pd.DataFrame(rc.snapshot_table(selected))
-    st.dataframe(snap, use_container_width=True, hide_index=True)
+    st.markdown("#### 一覽對比")
+    st.markdown(rc.snapshot_html(selected), unsafe_allow_html=True)
 
     st.markdown("#### 四大關卡")
     for gate in data.get("gates") or []:
@@ -4426,4 +4425,4 @@ elif "保險公司新人" in menu or "Package 對比" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T06:50Z
+# cloud_redeploy_stamp: 2026-10-16T06:55Z

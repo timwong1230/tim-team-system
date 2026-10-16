@@ -28,9 +28,15 @@ def test_competitors_exclude_home():
 
 
 def test_snapshot_and_gates():
+    from tt_core.recruit_compare import snapshot_html
+
     snap = snapshot_table(["aia", "sunlife"])
     assert snap[0]["公司"].startswith("富衛")
     assert len(snap) == 3
+    html = snapshot_html(["aia"])
+    assert "推薦 · FWD" in html
+    assert "友邦" in html
+    assert "1.1" in html
     rows = gate_rows("survival", ["aia"])
     assert rows[0]["is_home"]
     assert "1.1" in rows[0]["block"]["ratio"]
