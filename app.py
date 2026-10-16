@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T08:00Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T08:25Z
 
 
 from __future__ import annotations
@@ -974,6 +974,7 @@ except Exception as e:
 
 menu_items = [
     "🏠 我的主頁",
+    "📋 Prospect List",
     "📝 打卡 Check-in",
     "📊 團隊 Dashboard",
     "🏅 業績龍虎榜",
@@ -984,9 +985,9 @@ menu_items = [
     "🛡️ 保障缺口",
     "🏥 醫療融資計算機",
     "🆚 保險公司新人 Package 對比",
-    "📋 Prospect List",
 ]
 if is_leader:
+    # After Dashboard, before 業績龍虎榜
     menu_items.insert(4, "🔄 業績報告同步")
 menu_items.append("👤 設定")
 
@@ -4723,4 +4724,4 @@ elif "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T08:00Z
+# cloud_redeploy_stamp: 2026-10-16T08:25Z
