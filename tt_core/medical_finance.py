@@ -16,8 +16,8 @@ DEFAULT_FX = 7.85
 DEFAULT_INFLATION = 0.03
 K5_DEFAULT = 2.9727
 G_DEFAULT = 0.1189
-# 盈聚‧天下 II（5年供）公司最低年繳保費
-MIN_ANNUAL_SAVINGS_HKD = 31_000
+# 盈聚‧天下 II（5年供）公司最低年繳保費（USD）
+MIN_ANNUAL_SAVINGS_USD = 4_000
 
 # plan_id -> catalog metadata + optional unisex CSV (level/deductible/age)
 PLAN_CATALOG: dict[str, dict[str, Any]] = {
@@ -378,15 +378,12 @@ def min_annual_savings_usd(
     import math
 
     best_r = float(math.ceil(best / 10.0) * 10)
-    # Company product floor: 盈聚 5年供 最低年繳 HKD $31,000
-    hkd_raw = round(best_r * fx, 0)
-    floor_applied = hkd_raw < float(MIN_ANNUAL_SAVINGS_HKD)
+    # Company product floor: 盈聚 5年供 最低年繳 US$4,000
+    usd_raw = best_r
+    floor_applied = usd_raw < float(MIN_ANNUAL_SAVINGS_USD)
     if floor_applied:
-        hkd_out = float(MIN_ANNUAL_SAVINGS_HKD)
-        # USD equivalent of the HKD floor (keep HKD display exact at $31,000)
-        best_r = round(hkd_out / fx, 2)
-    else:
-        hkd_out = hkd_raw
+        best_r = float(MIN_ANNUAL_SAVINGS_USD)
+    hkd_out = round(best_r * fx, 0)
 
     sim = simulate_fund(best_r, wds)
     peak = max(w["premium_hkd"] for w in wds)
@@ -395,8 +392,8 @@ def min_annual_savings_usd(
     return {
         "annual_prem_usd": best_r,
         "annual_prem_hkd": hkd_out,
-        "funding_prem_hkd": hkd_raw,  # before company floor (for transparency)
-        "min_plan_floor_hkd": float(MIN_ANNUAL_SAVINGS_HKD),
+        "funding_prem_usd": usd_raw,  # before company floor (for transparency)
+        "min_plan_floor_usd": float(MIN_ANNUAL_SAVINGS_USD),
         "floor_applied": floor_applied,
         "total_5yr_usd": round(best_r * 5, 0),
         "total_5yr_hkd": round(hkd_out * 5, 0),
@@ -448,7 +445,7 @@ def whatsapp_summary(result: dict[str, Any], *, client: str = "") -> str:
     ]
     if result.get("floor_applied"):
         lines.append(
-            f"· _已套用公司最低年供 {format_hkd(result.get('min_plan_floor_hkd') or MIN_ANNUAL_SAVINGS_HKD)}_"
+            f"· _已套用公司最低年供 {format_usd(result.get('min_plan_floor_usd') or MIN_ANNUAL_SAVINGS_USD)}_"
         )
     lines.extend(
         [

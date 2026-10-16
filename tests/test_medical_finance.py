@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from tt_core.medical_finance import (
-    MIN_ANNUAL_SAVINGS_HKD,
+    MIN_ANNUAL_SAVINGS_USD,
     inflated_medical_schedule,
     load_calibration,
     load_vfamily_premiums,
@@ -49,20 +49,21 @@ def test_min_savings_positive_and_scales_with_inflation():
     high = min_annual_savings_usd(start_age=30, gender="男", inflation=0.05, end_age=80, fx=7.85)
     assert low.get("annual_prem_usd", 0) > 0
     assert high["annual_prem_usd"] >= low["annual_prem_usd"]
-    assert low["annual_prem_hkd"] >= MIN_ANNUAL_SAVINGS_HKD
-    assert high["annual_prem_hkd"] >= MIN_ANNUAL_SAVINGS_HKD
+    assert low["annual_prem_usd"] >= MIN_ANNUAL_SAVINGS_USD
+    assert high["annual_prem_usd"] >= MIN_ANNUAL_SAVINGS_USD
 
 
 def test_company_min_annual_premium_floor():
-    """盈聚 5年供 company minimum is HKD $31,000 / year."""
-    assert MIN_ANNUAL_SAVINGS_HKD == 31_000
-    # Low medical / short horizon → funding need under floor → must lift to $31k
+    """盈聚 5年供 company minimum is US$4,000 / year."""
+    assert MIN_ANNUAL_SAVINGS_USD == 4_000
+    # Low medical / short horizon → funding need under floor → must lift to US$4k
     low = min_annual_savings_usd(
         start_age=30, gender="男", inflation=0.0, end_age=50, fx=7.85, plan_id="vfamily"
     )
-    assert low["annual_prem_hkd"] >= 31_000
+    assert low["annual_prem_usd"] == 4_000
     assert low.get("floor_applied") is True
-    assert low.get("funding_prem_hkd", 0) < 31_000
+    assert low.get("funding_prem_usd", 0) < 4_000
+    assert low["annual_prem_hkd"] == round(4_000 * 7.85, 0)
     # High-need case may exceed floor without forcing
     rich = min_annual_savings_usd(
         start_age=30,
@@ -74,7 +75,7 @@ def test_company_min_annual_premium_floor():
         level="優等",
         deductible=0,
     )
-    assert rich["annual_prem_hkd"] >= 31_000
+    assert rich["annual_prem_usd"] >= 4_000
 
 
 def test_k5_age_independent_from_illustrations():

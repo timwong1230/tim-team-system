@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T12:30Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T12:50Z
 
 
 from __future__ import annotations
@@ -4216,8 +4216,8 @@ def page_medical_finance():
     )
     if result.get("floor_applied"):
         st.info(
-            f"公司儲蓄計劃最低年供 **{mf.format_hkd(result.get('min_plan_floor_hkd') or 31000)}**；"
-            f"按融資需求計只需約 {mf.format_hkd(result.get('funding_prem_hkd') or 0)}，"
+            f"公司儲蓄計劃最低年供 **{mf.format_usd(result.get('min_plan_floor_usd') or 4000)}**；"
+            f"按融資需求計只需約 {mf.format_usd(result.get('funding_prem_usd') or 0)}，"
             "已自動調高至最低年供。"
         )
 
@@ -4931,4 +4931,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T12:30Z
+# cloud_redeploy_stamp: 2026-10-16T12:50Z
