@@ -4059,7 +4059,8 @@ def page_medical_finance():
     end_age = st.slider("試算至年齡", min_value=70, max_value=100, value=100, key="mf_end")
     st.caption(
         f"儲蓄產品：{cal.get('product_name')}（美元保單）· 匯率 1 USD = {fx} HKD · "
-        f"吸煙選項：{smoke}（醫家保表為標準保費，唔分吸煙）"
+        f"吸煙選項：{smoke}（醫家保表為標準保費，唔分吸煙）· "
+        f"累積倍數已用 25–50 歲男女計劃書校準（年齡唔改倍數，只改醫保保費表）"
     )
 
     if st.button("計算最少年供", type="primary", use_container_width=True, key="mf_run"):
@@ -4262,4 +4263,4 @@ elif "醫療融資" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T02:00Z
+# cloud_redeploy_stamp: 2026-10-16T02:10Z

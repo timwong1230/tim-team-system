@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from tt_core.medical_finance import (
     inflated_medical_schedule,
+    load_calibration,
     load_vfamily_premiums,
     medical_annual_hkd,
     min_annual_savings_usd,
@@ -48,3 +49,23 @@ def test_min_savings_positive_and_scales_with_inflation():
     assert low.get("annual_prem_usd", 0) > 0
     assert high["annual_prem_usd"] >= low["annual_prem_usd"]
     assert low["annual_prem_hkd"] == round(low["annual_prem_usd"] * 7.85, 0)
+
+
+def test_k5_age_independent_from_illustrations():
+    """All USD10k illustrations (ages 25–50 M/F) share year-5 SV 29727 → k5=2.9727."""
+    cal = load_calibration()
+    assert abs(cal["k5_sv_per_annual_prem"] - 2.9727) < 1e-6
+    checked = 0
+    for ill in cal.get("illustrations") or []:
+        if ill.get("annual_prem_usd") != 10000 or "year5_sv_usd" not in ill:
+            continue
+        assert ill["year5_sv_usd"] == 29727
+        assert abs(ill["k5"] - 2.9727) < 1e-6
+        checked += 1
+    assert checked >= 7  # 25M,30M,30F,35M,40M,40F,45M,50M
+
+
+def test_older_entry_needs_higher_annual_prem():
+    young = min_annual_savings_usd(start_age=30, gender="男", inflation=0.0261, end_age=100)
+    older = min_annual_savings_usd(start_age=50, gender="男", inflation=0.0261, end_age=100)
+    assert older["annual_prem_usd"] > young["annual_prem_usd"]
