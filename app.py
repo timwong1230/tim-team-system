@@ -3997,28 +3997,33 @@ def page_protection_gap():
 
 
 def page_medical_finance():
-    """見客用：5 年儲盈聚 → 第 6 年起提款繳醫家保，計最少年供。"""
+    """見客用：5 年儲盈聚 → 第 6 年起提款繳醫保，計最少年供。"""
     st.markdown("## 🏥 醫療融資計算機")
     st.caption(
-        "輸入年齡／性別／通脹，計出用「盈聚‧天下 II（5 年供）」預留醫家保保費，"
+        "揀醫保計劃後，計出用「盈聚‧天下 II（5 年供）」預留保費，"
         "第 6 年起每年提款＝當年醫保保費（隨年齡＋通脹上升）——最少要儲幾多年供。"
     )
 
     try:
         from tt_core import medical_finance as mf
+        import importlib
+
+        importlib.reload(mf)
     except Exception as e:
         st.error(f"醫療融資模組未能載入：{e}。請 Reboot 後再試。")
         return
 
     cal = mf.load_calibration()
     fx = float(cal.get("fx_usd_hkd") or 7.85)
+    plans = mf.list_plans()
+    plan_by_id = {p["id"]: p for p in plans}
+    plan_labels = {p["id"]: p["short"] for p in plans}
 
-    # Stepper-style progress
     st.markdown(
         """
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px 0;font-size:13px;">
           <span style="background:#1a1a2e;color:#F5D76E;padding:6px 12px;border-radius:999px;">1 關於你</span>
-          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">2 醫家保</span>
+          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">2 醫保計劃</span>
           <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">3 通脹假設</span>
           <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">4 融資結果</span>
         </div>
@@ -4035,8 +4040,51 @@ def page_medical_finance():
         gender = st.radio("性別", ["男", "女"], horizontal=True, key="mf_gender")
         smoke = st.radio("吸煙習慣（儲蓄計劃示範用）", ["非吸煙", "吸煙"], horizontal=True, key="mf_smoke")
 
-    st.markdown("#### 醫保同通脹")
-    st.info("第一版固定：**醫家保醫療計劃（獨立保單）** · 年繳保費表")
+    st.markdown("#### 醫保計劃")
+    plan_id = st.radio(
+        "產品",
+        options=list(plan_labels.keys()),
+        format_func=lambda x: plan_labels[x],
+        horizontal=True,
+        key="mf_plan",
+    )
+    plan_meta = plan_by_id[plan_id]
+    st.caption(plan_meta.get("note") or plan_meta["name"])
+
+    level = plan_meta["default_level"]
+    deductible = int(plan_meta["default_deductible"])
+    opt_cols = st.columns(2)
+    with opt_cols[0]:
+        if len(plan_meta.get("levels") or []) > 1:
+            level = st.selectbox(
+                "保障級別",
+                plan_meta["levels"],
+                index=plan_meta["levels"].index(plan_meta["default_level"]),
+                key=f"mf_level_{plan_id}",
+            )
+        else:
+            st.selectbox("保障級別", plan_meta["levels"], disabled=True, key=f"mf_level_{plan_id}")
+            level = plan_meta["levels"][0]
+    with opt_cols[1]:
+        deds = [int(d) for d in (plan_meta.get("deductibles") or [0])]
+        if len(deds) > 1:
+            deductible = st.selectbox(
+                "自付費（港元）",
+                deds,
+                index=deds.index(int(plan_meta["default_deductible"])),
+                format_func=lambda d: "無自付費" if int(d) == 0 else f"${int(d):,}",
+                key=f"mf_ded_{plan_id}",
+            )
+        else:
+            st.selectbox(
+                "自付費（港元）",
+                ["無自付費"],
+                disabled=True,
+                key=f"mf_ded_{plan_id}",
+            )
+            deductible = 0
+
+    st.markdown("#### 通脹假設")
     inflation_pct = st.slider(
         "未來每年保費加幅 %（疊加喺年齡跳價之上）",
         min_value=0.0,
@@ -4057,10 +4105,14 @@ def page_medical_finance():
         st.rerun()
 
     end_age = st.slider("試算至年齡", min_value=70, max_value=100, value=100, key="mf_end")
+    gender_note = (
+        "醫家保男女分價"
+        if plan_meta.get("gendered")
+        else "此計劃保費表男女同價"
+    )
     st.caption(
         f"儲蓄產品：{cal.get('product_name')}（美元保單）· 匯率 1 USD = {fx} HKD · "
-        f"吸煙選項：{smoke}（醫家保表為標準保費，唔分吸煙）· "
-        f"累積倍數已用 25–50 歲男女計劃書校準（年齡唔改倍數，只改醫保保費表）"
+        f"吸煙：{smoke}（醫保表為標準保費，唔分吸煙）· {gender_note}"
     )
 
     if st.button("計算最少年供", type="primary", use_container_width=True, key="mf_run"):
@@ -4070,15 +4122,22 @@ def page_medical_finance():
             inflation=float(inflation_pct) / 100.0,
             end_age=int(end_age),
             fx=fx,
+            plan_id=plan_id,
+            level=level,
+            deductible=int(deductible),
         )
 
     result = st.session_state.get("mf_result")
     if not result:
         st.markdown("##### 資料預覽")
-        now_prem = mf.medical_annual_hkd(int(age), gender)
+        now_prem = mf.medical_annual_hkd(
+            int(age), gender, plan_id=plan_id, level=level, deductible=int(deductible)
+        )
+        plan_txt = mf.plan_label(plan_id, level=level, deductible=int(deductible))
         st.markdown(
             f"**{age} 歲 · {gender} · {smoke}**  \n"
-            f"而家醫家保年繳約 **{mf.format_hkd(now_prem)}** · "
+            f"{plan_txt}  \n"
+            f"而家年繳約 **{mf.format_hkd(now_prem)}** · "
             f"第 6 年起（約 {age + 5} 歲）開始由儲蓄提款至 {end_age} 歲。"
         )
         return
@@ -4088,6 +4147,7 @@ def page_medical_finance():
         return
 
     st.markdown("### 融資結果")
+    st.caption(result.get("medical_plan") or "")
     st.markdown(
         f"""
         <div style="border:1px solid #E5E7EB;border-radius:14px;padding:16px 18px;
@@ -4115,11 +4175,10 @@ def page_medical_finance():
 
     st.markdown(
         f"**準備方法：** 前期用收入繳醫保；同時 5 年供盈聚。"
-        f"由 **{result['first_withdraw_age']} 歲** 起，每年由儲蓄提款繳當年醫家保"
+        f"由 **{result['first_withdraw_age']} 歲** 起，每年由儲蓄提款繳當年醫保"
         f"（已計入年齡跳價 + {inflation_pct:.2f}% 通脹），去到 **{end_age} 歲**。"
     )
 
-    # Simple bar preview: contribution vs withdrawals (sample ages)
     wds = result.get("withdrawals") or []
     if wds:
         st.markdown("##### 提款／保費走勢（揀數年）")
@@ -4165,7 +4224,7 @@ def page_medical_finance():
         st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
 
     st.caption(
-        "試算以現行醫家保標準保費表 + 盈聚計劃書校準嘅戶口滾存假設（非保證）。"
+        "試算以現行醫保標準保費表 + 盈聚計劃書校準嘅戶口滾存假設（非保證）。"
         "實際紅利／退保價值可能較高或較低，甚至為零；並非正式報價。"
     )
 
@@ -4263,4 +4322,4 @@ elif "醫療融資" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T02:10Z
+# cloud_redeploy_stamp: 2026-10-16T02:30Z

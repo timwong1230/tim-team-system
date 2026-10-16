@@ -69,3 +69,33 @@ def test_older_entry_needs_higher_annual_prem():
     young = min_annual_savings_usd(start_age=30, gender="男", inflation=0.0261, end_age=100)
     older = min_annual_savings_usd(start_age=50, gender="男", inflation=0.0261, end_age=100)
     assert older["annual_prem_usd"] > young["annual_prem_usd"]
+
+
+def test_new_medical_plans_loaded():
+    from tt_core.medical_finance import list_plans, medical_annual_hkd, plan_label
+
+    ids = {p["id"] for p in list_plans()}
+    assert ids >= {"vfamily", "vprime", "vbooster", "vtheone"}
+    # 尊衛您 標準 age30 ded0 = 12058 from brochure
+    assert medical_annual_hkd(30, "男", plan_id="vprime", level="標準", deductible=0) == 12058
+    assert medical_annual_hkd(30, "女", plan_id="vprime", level="標準", deductible=0) == 12058  # unisex
+    assert medical_annual_hkd(30, "男", plan_id="vbooster", deductible=0) == 8260
+    assert medical_annual_hkd(30, "男", plan_id="vtheone", level="標準", deductible=0) == 19531
+    assert "尊衛您" in plan_label("vprime", level="特等", deductible=25000)
+
+
+def test_higher_tier_costs_more_to_fund():
+    base = min_annual_savings_usd(
+        start_age=30, gender="男", inflation=0.0261, end_age=90, plan_id="vfamily"
+    )
+    richer = min_annual_savings_usd(
+        start_age=30,
+        gender="男",
+        inflation=0.0261,
+        end_age=90,
+        plan_id="vprime",
+        level="特等",
+        deductible=0,
+    )
+    assert richer["annual_prem_usd"] > base["annual_prem_usd"]
+    assert "尊衛您" in (richer.get("medical_plan") or "")
