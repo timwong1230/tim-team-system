@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:00Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:20Z
 
 
 from __future__ import annotations
@@ -4397,10 +4397,17 @@ def page_recruit_package_compare():
 
 
 def page_prospect_list():
-    """準客戶名單 — Excel-style 產品保費 → 自動計 FYC；保留 15 條 Fact find。"""
+    """準客戶名單 — 熱賣產品 + 其他手動；YTD≥$88k 自動 QSB +10%。"""
     try:
         from tt_core import prospects as pr
-        from tt_core.commission import PRODUCT_CATALOG, PRODUCT_GROUPS, calc_fyc, rate_for
+        from tt_core.commission import (
+            PRODUCT_CATALOG,
+            PRODUCT_GROUPS,
+            QSB_THRESHOLD,
+            calc_fyc,
+            fyc_breakdown,
+            rate_for,
+        )
         import importlib
 
         importlib.reload(pr)
@@ -4413,7 +4420,8 @@ def page_prospect_list():
 
     st.markdown("## 📋 準客戶名單")
     st.caption(
-        "跟 Client List Excel 格式：填各產品**年繳保費**，系統按佣金表 Year-1 % 自動計 FYC。"
+        "熱賣產品跟 Client List Excel；「其他」可手動入非熱賣產品。"
+        f" YTD FYC ≥ ${QSB_THRESHOLD:,.0f} 之後，危疾／5年供 Saving／扣稅年金自動 +10% FYC。"
         " Fact find 15 條照 keep。"
         + (" Leader 可揀同事檢視全隊。" if leader else "")
     )
@@ -4437,34 +4445,110 @@ def page_prospect_list():
         if view_user != user:
             st.info(f"而家睇緊 **{view_user}** 嘅準客戶名單")
 
+    qsb = pr.qsb_status(view_user)
+    ytd_fyc = float(qsb["ytd_fyc"])
+    if qsb["active"]:
+        st.success(
+            f"**{view_user}** YTD FYC **${ytd_fyc:,.0f}** ≥ ${QSB_THRESHOLD:,.0f} — "
+            "QSB 已開：危疾／盈聚天下II 5pay／扣稅年金 FYC **×1.1**"
+        )
+    else:
+        remain = max(QSB_THRESHOLD - ytd_fyc, 0)
+        st.warning(
+            f"**{view_user}** YTD FYC **${ytd_fyc:,.0f}** · "
+            f"尚欠 ${remain:,.0f} 先至開 QSB +10% "
+            "（危疾／5年供 Saving／扣稅年金）"
+        )
+
     all_rows = pr.get_prospects(username=view_user, year=int(year))
     tab_sales, tab_recruit = st.tabs(["📝 簽單 List", "🤝 招募 List"])
     can_edit = view_user == user
 
-    def _collect_premiums(key_prefix: str) -> dict:
-        premiums = {}
-        for p in PRODUCT_CATALOG:
-            val = float(st.session_state.get(f"{key_prefix}_{p['key']}", 0) or 0)
-            if val > 0:
-                premiums[p["key"]] = val
-        return premiums
-
-    def _render_product_inputs(key_prefix: str, defaults: dict | None = None):
+    def _render_hot_products(key_prefix: str, defaults: dict | None = None):
         defaults = defaults or {}
+        st.markdown("##### 🔥 熱賣產品（年繳保費）")
         for group in PRODUCT_GROUPS:
             items = [p for p in PRODUCT_CATALOG if p["group"] == group]
-            st.markdown(f"**{group}**")
+            qsb_note = " · QSB+10%" if qsb["active"] and any(p.get("qsb") for p in items) else ""
+            st.markdown(f"**{group}**{qsb_note}")
             cols = st.columns(min(3, len(items)))
             for i, p in enumerate(items):
                 with cols[i % len(cols)]:
+                    eff = rate_for(p["key"], ytd_fyc=ytd_fyc)
+                    label = f"{p['label']} ({eff*100:g}%)"
+                    if qsb["active"] and p.get("qsb"):
+                        label += " ★"
                     st.number_input(
-                        f"{p['label']} ({p['rate']*100:g}%)",
+                        label,
                         min_value=0.0,
                         value=float(defaults.get(p["key"], 0) or 0),
                         step=100.0,
                         key=f"{key_prefix}_{p['key']}",
-                        help=f"Year-1 佣金 {p['rate']*100:g}% · 輸入年繳保費",
+                        help=(
+                            f"基本 {p['rate']*100:g}%"
+                            + (" → QSB 後 " + f"{eff*100:g}%" if p.get("qsb") and qsb["active"] else "")
+                        ),
                     )
+
+    def _render_other_inputs(key_prefix: str, defaults: list | None = None):
+        st.markdown("##### ➕ 其他產品（手動）")
+        st.caption("非熱賣產品：填名稱、年繳保費、Year-1 佣金%（例如 25 或 0.25）。")
+        defaults = list(defaults or [])
+        while len(defaults) < 3:
+            defaults.append({"name": "", "premium": 0.0, "rate": 0.0})
+        others_out = []
+        for i in range(3):
+            d = defaults[i] if i < len(defaults) else {}
+            c1, c2, c3 = st.columns([2, 1, 1])
+            with c1:
+                name = st.text_input(
+                    f"其他產品名稱 {i+1}",
+                    value=str(d.get("name") or ""),
+                    key=f"{key_prefix}_oname_{i}",
+                    placeholder="例如：危疾緻尚保 20pay",
+                )
+            with c2:
+                prem = st.number_input(
+                    f"保費 {i+1}",
+                    min_value=0.0,
+                    value=float(d.get("premium") or 0),
+                    step=100.0,
+                    key=f"{key_prefix}_oprem_{i}",
+                )
+            with c3:
+                rate_in = float(d.get("rate") or 0)
+                # show as percent in UI if stored as decimal
+                rate_ui = rate_in * 100 if 0 < rate_in <= 1 else rate_in
+                rate_val = st.number_input(
+                    f"佣金% {i+1}",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(rate_ui or 0),
+                    step=0.5,
+                    key=f"{key_prefix}_orate_{i}",
+                )
+            if str(name).strip() and prem > 0 and rate_val > 0:
+                others_out.append(
+                    {"name": str(name).strip(), "premium": float(prem), "rate": float(rate_val)}
+                )
+        return others_out
+
+    def _read_hot(key_prefix: str) -> dict:
+        return {
+            p["key"]: float(st.session_state.get(f"{key_prefix}_{p['key']}", 0) or 0)
+            for p in PRODUCT_CATALOG
+            if float(st.session_state.get(f"{key_prefix}_{p['key']}", 0) or 0) > 0
+        }
+
+    def _read_others(key_prefix: str) -> list:
+        out = []
+        for i in range(3):
+            name = str(st.session_state.get(f"{key_prefix}_oname_{i}", "") or "").strip()
+            prem = float(st.session_state.get(f"{key_prefix}_oprem_{i}", 0) or 0)
+            rate_val = float(st.session_state.get(f"{key_prefix}_orate_{i}", 0) or 0)
+            if name and prem > 0 and rate_val > 0:
+                out.append({"name": name, "premium": prem, "rate": rate_val})
+        return out
 
     with tab_sales:
         sales = all_rows[all_rows["list_type"] == pr.LIST_SALES] if not all_rows.empty else all_rows
@@ -4473,7 +4557,7 @@ def page_prospect_list():
             f"""
             <div style="border:1px solid #E2C56A;border-radius:14px;padding:14px 16px;
             background:linear-gradient(180deg,#FFFDF5,#FFFFFF);margin-bottom:12px;">
-              <div style="color:#6B7280;font-size:0.85rem;">{year} 年簽單 FYC 總數</div>
+              <div style="color:#6B7280;font-size:0.85rem;">{year} 年簽單 FYC 總數（名單內）</div>
               <div style="font-family:Georgia,serif;font-size:1.7rem;font-weight:700;color:#1C2430;">
                 ${year_total:,.0f}
               </div>
@@ -4482,29 +4566,36 @@ def page_prospect_list():
             unsafe_allow_html=True,
         )
 
-        with st.expander("佣金表（Year-1 %）", expanded=False):
-            rate_rows = [
-                f"- **{p['label']}**：{p['rate']*100:g}%（{p['group']}）"
-                for p in PRODUCT_CATALOG
-            ]
+        with st.expander("佣金表說明", expanded=False):
             st.markdown(
-                "跟團隊 Client List Excel／FWD Commission Schedule v5.7：\n\n"
-                + "\n".join(rate_rows)
+                f"- **熱賣產品**跟團隊 Client List Excel／FWD Commission Schedule v5.7 Year-1 %\n"
+                f"- **QSB**：個人 Iris YTD FYC ≥ **${QSB_THRESHOLD:,.0f}** 之後，"
+                "危疾應援保、盈聚天下II **5pay**、扣稅年金 自動 **×1.1**\n"
+                "- **其他**：自行填產品名 + 保費 + 佣金%（唔自動加 QSB，請自行計入 %）"
             )
+            for p in PRODUCT_CATALOG:
+                mark = " ← QSB" if p.get("qsb") else ""
+                st.text(f"{p['group']} · {p['label']}: {p['rate']*100:g}%{mark}")
 
         if can_edit:
             with st.expander("＋ 新增準客戶（簽單）", expanded=False):
                 aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
                 an = st.text_input("Name", key="pl_as_name")
-                st.caption("填各產品年繳保費（可同時買多種）；FYC 會自動計。")
-                _render_product_inputs("pl_as")
-                live = {
-                    p["key"]: float(st.session_state.get(f"pl_as_{p['key']}", 0) or 0)
-                    for p in PRODUCT_CATALOG
-                    if float(st.session_state.get(f"pl_as_{p['key']}", 0) or 0) > 0
-                }
-                live_fyc = calc_fyc(live)
-                st.info(f"預計 FYC：**${live_fyc:,.2f}**")
+                _render_hot_products("pl_as")
+                _render_other_inputs("pl_as")
+                live_hot = _read_hot("pl_as")
+                live_other = _read_others("pl_as")
+                live_fyc = calc_fyc(live_hot, others=live_other, ytd_fyc=ytd_fyc)
+                st.info(
+                    f"預計 FYC：**${live_fyc:,.2f}**"
+                    + ("（已套用 QSB +10%）" if qsb["active"] else "")
+                )
+                for row in fyc_breakdown(live_hot, others=live_other, ytd_fyc=ytd_fyc):
+                    tag = " ★QSB" if row["qsb"] else ""
+                    st.caption(
+                        f"{row['label']}: ${row['premium']:,.0f} × {row['eff_rate']*100:g}% "
+                        f"= ${row['fyc']:,.2f}{tag}"
+                    )
                 aff = st.text_area(
                     "Fact find（15 條）",
                     value=pr.factfind_template(),
@@ -4513,15 +4604,12 @@ def page_prospect_list():
                 )
                 if st.button("新增", type="primary", use_container_width=True, key="pl_as_submit"):
                     try:
-                        premiums = {
-                            p["key"]: float(st.session_state.get(f"pl_as_{p['key']}", 0) or 0)
-                            for p in PRODUCT_CATALOG
-                        }
-                        premiums = {k: v for k, v in premiums.items() if v > 0}
+                        premiums = _read_hot("pl_as")
+                        others = _read_others("pl_as")
                         if not an.strip():
                             st.error("必須填寫 Name")
-                        elif not premiums:
-                            st.error("請至少填一個產品保費")
+                        elif not premiums and not others:
+                            st.error("請至少填一個熱賣產品保費，或一項「其他」產品")
                         else:
                             pr.add_sales_prospect(
                                 user,
@@ -4529,9 +4617,13 @@ def page_prospect_list():
                                 quarter=int(aq),
                                 name=an,
                                 premiums=premiums,
+                                others=others,
+                                ytd_fyc=ytd_fyc,
                                 factfind=aff,
                             )
-                            st.success(f"已加入 {an} · FYC ${calc_fyc(premiums):,.2f}")
+                            st.success(
+                                f"已加入 {an} · FYC ${calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc):,.2f}"
+                            )
                             st.rerun()
                     except Exception as e:
                         st.error(str(e))
@@ -4549,34 +4641,37 @@ def page_prospect_list():
                     continue
                 for _, row in qdf.iterrows():
                     rid = row["id"]
-                    premiums = pr.decode_products(row.get("selling_products"))
-                    prod_txt = pr.display_products(row.get("selling_products")) or "—"
+                    premiums, others = pr.decode_deal(row.get("selling_products"))
+                    prod_txt = pr.display_products(row.get("selling_products"), ytd_fyc=ytd_fyc) or "—"
+                    # Show stored FYC; note if YTD/QSB changed since save
+                    live_now = calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc) if (premiums or others) else float(row["fyc"])
                     st.markdown(
-                        f"**{row['name']}** · FYC **${float(row['fyc']):,.2f}**  \n"
-                        f"<span style='color:#6B7280;font-size:0.9rem;'>{prod_txt}</span>",
+                        f"**{row['name']}** · FYC **${float(row['fyc']):,.2f}**"
+                        + (
+                            f"  <span style='color:#6B7280;font-size:0.85rem;'>（依而家 QSB 重計 ${live_now:,.2f}）</span>"
+                            if abs(live_now - float(row["fyc"])) > 0.5
+                            else ""
+                        )
+                        + f"  \n<span style='color:#6B7280;font-size:0.9rem;'>{prod_txt}</span>",
                         unsafe_allow_html=True,
                     )
                     with st.expander("產品保費 / Fact find", expanded=False):
                         if can_edit:
-                            _render_product_inputs(f"pl_ed_{rid}", premiums)
-                            preview = {
-                                p["key"]: float(
-                                    st.session_state.get(f"pl_ed_{rid}_{p['key']}", 0) or 0
-                                )
-                                for p in PRODUCT_CATALOG
-                                if float(st.session_state.get(f"pl_ed_{rid}_{p['key']}", 0) or 0) > 0
-                            }
-                            st.caption(f"預計 FYC：${calc_fyc(preview):,.2f}")
+                            _render_hot_products(f"pl_ed_{rid}", premiums)
+                            _render_other_inputs(f"pl_ed_{rid}", others)
+                            preview_h = _read_hot(f"pl_ed_{rid}")
+                            preview_o = _read_others(f"pl_ed_{rid}")
+                            st.caption(
+                                f"預計 FYC：${calc_fyc(preview_h, others=preview_o, ytd_fyc=ytd_fyc):,.2f}"
+                            )
                         else:
-                            if premiums:
-                                for p in PRODUCT_CATALOG:
-                                    amt = float(premiums.get(p["key"]) or 0)
-                                    if amt > 0:
-                                        fyc_p = amt * rate_for(p["key"])
-                                        st.text(
-                                            f"{p['label']}: ${amt:,.0f} → FYC ${fyc_p:,.2f}"
-                                        )
-                            else:
+                            for br in fyc_breakdown(premiums, others=others, ytd_fyc=ytd_fyc):
+                                tag = " ★QSB" if br["qsb"] else ""
+                                st.text(
+                                    f"{br['label']}: ${br['premium']:,.0f} × {br['eff_rate']*100:g}% "
+                                    f"= ${br['fyc']:,.2f}{tag}"
+                                )
+                            if not premiums and not others:
                                 st.caption(prod_txt)
                         ff_val = st.text_area(
                             "Fact find（15 條）",
@@ -4586,27 +4681,44 @@ def page_prospect_list():
                             disabled=not can_edit,
                         )
                         if can_edit:
-                            c1, c2 = st.columns(2)
+                            c1, c2, c3 = st.columns(3)
                             with c1:
                                 if st.button("儲存", key=f"pl_save_s_{rid}", use_container_width=True):
                                     try:
-                                        new_prems = {
-                                            p["key"]: float(
-                                                st.session_state.get(f"pl_ed_{rid}_{p['key']}", 0)
-                                                or 0
-                                            )
-                                            for p in PRODUCT_CATALOG
-                                        }
-                                        new_prems = {k: v for k, v in new_prems.items() if v > 0}
                                         pr.update_prospect(
                                             rid,
-                                            {"factfind": ff_val, "premiums": new_prems},
+                                            {
+                                                "factfind": ff_val,
+                                                "premiums": _read_hot(f"pl_ed_{rid}"),
+                                                "others": _read_others(f"pl_ed_{rid}"),
+                                                "ytd_fyc": ytd_fyc,
+                                            },
                                         )
                                         st.toast("已儲存", icon="✅")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(str(e))
                             with c2:
+                                if st.button(
+                                    "按而家 QSB 重計",
+                                    key=f"pl_recalc_s_{rid}",
+                                    use_container_width=True,
+                                ):
+                                    try:
+                                        pr.update_prospect(
+                                            rid,
+                                            {
+                                                "premiums": premiums,
+                                                "others": others,
+                                                "ytd_fyc": ytd_fyc,
+                                                "factfind": ff_val,
+                                            },
+                                        )
+                                        st.toast("已按而家 QSB 重計 FYC", icon="✅")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with c3:
                                 if st.button("刪除", key=f"pl_del_s_{rid}", use_container_width=True):
                                     pr.delete_prospect(rid)
                                     st.rerun()
@@ -4797,4 +4909,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T09:00Z
+# cloud_redeploy_stamp: 2026-10-16T09:20Z

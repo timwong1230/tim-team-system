@@ -10,9 +10,12 @@ import pandas as pd
 
 from tt_core.commission import (
     PRODUCT_CATALOG,
+    QSB_THRESHOLD,
     calc_fyc,
+    normalize_others,
     normalize_premiums,
     products_summary,
+    qsb_active,
 )
 from tt_core.constants import TEMPLATE_FACTFIND
 from tt_core.db import read_data, run_query_gs
@@ -31,37 +34,59 @@ def factfind_template() -> str:
     return TEMPLATE_FACTFIND
 
 
-def encode_products(premiums: dict[str, float] | None) -> str:
-    """Store product premiums as JSON in selling_products column."""
+def encode_products(
+    premiums: dict[str, float] | None,
+    others: list[dict] | None = None,
+) -> str:
+    """Store catalog premiums + optional 其他 products as JSON."""
     clean = normalize_premiums(premiums)
-    if not clean:
+    other_clean = normalize_others(others)
+    if not clean and not other_clean:
         return ""
-    return json.dumps(clean, ensure_ascii=False, sort_keys=True)
+    payload: dict[str, Any] = dict(clean)
+    if other_clean:
+        payload["_other"] = other_clean
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
-def decode_products(raw: Any) -> dict[str, float]:
-    """Parse selling_products — JSON dict, or empty if legacy free text."""
+def decode_deal(raw: Any) -> tuple[dict[str, float], list[dict]]:
+    """Return (catalog_premiums, other_products)."""
     if raw is None or (isinstance(raw, float) and pd.isna(raw)):
-        return {}
+        return {}, []
     text = str(raw).strip()
     if not text:
-        return {}
+        return {}, []
     if text.startswith("{"):
         try:
             data = json.loads(text)
             if isinstance(data, dict):
-                return normalize_premiums(data)
+                others = normalize_others(data.get("_other"))
+                premiums = normalize_premiums(data)
+                return premiums, others
         except json.JSONDecodeError:
-            return {}
-    return {}
+            return {}, []
+    return {}, []
 
 
-def display_products(raw: Any) -> str:
-    premiums = decode_products(raw)
-    if premiums:
-        return products_summary(premiums)
+def decode_products(raw: Any) -> dict[str, float]:
+    """Catalog premiums only (backward-compatible helper)."""
+    premiums, _others = decode_deal(raw)
+    return premiums
+
+
+def display_products(raw: Any, *, ytd_fyc: float = 0.0) -> str:
+    premiums, others = decode_deal(raw)
+    if premiums or others:
+        return products_summary(premiums, others=others, ytd_fyc=ytd_fyc)
     text = str(raw or "").strip()
     return text
+
+
+def deal_fyc(raw: Any, *, ytd_fyc: float = 0.0) -> float:
+    premiums, others = decode_deal(raw)
+    if premiums or others:
+        return calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc)
+    return 0.0
 
 
 def get_prospects(
@@ -115,8 +140,10 @@ def add_sales_prospect(
     quarter: int,
     name: str,
     premiums: dict[str, float] | None = None,
+    others: list[dict] | None = None,
     selling_products: str = "",
     fyc: float | None = None,
+    ytd_fyc: float = 0.0,
     factfind: str = "",
 ) -> None:
     name = str(name or "").strip()
@@ -125,11 +152,11 @@ def add_sales_prospect(
     if int(quarter) not in QUARTERS:
         raise ValueError("季度必須係 1–4")
     clean = normalize_premiums(premiums)
-    if clean:
-        products_raw = encode_products(clean)
-        fyc_val = calc_fyc(clean)
+    other_clean = normalize_others(others)
+    if clean or other_clean:
+        products_raw = encode_products(clean, other_clean)
+        fyc_val = calc_fyc(clean, others=other_clean, ytd_fyc=ytd_fyc)
     else:
-        # Legacy: free-text products + manual FYC
         products_raw = str(selling_products or "").strip()
         fyc_val = float(fyc or 0)
     now = str(datetime.datetime.now())
@@ -199,12 +226,16 @@ def update_prospect(row_id: str | int, fields: dict[str, Any]) -> None:
         "year",
         "quarter",
         "premiums",
+        "others",
+        "ytd_fyc",
     }
     payload = {k: v for k, v in fields.items() if k in allowed}
-    if "premiums" in payload:
-        clean = normalize_premiums(payload.pop("premiums"))
-        payload["selling_products"] = encode_products(clean)
-        payload["fyc"] = calc_fyc(clean)
+    ytd = float(payload.pop("ytd_fyc", 0) or 0)
+    if "premiums" in payload or "others" in payload:
+        clean = normalize_premiums(payload.pop("premiums", None))
+        other_clean = normalize_others(payload.pop("others", None))
+        payload["selling_products"] = encode_products(clean, other_clean)
+        payload["fyc"] = calc_fyc(clean, others=other_clean, ytd_fyc=ytd)
     if "name" in payload and not str(payload["name"] or "").strip():
         raise ValueError("Name 唔可以空白")
     if "recruit_category" in payload and payload["recruit_category"]:
@@ -250,3 +281,28 @@ def quarter_counts(df: pd.DataFrame, year: int, list_type: str) -> dict[int, int
 
 def product_catalog():
     return PRODUCT_CATALOG
+
+
+def member_ytd_fyc(username: str) -> float:
+    """Iris / system Year-to-date FYC for QSB gate."""
+    try:
+        from tt_core.data import get_data
+
+        df = get_data("Yearly")
+        if df is None or df.empty:
+            return 0.0
+        row = df[df["username"].astype(str) == str(username)]
+        if row.empty:
+            return 0.0
+        return float(row.iloc[0].get("fyc") or 0)
+    except Exception:
+        return 0.0
+
+
+def qsb_status(username: str) -> dict[str, Any]:
+    ytd = member_ytd_fyc(username)
+    return {
+        "ytd_fyc": ytd,
+        "active": qsb_active(ytd),
+        "threshold": float(QSB_THRESHOLD),
+    }
