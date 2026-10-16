@@ -166,11 +166,18 @@ def inject_pwa_head() -> None:
   var VERSION = P.version;
   var already = head.getAttribute('data-tt-pwa') === VERSION;
 
-  function upsertMeta(attr, key, value) {{
-    var el = head.querySelector('meta[' + attr + '="' + key + '"]');
+  function upsertMeta(attr, key, value, media) {{
+    var sel = 'meta[' + attr + '="' + key + '"]';
+    if (media) {{
+      sel += '[media="' + media + '"]';
+    }} else {{
+      sel += ':not([media])';
+    }}
+    var el = head.querySelector(sel);
     if (!el) {{
       el = doc.createElement('meta');
       el.setAttribute(attr, key);
+      if (media) el.setAttribute('media', media);
       head.appendChild(el);
     }}
     el.setAttribute('content', value);
@@ -241,7 +248,11 @@ def inject_pwa_head() -> None:
   upsertMeta('name', 'apple-mobile-web-app-status-bar-style', 'black-translucent');
   upsertMeta('name', 'apple-mobile-web-app-title', P.brand);
   upsertMeta('name', 'application-name', P.brand);
-  upsertMeta('name', 'theme-color', '#0A0D14');
+  // Match phone light/dark so status bar + PWA chrome follow system
+  upsertMeta('name', 'theme-color', '#F3F1EB', '(prefers-color-scheme: light)');
+  upsertMeta('name', 'theme-color', '#0F1419', '(prefers-color-scheme: dark)');
+  // Fallback for browsers that ignore media on theme-color
+  upsertMeta('name', 'theme-color', '#0F1419');
 
   // Help share sheet / scrapers (Streamlit Cloud may still override)
   upsertMeta('property', 'og:title', P.brand);

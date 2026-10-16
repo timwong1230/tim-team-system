@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:50Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T12:15Z
 
 
 from __future__ import annotations
@@ -4067,11 +4067,11 @@ def page_medical_finance():
 
     st.markdown(
         """
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px 0;font-size:13px;">
-          <span style="background:#1a1a2e;color:#F5D76E;padding:6px 12px;border-radius:999px;">1 關於你</span>
-          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">2 醫保計劃</span>
-          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">3 通脹假設</span>
-          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">4 融資結果</span>
+        <div class="mf-steps">
+          <span class="mf-step mf-step-active">1 關於你</span>
+          <span class="mf-step">2 醫保計劃</span>
+          <span class="mf-step">3 通脹假設</span>
+          <span class="mf-step">4 融資結果</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -4925,4 +4925,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T09:35Z
+# cloud_redeploy_stamp: 2026-10-16T12:15Z

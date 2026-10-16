@@ -5,6 +5,7 @@ CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap');
 
 :root {
+  color-scheme: light dark;
   --gold: #C5A028;
   --gold-deep: #9A7B1A;
   --gold-soft: #F7F1DE;
@@ -625,6 +626,175 @@ html[data-tt-standalone="1"] header[data-testid="stHeader"] {
 html[data-tt-standalone="1"] .block-container {
   padding-top: calc(0.75rem + env(safe-area-inset-top)) !important;
   padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)) !important;
+}
+
+/* Medical finance step pills */
+.mf-steps { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px 0; font-size:13px; }
+.mf-step {
+  background: #F3F4F6; color: #374151;
+  padding: 6px 12px; border-radius: 999px;
+}
+.mf-step-active {
+  background: #1a1a2e; color: #F5D76E;
+}
+
+/* ---- iPhone / system Dark Mode ----
+   Streamlit widgets flip to light text; our light surfaces must follow
+   or labels become white-on-white (see 醫療融資 on iOS night mode). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gold: #E0C15A;
+    --gold-deep: #C5A028;
+    --gold-soft: #3A3420;
+    --ink: #E8EAED;
+    --muted: #9CA3AF;
+    --line: #2F3A48;
+    --surface: #1A222D;
+    --bg: #0F1419;
+    --ok: #34D399;
+    --warn: #FBBF24;
+    --danger: #F87171;
+  }
+
+  html, body {
+    color-scheme: dark;
+    background: var(--bg) !important;
+    color: var(--ink) !important;
+  }
+
+  [data-testid="stAppViewContainer"],
+  [data-testid="stAppViewContainer"] > .main,
+  .stApp {
+    background:
+      radial-gradient(900px 420px at 10% -10%, rgba(212,175,55,0.12) 0%, transparent 55%),
+      radial-gradient(700px 360px at 100% 0%, rgba(60,90,140,0.18) 0%, transparent 50%),
+      var(--bg) !important;
+    color: var(--ink) !important;
+  }
+  [data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #141A22 0%, #0F1419 100%) !important;
+    border-right: 1px solid var(--line) !important;
+  }
+  [data-testid="stHeader"] { background: transparent !important; }
+
+  /* Streamlit text / labels — force readable ink on our dark surfaces */
+  html, body, [class*="css"],
+  p, span, label, li,
+  .stMarkdown, [data-testid="stMarkdownContainer"],
+  [data-testid="stMarkdownContainer"] p,
+  [data-testid="stMarkdownContainer"] span,
+  [data-testid="stWidgetLabel"],
+  [data-testid="stWidgetLabel"] p,
+  [data-testid="stCaptionContainer"],
+  [data-testid="stCaptionContainer"] p,
+  [data-testid="stText"],
+  .stRadio label, .stCheckbox label,
+  [data-baseweb="tab"] {
+    color: var(--ink) !important;
+  }
+  h1, h2, h3, h4 {
+    color: var(--ink) !important;
+  }
+
+  /* Radio / select chips */
+  div[role="radiogroup"] label {
+    background: var(--surface) !important;
+    border-color: var(--line) !important;
+    color: var(--ink) !important;
+  }
+  div[role="radiogroup"] label:hover {
+    border-color: var(--gold) !important;
+    background: var(--gold-soft) !important;
+  }
+  div[role="radiogroup"] label p,
+  div[role="radiogroup"] label span,
+  div[role="radiogroup"] label div {
+    color: var(--ink) !important;
+  }
+
+  /* Inputs — keep contrast with dark fields */
+  .stTextInput input, .stTextArea textarea,
+  .stNumberInput input, .stSelectbox [data-baseweb="select"] > div,
+  [data-baseweb="input"] input, [data-baseweb="textarea"] textarea {
+    background-color: #121820 !important;
+    color: var(--ink) !important;
+    border-color: var(--line) !important;
+    -webkit-text-fill-color: var(--ink) !important;
+  }
+  .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+    color: #8B93A0 !important;
+    -webkit-text-fill-color: #8B93A0 !important;
+  }
+
+  div.stButton > button[kind="secondary"] {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line) !important;
+  }
+
+  /* Expanders / tabs / metrics */
+  [data-testid="stExpander"],
+  [data-testid="stExpander"] details,
+  [data-testid="stMetric"],
+  [data-testid="stMetricValue"],
+  [data-testid="stMetricLabel"] {
+    color: var(--ink) !important;
+  }
+  [data-testid="stExpander"] summary,
+  [data-testid="stExpander"] summary span,
+  [data-testid="stExpander"] summary p {
+    color: var(--ink) !important;
+  }
+
+  /* Alerts */
+  [data-testid="stAlert"] { color: var(--ink) !important; }
+
+  /* Custom cards */
+  .tt-card, .activity-card, .dash-kpi, .lb-card, .offer-table-wrap {
+    background: var(--surface) !important;
+    border-color: var(--line) !important;
+    color: var(--ink) !important;
+  }
+  .tt-label, .tt-hint, .dash-kpi .k, .act-time { color: var(--muted) !important; }
+  .tt-value, .dash-kpi .v, .act-name, .lb-name, .lb-fyc { color: var(--ink) !important; }
+  .act-content {
+    background: #121820 !important;
+    color: var(--ink) !important;
+  }
+  .tt-progress-wrap, .lb-bar-track { background: #2A3340 !important; }
+
+  .reward-card-premium {
+    background: linear-gradient(145deg, #1A222D, #1E2633) !important;
+    border-color: var(--gold) !important;
+  }
+  .reward-desc-p { color: var(--muted) !important; }
+  .challenge-header-box {
+    background: linear-gradient(to right, #2A2414, #1A222D) !important;
+    color: var(--ink) !important;
+  }
+  .offer-section-title { color: var(--ink) !important; }
+  .offer-table td { color: var(--ink) !important; border-color: var(--line) !important; }
+  .offer-table tr:nth-child(even) td { background: #141A22 !important; }
+
+  .mf-step {
+    background: #243041 !important;
+    color: #D1D5DB !important;
+  }
+  .mf-step-active {
+    background: #F5D76E !important;
+    color: #1a1a2e !important;
+  }
+
+  /* Login shell stays dark ink with light text (already dark) */
+  .tt-login-foot { color: var(--muted) !important; }
+
+  @media (max-width: 900px) {
+    [data-testid="stAppViewContainer"] {
+      background:
+        radial-gradient(700px 280px at 0% 0%, rgba(212,175,55,0.10) 0%, transparent 55%),
+        var(--bg) !important;
+    }
+  }
 }
 </style>
 """
