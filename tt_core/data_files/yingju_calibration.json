@@ -1,0 +1,28 @@
+{
+  "product_name": "盈聚‧天下 II 保險計劃 – 5年供",
+  "product_code": "GFB5",
+  "currency": "USD",
+  "fx_usd_hkd": 7.85,
+  "pay_years": 5,
+  "withdraw_start_year": 6,
+  "target_age": 100,
+  "k5_sv_per_annual_prem": 2.9727,
+  "level_wd_fraction_of_total": 0.07,
+  "level_wd_fraction_of_annual": 0.35,
+  "withdrawal_growth_rate": 0.1189,
+  "notes": "k5 and g calibrated from FWD illustrations (age 25–50, M/F). g fitted so level 7% withdrawals from yr6 keep CV rising to ~age100 like illustrations. Non-guaranteed; for sales reference only.",
+  "min_annual_prem_usd_for_full_7pct_age30": 7700,
+  "illustrations": [
+    {"age": 25, "gender": "男", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 30, "gender": "男", "annual_prem_usd": 5100, "level_wd_usd": 1500},
+    {"age": 30, "gender": "男", "annual_prem_usd": 6000, "level_wd_usd": 2000},
+    {"age": 30, "gender": "男", "annual_prem_usd": 7700, "level_wd_usd": 2695},
+    {"age": 30, "gender": "男", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 30, "gender": "女", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 35, "gender": "男", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 40, "gender": "男", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 40, "gender": "女", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 45, "gender": "男", "annual_prem_usd": 10000, "level_wd_usd": 3500},
+    {"age": 50, "gender": "男", "annual_prem_usd": 10000, "level_wd_usd": 3500}
+  ]
+}

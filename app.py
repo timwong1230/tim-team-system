@@ -1005,6 +1005,7 @@ menu_items = [
     "🩺 常見疾病核保",
     "💹 收入／支出 T-Account",
     "🛡️ 保障缺口",
+    "🏥 醫療融資計算機",
 ]
 if is_leader:
     menu_items.insert(4, "🔄 業績報告同步")
@@ -3995,6 +3996,179 @@ def page_protection_gap():
         st.rerun()
 
 
+def page_medical_finance():
+    """見客用：5 年儲盈聚 → 第 6 年起提款繳醫家保，計最少年供。"""
+    st.markdown("## 🏥 醫療融資計算機")
+    st.caption(
+        "輸入年齡／性別／通脹，計出用「盈聚‧天下 II（5 年供）」預留醫家保保費，"
+        "第 6 年起每年提款＝當年醫保保費（隨年齡＋通脹上升）——最少要儲幾多年供。"
+    )
+
+    try:
+        from tt_core import medical_finance as mf
+    except Exception as e:
+        st.error(f"醫療融資模組未能載入：{e}。請 Reboot 後再試。")
+        return
+
+    cal = mf.load_calibration()
+    fx = float(cal.get("fx_usd_hkd") or 7.85)
+
+    # Stepper-style progress
+    st.markdown(
+        """
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px 0;font-size:13px;">
+          <span style="background:#1a1a2e;color:#F5D76E;padding:6px 12px;border-radius:999px;">1 關於你</span>
+          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">2 醫家保</span>
+          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">3 通脹假設</span>
+          <span style="background:#F3F4F6;color:#374151;padding:6px 12px;border-radius:999px;">4 融資結果</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("#### 你的基本資料")
+    c1, c2 = st.columns(2)
+    with c1:
+        client = st.text_input("客戶名稱（可留空）", key="mf_client", placeholder="例如：陳生")
+        age = st.slider("現時年齡（實際年齡）", min_value=18, max_value=60, value=30, key="mf_age")
+    with c2:
+        gender = st.radio("性別", ["男", "女"], horizontal=True, key="mf_gender")
+        smoke = st.radio("吸煙習慣（儲蓄計劃示範用）", ["非吸煙", "吸煙"], horizontal=True, key="mf_smoke")
+
+    st.markdown("#### 醫保同通脹")
+    st.info("第一版固定：**醫家保醫療計劃（獨立保單）** · 年繳保費表")
+    inflation_pct = st.slider(
+        "未來每年保費加幅 %（疊加喺年齡跳價之上）",
+        min_value=0.0,
+        max_value=5.0,
+        value=2.61,
+        step=0.01,
+        key="mf_infl",
+    )
+    quick = st.columns(3)
+    if quick[0].button("0%", key="mf_i0"):
+        st.session_state["mf_infl"] = 0.0
+        st.rerun()
+    if quick[1].button("2.61%", key="mf_i261"):
+        st.session_state["mf_infl"] = 2.61
+        st.rerun()
+    if quick[2].button("5%", key="mf_i5"):
+        st.session_state["mf_infl"] = 5.0
+        st.rerun()
+
+    end_age = st.slider("試算至年齡", min_value=70, max_value=100, value=100, key="mf_end")
+    st.caption(
+        f"儲蓄產品：{cal.get('product_name')}（美元保單）· 匯率 1 USD = {fx} HKD · "
+        f"吸煙選項：{smoke}（醫家保表為標準保費，唔分吸煙）"
+    )
+
+    if st.button("計算最少年供", type="primary", use_container_width=True, key="mf_run"):
+        st.session_state["mf_result"] = mf.min_annual_savings_usd(
+            start_age=int(age),
+            gender=gender,
+            inflation=float(inflation_pct) / 100.0,
+            end_age=int(end_age),
+            fx=fx,
+        )
+
+    result = st.session_state.get("mf_result")
+    if not result:
+        st.markdown("##### 資料預覽")
+        now_prem = mf.medical_annual_hkd(int(age), gender)
+        st.markdown(
+            f"**{age} 歲 · {gender} · {smoke}**  \n"
+            f"而家醫家保年繳約 **{mf.format_hkd(now_prem)}** · "
+            f"第 6 年起（約 {age + 5} 歲）開始由儲蓄提款至 {end_age} 歲。"
+        )
+        return
+
+    if result.get("error"):
+        st.error(result["error"])
+        return
+
+    st.markdown("### 融資結果")
+    st.markdown(
+        f"""
+        <div style="border:1px solid #E5E7EB;border-radius:14px;padding:16px 18px;
+        background:linear-gradient(180deg,#FFFDF5 0%,#FFFFFF 100%);margin-bottom:12px;">
+          <div style="color:#6B7280;font-size:0.9rem;">最少年供（連續儲 5 年）</div>
+          <div style="font-family:Georgia,serif;font-size:1.85rem;font-weight:700;color:#1a1a2e;margin:4px 0;">
+            {mf.format_usd(result['annual_prem_usd'])}／年
+          </div>
+          <div style="color:#9A7B1A;font-size:1.1rem;font-weight:700;">
+            約 {mf.format_hkd(result['annual_prem_hkd'])}／年
+          </div>
+          <div style="color:#6B7280;font-size:0.88rem;margin-top:8px;">
+            5 年合共 {mf.format_usd(result['total_5yr_usd'])}
+            （約 {mf.format_hkd(result['total_5yr_hkd'])}）· 匯率 {fx}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("開始提款年齡", f"{result['first_withdraw_age']} 歲")
+    m2.metric("提款年期", f"{result['n_withdraw_years']} 年")
+    m3.metric("最高一年醫保", mf.format_hkd(result["peak_medical_hkd"]))
+
+    st.markdown(
+        f"**準備方法：** 前期用收入繳醫保；同時 5 年供盈聚。"
+        f"由 **{result['first_withdraw_age']} 歲** 起，每年由儲蓄提款繳當年醫家保"
+        f"（已計入年齡跳價 + {inflation_pct:.2f}% 通脹），去到 **{end_age} 歲**。"
+    )
+
+    # Simple bar preview: contribution vs withdrawals (sample ages)
+    wds = result.get("withdrawals") or []
+    if wds:
+        st.markdown("##### 提款／保費走勢（揀數年）")
+        sample_ages = []
+        for a in [
+            result["first_withdraw_age"],
+            50,
+            65,
+            80,
+            end_age,
+        ]:
+            if result["first_withdraw_age"] <= a <= end_age and a not in sample_ages:
+                sample_ages.append(a)
+        by_age = {w["age"]: w for w in wds}
+        for a in sample_ages:
+            w = by_age.get(a)
+            if not w:
+                continue
+            st.markdown(
+                f"- **{a} 歲**：提款／保費 {mf.format_hkd(w['premium_hkd'])}"
+                f"（{mf.format_usd(w['withdraw_usd'])}）"
+            )
+        with st.expander("完整每年提款表（通脹後）"):
+            show = pd.DataFrame(wds)[["age", "policy_year", "premium_hkd", "withdraw_usd"]]
+            show = show.rename(
+                columns={
+                    "age": "年齡",
+                    "policy_year": "保單年度",
+                    "premium_hkd": "醫保年繳 (HKD)",
+                    "withdraw_usd": "提款 (USD)",
+                }
+            )
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+    try:
+        wa = mf.whatsapp_summary(result, client=client)
+        _render_whatsapp_share(
+            wa,
+            key="mf_wa",
+            caption="客戶版試算摘要（含非保證／非正式報價聲明）。",
+        )
+    except Exception as e:
+        st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
+
+    st.caption(
+        "試算以現行醫家保標準保費表 + 盈聚計劃書校準嘅戶口滾存假設（非保證）。"
+        "實際紅利／退保價值可能較高或較低，甚至為零；並非正式報價。"
+    )
+
+
 def page_profile():
     st.markdown("## 個人設定")
     if MOBILE:
@@ -4083,7 +4257,9 @@ elif "T-Account" in menu or "收入／支出" in menu or "Cashflow" in menu:
     _safe_page("收入／支出 T-Account", page_cashflow_taccount)
 elif "保障缺口" in menu:
     _safe_page("保障缺口", page_protection_gap)
+elif "醫療融資" in menu:
+    _safe_page("醫療融資計算機", page_medical_finance)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T00:20Z
+# cloud_redeploy_stamp: 2026-10-16T02:00Z
