@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:35Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:50Z
 
 
 from __future__ import annotations
@@ -4550,6 +4550,18 @@ def page_prospect_list():
                 out.append({"name": name, "premium": prem, "rate": rate_val})
         return out
 
+    def _clear_add_sales_form() -> None:
+        """Reset add-form fields after submit so next prospect starts blank."""
+        for p in PRODUCT_CATALOG:
+            st.session_state.pop(f"pl_as_{p['key']}", None)
+        for i in range(3):
+            st.session_state.pop(f"pl_as_oname_{i}", None)
+            st.session_state.pop(f"pl_as_oprem_{i}", None)
+            st.session_state.pop(f"pl_as_orate_{i}", None)
+        st.session_state.pop("pl_as_name", None)
+        st.session_state["pl_as_ff"] = pr.factfind_template()
+        st.session_state["pl_as_keep_open"] = True  # keep expander open for next entry
+
     with tab_sales:
         sales = all_rows[all_rows["list_type"] == pr.LIST_SALES] if not all_rows.empty else all_rows
         year_total = pr.year_fyc_total(sales, int(year))
@@ -4578,7 +4590,8 @@ def page_prospect_list():
                 st.text(f"{p['group']} · {p['label']}: {p['rate']*100:g}%{mark}")
 
         if can_edit:
-            with st.expander("＋ 新增準客戶（簽單）", expanded=False):
+            keep_open = bool(st.session_state.pop("pl_as_keep_open", False))
+            with st.expander("＋ 新增準客戶（簽單）", expanded=keep_open):
                 aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
                 an = st.text_input("Name", key="pl_as_name")
                 _render_hot_products("pl_as")
@@ -4596,9 +4609,10 @@ def page_prospect_list():
                         f"{row['label']}: ${row['premium']:,.0f} × {row['eff_rate']*100:g}% "
                         f"= ${row['fyc']:,.2f}{tag}"
                     )
+                if "pl_as_ff" not in st.session_state:
+                    st.session_state["pl_as_ff"] = pr.factfind_template()
                 aff = st.text_area(
                     "Fact find（15 條）",
-                    value=pr.factfind_template(),
                     height=220,
                     key="pl_as_ff",
                 )
@@ -4606,7 +4620,8 @@ def page_prospect_list():
                     try:
                         premiums = _read_hot("pl_as")
                         others = _read_others("pl_as")
-                        if not an.strip():
+                        name_val = str(st.session_state.get("pl_as_name") or an or "").strip()
+                        if not name_val:
                             st.error("必須填寫 Name")
                         elif not premiums and not others:
                             st.error("請至少填一個熱賣產品保費，或一項「其他」產品")
@@ -4615,15 +4630,18 @@ def page_prospect_list():
                                 user,
                                 year=int(year),
                                 quarter=int(aq),
-                                name=an,
+                                name=name_val,
                                 premiums=premiums,
                                 others=others,
                                 ytd_fyc=ytd_fyc,
                                 factfind=aff,
                             )
-                            st.success(
-                                f"已加入 {an} · FYC ${calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc):,.2f}"
+                            st.toast(
+                                f"已加入 {name_val} · FYC "
+                                f"${calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc):,.2f}",
+                                icon="✅",
                             )
+                            _clear_add_sales_form()
                             st.rerun()
                     except Exception as e:
                         st.error(str(e))
