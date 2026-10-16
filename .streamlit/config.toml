@@ -13,3 +13,13 @@ fastReruns = true
 [client]
 showErrorDetails = true
 toolbarMode = "minimal"
+
+# Base light theme (Streamlit widgets). Phone dark mode is handled in
+# tt_core/styles.py via @media (prefers-color-scheme: dark).
+[theme]
+base = "light"
+primaryColor = "#C5A028"
+backgroundColor = "#F3F1EB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1C2430"
+font = "sans serif"
