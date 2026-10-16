@@ -154,7 +154,7 @@ def products_summary(
         except (TypeError, ValueError):
             amt = 0.0
         if amt > 0:
-            tag = " ·QSB+10%" if (active and p.get("qsb")) else ""
+            tag = " ·Extra 10" if (active and p.get("qsb")) else ""
             parts.append(f"{p['label']} ${amt:,.0f}{tag}")
     for item in normalize_others(others):
         parts.append(

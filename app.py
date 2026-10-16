@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:20Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:35Z
 
 
 from __future__ import annotations
@@ -4397,7 +4397,7 @@ def page_recruit_package_compare():
 
 
 def page_prospect_list():
-    """準客戶名單 — 熱賣產品 + 其他手動；YTD≥$88k 自動 QSB +10%。"""
+    """準客戶名單 — 熱賣產品 + 其他手動；YTD≥$88k 自動 Extra 10%。"""
     try:
         from tt_core import prospects as pr
         from tt_core.commission import (
@@ -4421,7 +4421,7 @@ def page_prospect_list():
     st.markdown("## 📋 準客戶名單")
     st.caption(
         "熱賣產品跟 Client List Excel；「其他」可手動入非熱賣產品。"
-        f" YTD FYC ≥ ${QSB_THRESHOLD:,.0f} 之後，危疾／5年供 Saving／扣稅年金自動 +10% FYC。"
+        f" YTD FYC ≥ ${QSB_THRESHOLD:,.0f} 之後，危疾／5年供 Saving／扣稅年金自動 Extra 10% FYC。"
         " Fact find 15 條照 keep。"
         + (" Leader 可揀同事檢視全隊。" if leader else "")
     )
@@ -4450,13 +4450,13 @@ def page_prospect_list():
     if qsb["active"]:
         st.success(
             f"**{view_user}** YTD FYC **${ytd_fyc:,.0f}** ≥ ${QSB_THRESHOLD:,.0f} — "
-            "QSB 已開：危疾／盈聚天下II 5pay／扣稅年金 FYC **×1.1**"
+            "**Extra 10 已開**：危疾／盈聚天下II 5pay／扣稅年金 FYC **×1.1**"
         )
     else:
         remain = max(QSB_THRESHOLD - ytd_fyc, 0)
         st.warning(
             f"**{view_user}** YTD FYC **${ytd_fyc:,.0f}** · "
-            f"尚欠 ${remain:,.0f} 先至開 QSB +10% "
+            f"尚欠 ${remain:,.0f} 先至開 Extra 10% "
             "（危疾／5年供 Saving／扣稅年金）"
         )
 
@@ -4469,7 +4469,7 @@ def page_prospect_list():
         st.markdown("##### 🔥 熱賣產品（年繳保費）")
         for group in PRODUCT_GROUPS:
             items = [p for p in PRODUCT_CATALOG if p["group"] == group]
-            qsb_note = " · QSB+10%" if qsb["active"] and any(p.get("qsb") for p in items) else ""
+            qsb_note = " · Extra 10" if qsb["active"] and any(p.get("qsb") for p in items) else ""
             st.markdown(f"**{group}**{qsb_note}")
             cols = st.columns(min(3, len(items)))
             for i, p in enumerate(items):
@@ -4486,7 +4486,7 @@ def page_prospect_list():
                         key=f"{key_prefix}_{p['key']}",
                         help=(
                             f"基本 {p['rate']*100:g}%"
-                            + (" → QSB 後 " + f"{eff*100:g}%" if p.get("qsb") and qsb["active"] else "")
+                            + (" → Extra 10 後 " + f"{eff*100:g}%" if p.get("qsb") and qsb["active"] else "")
                         ),
                     )
 
@@ -4569,12 +4569,12 @@ def page_prospect_list():
         with st.expander("佣金表說明", expanded=False):
             st.markdown(
                 f"- **熱賣產品**跟團隊 Client List Excel／FWD Commission Schedule v5.7 Year-1 %\n"
-                f"- **QSB**：個人 Iris YTD FYC ≥ **${QSB_THRESHOLD:,.0f}** 之後，"
+                f"- **Extra 10**：個人 Iris YTD FYC ≥ **${QSB_THRESHOLD:,.0f}** 之後，"
                 "危疾應援保、盈聚天下II **5pay**、扣稅年金 自動 **×1.1**\n"
-                "- **其他**：自行填產品名 + 保費 + 佣金%（唔自動加 QSB，請自行計入 %）"
+                "- **其他**：自行填產品名 + 保費 + 佣金%（唔自動加 Extra 10，請自行計入 %）"
             )
             for p in PRODUCT_CATALOG:
-                mark = " ← QSB" if p.get("qsb") else ""
+                mark = " ← Extra 10" if p.get("qsb") else ""
                 st.text(f"{p['group']} · {p['label']}: {p['rate']*100:g}%{mark}")
 
         if can_edit:
@@ -4588,10 +4588,10 @@ def page_prospect_list():
                 live_fyc = calc_fyc(live_hot, others=live_other, ytd_fyc=ytd_fyc)
                 st.info(
                     f"預計 FYC：**${live_fyc:,.2f}**"
-                    + ("（已套用 QSB +10%）" if qsb["active"] else "")
+                    + ("（已套用 Extra 10%）" if qsb["active"] else "")
                 )
                 for row in fyc_breakdown(live_hot, others=live_other, ytd_fyc=ytd_fyc):
-                    tag = " ★QSB" if row["qsb"] else ""
+                    tag = " ·Extra 10" if row["qsb"] else ""
                     st.caption(
                         f"{row['label']}: ${row['premium']:,.0f} × {row['eff_rate']*100:g}% "
                         f"= ${row['fyc']:,.2f}{tag}"
@@ -4643,18 +4643,16 @@ def page_prospect_list():
                     rid = row["id"]
                     premiums, others = pr.decode_deal(row.get("selling_products"))
                     prod_txt = pr.display_products(row.get("selling_products"), ytd_fyc=ytd_fyc) or "—"
-                    # Show stored FYC; note if YTD/QSB changed since save
-                    live_now = calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc) if (premiums or others) else float(row["fyc"])
-                    st.markdown(
-                        f"**{row['name']}** · FYC **${float(row['fyc']):,.2f}**"
-                        + (
-                            f"  <span style='color:#6B7280;font-size:0.85rem;'>（依而家 QSB 重計 ${live_now:,.2f}）</span>"
-                            if abs(live_now - float(row["fyc"])) > 0.5
-                            else ""
-                        )
-                        + f"  \n<span style='color:#6B7280;font-size:0.9rem;'>{prod_txt}</span>",
-                        unsafe_allow_html=True,
+                    live_now = (
+                        calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc)
+                        if (premiums or others)
+                        else float(row["fyc"])
                     )
+                    st.markdown(f"**{row['name']}** · FYC **${float(row['fyc']):,.2f}**")
+                    if prod_txt and prod_txt != "—":
+                        st.caption(prod_txt)
+                    if abs(live_now - float(row["fyc"])) > 0.5:
+                        st.caption(f"依而家 Extra 10 重計：${live_now:,.2f}（撳下面可更新）")
                     with st.expander("產品保費 / Fact find", expanded=False):
                         if can_edit:
                             _render_hot_products(f"pl_ed_{rid}", premiums)
@@ -4666,7 +4664,7 @@ def page_prospect_list():
                             )
                         else:
                             for br in fyc_breakdown(premiums, others=others, ytd_fyc=ytd_fyc):
-                                tag = " ★QSB" if br["qsb"] else ""
+                                tag = " ·Extra 10" if br["qsb"] else ""
                                 st.text(
                                     f"{br['label']}: ${br['premium']:,.0f} × {br['eff_rate']*100:g}% "
                                     f"= ${br['fyc']:,.2f}{tag}"
@@ -4700,7 +4698,7 @@ def page_prospect_list():
                                         st.error(str(e))
                             with c2:
                                 if st.button(
-                                    "按而家 QSB 重計",
+                                    "按而家 Extra 10 重計",
                                     key=f"pl_recalc_s_{rid}",
                                     use_container_width=True,
                                 ):
@@ -4714,7 +4712,7 @@ def page_prospect_list():
                                                 "factfind": ff_val,
                                             },
                                         )
-                                        st.toast("已按而家 QSB 重計 FYC", icon="✅")
+                                        st.toast("已按而家 Extra 10 重計 FYC", icon="✅")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(str(e))
@@ -4909,4 +4907,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T09:20Z
+# cloud_redeploy_stamp: 2026-10-16T09:35Z

@@ -97,7 +97,8 @@ def test_menu_renamed():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     block = src.split("menu_items = [")[1].split("]")[0]
     assert "📋 準客戶名單" in block
-    assert "QSB" in src
+    assert "Extra 10 已開" in src
+    assert "QSB 已開" not in src
 
 
 if __name__ == "__main__":
