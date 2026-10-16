@@ -876,17 +876,29 @@ if not st.session_state["logged_in"]:
 
     def _render_login_brand() -> None:
         logo_html = (
-            f'<img class="tt-login-logo" src="{_login_logo}" alt="TIM TEAM" />'
+            f'<img class="tt-login-logo" src="{_login_logo}" alt="TIM TEAM" '
+            f'style="width:88px;height:88px;object-fit:contain;border-radius:18px;'
+            f'margin:0 auto 18px;display:block;border:1px solid rgba(212,175,55,0.35);" />'
             if _login_logo
             else ""
         )
+        # Inline critical styles so Cloud / stale CSS cache still shows the ink shell
         st.markdown(
             f"""
-            <div class="tt-login-shell">
+            <div class="tt-login-shell" style="
+              position:relative;overflow:hidden;text-align:center;
+              background:radial-gradient(720px 320px at 50% -8%, rgba(212,175,55,0.22), transparent 58%),
+                         linear-gradient(165deg, #10161F 0%, #1C2430 52%, #2A2314 100%);
+              border:1px solid rgba(212,175,55,0.32);border-radius:22px;
+              padding:40px 28px 34px;margin-bottom:18px;
+              box-shadow:0 28px 64px rgba(16,22,31,0.28);">
               {logo_html}
-              <div class="tt-kicker">{BRAND_SYSTEM}</div>
-              <h1>M+2 管理系統</h1>
-              <div class="tt-login-rule"></div>
+              <div class="tt-kicker" style="color:#E2C56A !important;letter-spacing:0.22em;
+                font-size:0.82rem;margin-bottom:10px;text-transform:uppercase;">{BRAND_SYSTEM}</div>
+              <h1 style="margin:0 !important;color:#F8F4EA !important;font-size:2.45rem !important;
+                line-height:1.15 !important;font-weight:400 !important;">M+2 管理系統</h1>
+              <div class="tt-login-rule" style="width:56px;height:2px;margin:18px auto 0;
+                background:linear-gradient(90deg, transparent, #D4AF37, transparent);"></div>
             </div>
             """,
             unsafe_allow_html=True,
