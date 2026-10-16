@@ -363,6 +363,76 @@ div.stButton > button[kind="secondary"] {
   padding: 28px 24px;
   box-shadow: 0 18px 40px rgba(28,36,48,0.08);
 }
+
+/* Premium login composition — ink + gold, one visual unit */
+.tt-login-shell {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  background:
+    radial-gradient(720px 320px at 50% -8%, rgba(212,175,55,0.22), transparent 58%),
+    linear-gradient(165deg, #10161F 0%, #1C2430 52%, #2A2314 100%);
+  border: 1px solid rgba(212,175,55,0.32);
+  border-radius: 22px;
+  padding: 40px 28px 34px;
+  margin-bottom: 18px;
+  box-shadow: 0 28px 64px rgba(16,22,31,0.28);
+}
+.tt-login-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(212,175,55,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(212,175,55,0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 72%);
+  pointer-events: none;
+}
+.tt-login-logo {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  border-radius: 18px;
+  margin: 0 auto 18px;
+  display: block;
+  border: 1px solid rgba(212,175,55,0.35);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+  position: relative;
+  z-index: 1;
+}
+.tt-login-shell .tt-kicker {
+  position: relative;
+  z-index: 1;
+  color: #E2C56A !important;
+  letter-spacing: 0.22em;
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+.tt-login-shell h1 {
+  position: relative;
+  z-index: 1;
+  margin: 0 !important;
+  color: #F8F4EA !important;
+  font-size: 2.55rem !important;
+  line-height: 1.15 !important;
+  font-weight: 400 !important;
+}
+.tt-login-rule {
+  position: relative;
+  z-index: 1;
+  width: 56px;
+  height: 2px;
+  margin: 18px auto 0;
+  background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+}
+.tt-login-foot {
+  text-align: center;
+  color: #8A8478;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  margin-top: 14px;
+}
 .iris-banner {
   background: linear-gradient(90deg, #EDF5FF, #FFFFFF);
   border: 1px solid #C9DBF2;
@@ -517,6 +587,20 @@ div.stButton > button[kind="secondary"] {
   .login-panel {
     padding: 20px 16px;
     border-radius: 14px;
+  }
+  .tt-login-shell {
+    border-radius: 16px;
+    padding: 28px 18px 24px;
+    margin-bottom: 14px;
+  }
+  .tt-login-logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    margin-bottom: 14px;
+  }
+  .tt-login-shell h1 {
+    font-size: 1.85rem !important;
   }
   .activity-card { padding: 12px; }
   .act-badge { font-size: 0.72em; max-width: 46%; text-align: right; }

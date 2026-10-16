@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T02:55Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T03:05Z
 
 
 from __future__ import annotations
@@ -867,83 +867,75 @@ except Exception:
     pass
 
 if not st.session_state["logged_in"]:
-    if MOBILE:
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    try:
+        from tt_core.branding import icon_data_uri as _icon_data_uri
+
+        _login_logo = _icon_data_uri(180)
+    except Exception:
+        _login_logo = ""
+
+    def _render_login_brand() -> None:
+        logo_html = (
+            f'<img class="tt-login-logo" src="{_login_logo}" alt="TIM TEAM" />'
+            if _login_logo
+            else ""
+        )
         st.markdown(
             f"""
-            <div class="login-panel">
-              <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_SYSTEM}</div>
-              <h1 style="margin:0 0 6px 0;">M+2 管理系統</h1>
+            <div class="tt-login-shell">
+              {logo_html}
+              <div class="tt-kicker">{BRAND_SYSTEM}</div>
+              <h1>M+2 管理系統</h1>
+              <div class="tt-login-rule"></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        u = st.text_input("Username", placeholder="e.g. Tim")
-        p = st.text_input("Password", type="password", placeholder="••••••")
-        if st.button("登入", use_container_width=True):
-            d = login(u, p)
-            if d:
-                st.session_state.update(
-                    {
-                        "logged_in": True,
-                        "user": d[0][0],
-                        "role": d[0][2],
-                        "avatar": d[0][5],
-                    }
-                )
-                st.session_state.pop("_notif_checked_this_login", None)
-                st.session_state.pop("_notif_pending_payload", None)
-                st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
-                st.rerun()
-            else:
-                st.toast("登入失敗，請檢查帳密", icon="❌")
-        st.markdown(
-            """
-            <div class="tt-install-card">
-              <strong>想變主畫面 App？</strong><br>
-              Safari 打開 → 分享 →「加到主畫面」
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+
+    def _do_login(u: str, p: str) -> None:
+        d = login(u, p)
+        if d:
+            st.session_state.update(
+                {
+                    "logged_in": True,
+                    "user": d[0][0],
+                    "role": d[0][2],
+                    "avatar": d[0][5],
+                }
+            )
+            st.session_state.pop("_notif_checked_this_login", None)
+            st.session_state.pop("_notif_pending_payload", None)
+            st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
+            st.rerun()
+        else:
+            st.toast("登入失敗，請檢查帳密", icon="❌")
+
+    if MOBILE:
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        _render_login_brand()
+        u = st.text_input("Username", placeholder="e.g. Tim", key="login_user_m")
+        p = st.text_input("Password", type="password", placeholder="••••••", key="login_pw_m")
+        if st.button("登入", type="primary", use_container_width=True, key="login_btn_m"):
+            _do_login(u, p)
         render_install_guide(compact=True)
-        st.caption("每年目標：M + 2")
-        st.caption("若見到 Oh no：撳右下角紅色 Manage app → ⋮ → Reboot app，等 Running 後再開。")
+        st.markdown(
+            '<div class="tt-login-foot">每年目標 M+2 · 加到主畫面更快開</div>',
+            unsafe_allow_html=True,
+        )
     else:
-        c1, c2, c3 = st.columns([1, 1.4, 1])
-        with c2:
-            st.markdown("<br>", unsafe_allow_html=True)
+        _l, _c, _r = st.columns([1, 1.15, 1])
+        with _c:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            _render_login_brand()
+            u = st.text_input("Username", placeholder="e.g. Tim", key="login_user")
+            p = st.text_input("Password", type="password", placeholder="••••••", key="login_pw")
+            if st.button("登入系統", type="primary", use_container_width=True, key="login_btn"):
+                _do_login(u, p)
+            render_install_guide(compact=True)
             st.markdown(
-                f"""
-                <div class="login-panel">
-                  <div class="tt-kicker" style="color:#C5A028 !important;">{BRAND_SYSTEM}</div>
-                  <h1 style="margin:0 0 6px 0;">M+2 管理系統</h1>
-                </div>
-                """,
+                '<div class="tt-login-foot">2026 MDRT $512,800 · M+2 = 百萬年薪之路</div>',
                 unsafe_allow_html=True,
             )
-            st.markdown("<br>", unsafe_allow_html=True)
-            u = st.text_input("Username", placeholder="e.g. Tim")
-            p = st.text_input("Password", type="password", placeholder="••••••")
-            if st.button("登入系統", use_container_width=True):
-                d = login(u, p)
-                if d:
-                    st.session_state.update(
-                        {
-                            "logged_in": True,
-                            "user": d[0][0],
-                            "role": d[0][2],
-                            "avatar": d[0][5],
-                        }
-                    )
-                    st.session_state.pop("_notif_checked_this_login", None)
-                    st.session_state.pop("_notif_pending_payload", None)
-                    st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
-                    st.rerun()
-                else:
-                    st.toast("登入失敗，請檢查帳密", icon="❌")
-            render_install_guide(compact=True)
-            st.caption("2026 MDRT 目標：$512,800  ·  M + 2 = 百萬年薪之路")
     st.stop()
 
 
@@ -4322,4 +4314,4 @@ elif "醫療融資" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T02:50Z
+# cloud_redeploy_stamp: 2026-10-16T03:05Z
