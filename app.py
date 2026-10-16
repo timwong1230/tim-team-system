@@ -4085,24 +4085,25 @@ def page_medical_finance():
             deductible = 0
 
     st.markdown("#### 通脹假設")
+    # Quick presets must use on_click: Streamlit forbids writing widget keys
+    # after the slider with key="mf_infl" has already been instantiated.
+    if "mf_infl" not in st.session_state:
+        st.session_state["mf_infl"] = 2.61
+
+    def _mf_set_infl(v: float) -> None:
+        st.session_state["mf_infl"] = float(v)
+
+    quick = st.columns(3)
+    quick[0].button("0%", key="mf_i0", on_click=_mf_set_infl, args=(0.0,))
+    quick[1].button("2.61%", key="mf_i261", on_click=_mf_set_infl, args=(2.61,))
+    quick[2].button("5%", key="mf_i5", on_click=_mf_set_infl, args=(5.0,))
     inflation_pct = st.slider(
         "未來每年保費加幅 %（疊加喺年齡跳價之上）",
         min_value=0.0,
         max_value=5.0,
-        value=2.61,
         step=0.01,
         key="mf_infl",
     )
-    quick = st.columns(3)
-    if quick[0].button("0%", key="mf_i0"):
-        st.session_state["mf_infl"] = 0.0
-        st.rerun()
-    if quick[1].button("2.61%", key="mf_i261"):
-        st.session_state["mf_infl"] = 2.61
-        st.rerun()
-    if quick[2].button("5%", key="mf_i5"):
-        st.session_state["mf_infl"] = 5.0
-        st.rerun()
 
     end_age = st.slider("試算至年齡", min_value=70, max_value=100, value=100, key="mf_end")
     gender_note = (
@@ -4322,4 +4323,4 @@ elif "醫療融資" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T02:30Z
+# cloud_redeploy_stamp: 2026-10-16T02:50Z
