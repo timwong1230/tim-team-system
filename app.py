@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T03:20Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T03:25Z
 
 
 from __future__ import annotations
@@ -868,23 +868,13 @@ except Exception:
 
 if not st.session_state["logged_in"]:
     def _render_login_brand() -> None:
-        # Text-only brand hero — no logo (cleaner, stronger wordmark)
+        # Text-only brand hero — brand color via CSS class (inline color gets stripped on Cloud)
         st.markdown(
             f"""
-            <div class="tt-login-shell" style="
-              position:relative;overflow:hidden;text-align:center;
-              background:radial-gradient(720px 320px at 50% -8%, rgba(212,175,55,0.22), transparent 58%),
-                         linear-gradient(165deg, #10161F 0%, #1C2430 52%, #2A2314 100%);
-              border:1px solid rgba(212,175,55,0.32);border-radius:22px;
-              padding:44px 28px 38px;margin-bottom:18px;
-              box-shadow:0 28px 64px rgba(16,22,31,0.28);">
-              <div style="position:relative;z-index:1;color:#E2C56A !important;
-                font-family:'DM Sans',sans-serif;font-weight:600;letter-spacing:0.28em;
-                font-size:1.05rem;margin:0 0 14px 0;text-transform:uppercase;">{BRAND_SYSTEM}</div>
-              <h1 style="position:relative;z-index:1;margin:0 !important;color:#F8F4EA !important;
-                font-size:2.6rem !important;line-height:1.12 !important;font-weight:400 !important;">M+2 管理系統</h1>
-              <div class="tt-login-rule" style="width:56px;height:2px;margin:20px auto 0;
-                background:linear-gradient(90deg, transparent, #D4AF37, transparent);"></div>
+            <div class="tt-login-shell">
+              <div class="tt-login-brand">{BRAND_SYSTEM}</div>
+              <h1 class="tt-login-title">M+2 管理系統</h1>
+              <div class="tt-login-rule"></div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -4312,4 +4302,4 @@ elif "醫療融資" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T03:20Z
+# cloud_redeploy_stamp: 2026-10-16T03:25Z
