@@ -1,12 +1,19 @@
-"""Prospect lists — 簽單 / 招募, per user, quarterly, with Fact find."""
+"""準客戶名單 — 簽單 / 招募, per user, quarterly, Excel-style products + Fact find."""
 
 from __future__ import annotations
 
 import datetime
+import json
 from typing import Any
 
 import pandas as pd
 
+from tt_core.commission import (
+    PRODUCT_CATALOG,
+    calc_fyc,
+    normalize_premiums,
+    products_summary,
+)
 from tt_core.constants import TEMPLATE_FACTFIND
 from tt_core.db import read_data, run_query_gs
 
@@ -22,6 +29,39 @@ def current_year() -> int:
 
 def factfind_template() -> str:
     return TEMPLATE_FACTFIND
+
+
+def encode_products(premiums: dict[str, float] | None) -> str:
+    """Store product premiums as JSON in selling_products column."""
+    clean = normalize_premiums(premiums)
+    if not clean:
+        return ""
+    return json.dumps(clean, ensure_ascii=False, sort_keys=True)
+
+
+def decode_products(raw: Any) -> dict[str, float]:
+    """Parse selling_products — JSON dict, or empty if legacy free text."""
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        return {}
+    text = str(raw).strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                return normalize_premiums(data)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def display_products(raw: Any) -> str:
+    premiums = decode_products(raw)
+    if premiums:
+        return products_summary(premiums)
+    text = str(raw or "").strip()
+    return text
 
 
 def get_prospects(
@@ -74,8 +114,9 @@ def add_sales_prospect(
     year: int,
     quarter: int,
     name: str,
-    selling_products: str,
-    fyc: float,
+    premiums: dict[str, float] | None = None,
+    selling_products: str = "",
+    fyc: float | None = None,
     factfind: str = "",
 ) -> None:
     name = str(name or "").strip()
@@ -83,6 +124,14 @@ def add_sales_prospect(
         raise ValueError("必須填寫 Name")
     if int(quarter) not in QUARTERS:
         raise ValueError("季度必須係 1–4")
+    clean = normalize_premiums(premiums)
+    if clean:
+        products_raw = encode_products(clean)
+        fyc_val = calc_fyc(clean)
+    else:
+        # Legacy: free-text products + manual FYC
+        products_raw = str(selling_products or "").strip()
+        fyc_val = float(fyc or 0)
     now = str(datetime.datetime.now())
     run_query_gs(
         "INSERT",
@@ -93,8 +142,8 @@ def add_sales_prospect(
             "year": int(year),
             "quarter": int(quarter),
             "name": name,
-            "selling_products": str(selling_products or "").strip(),
-            "fyc": float(fyc or 0),
+            "selling_products": products_raw,
+            "fyc": float(fyc_val),
             "recruit_category": "",
             "factfind": factfind or factfind_template(),
             "created_at": now,
@@ -149,8 +198,13 @@ def update_prospect(row_id: str | int, fields: dict[str, Any]) -> None:
         "factfind",
         "year",
         "quarter",
+        "premiums",
     }
     payload = {k: v for k, v in fields.items() if k in allowed}
+    if "premiums" in payload:
+        clean = normalize_premiums(payload.pop("premiums"))
+        payload["selling_products"] = encode_products(clean)
+        payload["fyc"] = calc_fyc(clean)
     if "name" in payload and not str(payload["name"] or "").strip():
         raise ValueError("Name 唔可以空白")
     if "recruit_category" in payload and payload["recruit_category"]:
@@ -192,3 +246,7 @@ def quarter_counts(df: pd.DataFrame, year: int, list_type: str) -> dict[int, int
     for q in QUARTERS:
         out[q] = int((sub["quarter"] == q).sum())
     return out
+
+
+def product_catalog():
+    return PRODUCT_CATALOG

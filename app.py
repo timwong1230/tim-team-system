@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T08:35Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-16T09:00Z
 
 
 from __future__ import annotations
@@ -975,7 +975,7 @@ except Exception as e:
 menu_items = [
     "🏠 我的主頁",
     "📊 團隊 Dashboard",
-    "📋 Prospect List",
+    "📋 準客戶名單",
     "📝 打卡 Check-in",
     "🏅 龍虎榜",
     "🎁 季度優惠 & 獎賞",
@@ -1168,8 +1168,8 @@ def page_home():
             st.session_state["_menu_choice"] = "📝 打卡 Check-in"
             st.rerun()
     with b2:
-        if st.button("📋 Prospect List", use_container_width=True, key="home_go_prospects"):
-            st.session_state["_menu_choice"] = "📋 Prospect List"
+        if st.button("📋 準客戶名單", use_container_width=True, key="home_go_prospects"):
+            st.session_state["_menu_choice"] = "📋 準客戶名單"
             st.rerun()
 
     with st.expander("團隊最新動態", expanded=False):
@@ -4397,22 +4397,24 @@ def page_recruit_package_compare():
 
 
 def page_prospect_list():
-    """簽單／招募 Prospect List — 各自同事可見；Leader 可睇全隊。"""
+    """準客戶名單 — Excel-style 產品保費 → 自動計 FYC；保留 15 條 Fact find。"""
     try:
         from tt_core import prospects as pr
+        from tt_core.commission import PRODUCT_CATALOG, PRODUCT_GROUPS, calc_fyc, rate_for
         import importlib
 
         importlib.reload(pr)
     except Exception as e:
-        st.error(f"Prospect List 未能載入：{e}。請 Reboot 後再試。")
+        st.error(f"準客戶名單未能載入：{e}。請 Reboot 後再試。")
         return
 
     user = st.session_state["user"]
     leader = st.session_state.get("role") == "Leader"
 
-    st.markdown("## 📋 Prospect List")
+    st.markdown("## 📋 準客戶名單")
     st.caption(
-        "分開 **簽單** 同 **招募** 兩個 list，按季度跟進；每人只睇自己嘅名單。"
+        "跟 Client List Excel 格式：填各產品**年繳保費**，系統按佣金表 Year-1 % 自動計 FYC。"
+        " Fact find 15 條照 keep。"
         + (" Leader 可揀同事檢視全隊。" if leader else "")
     )
 
@@ -4433,12 +4435,36 @@ def page_prospect_list():
         )
         view_user = user if pick == "（我自己）" else pick
         if view_user != user:
-            st.info(f"而家睇緊 **{view_user}** 嘅 Prospect List")
+            st.info(f"而家睇緊 **{view_user}** 嘅準客戶名單")
 
     all_rows = pr.get_prospects(username=view_user, year=int(year))
     tab_sales, tab_recruit = st.tabs(["📝 簽單 List", "🤝 招募 List"])
+    can_edit = view_user == user
 
-    can_edit = view_user == user  # Leader viewing others: read-only unless own
+    def _collect_premiums(key_prefix: str) -> dict:
+        premiums = {}
+        for p in PRODUCT_CATALOG:
+            val = float(st.session_state.get(f"{key_prefix}_{p['key']}", 0) or 0)
+            if val > 0:
+                premiums[p["key"]] = val
+        return premiums
+
+    def _render_product_inputs(key_prefix: str, defaults: dict | None = None):
+        defaults = defaults or {}
+        for group in PRODUCT_GROUPS:
+            items = [p for p in PRODUCT_CATALOG if p["group"] == group]
+            st.markdown(f"**{group}**")
+            cols = st.columns(min(3, len(items)))
+            for i, p in enumerate(items):
+                with cols[i % len(cols)]:
+                    st.number_input(
+                        f"{p['label']} ({p['rate']*100:g}%)",
+                        min_value=0.0,
+                        value=float(defaults.get(p["key"], 0) or 0),
+                        step=100.0,
+                        key=f"{key_prefix}_{p['key']}",
+                        help=f"Year-1 佣金 {p['rate']*100:g}% · 輸入年繳保費",
+                    )
 
     with tab_sales:
         sales = all_rows[all_rows["list_type"] == pr.LIST_SALES] if not all_rows.empty else all_rows
@@ -4456,91 +4482,131 @@ def page_prospect_list():
             unsafe_allow_html=True,
         )
 
+        with st.expander("佣金表（Year-1 %）", expanded=False):
+            rate_rows = [
+                f"- **{p['label']}**：{p['rate']*100:g}%（{p['group']}）"
+                for p in PRODUCT_CATALOG
+            ]
+            st.markdown(
+                "跟團隊 Client List Excel／FWD Commission Schedule v5.7：\n\n"
+                + "\n".join(rate_rows)
+            )
+
         if can_edit:
-            with st.expander("＋ 新增簽單 Prospect", expanded=False):
-                with st.form("pl_add_sales", clear_on_submit=True):
-                    aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
-                    an = st.text_input("Name", key="pl_as_name")
-                    ap = st.text_input("Selling Products", key="pl_as_prod", placeholder="例如：醫家保 + 盈聚")
-                    af = st.number_input("FYC (HKD)", min_value=0.0, step=1000.0, key="pl_as_fyc")
-                    aff = st.text_area(
-                        "Fact find（15 條）",
-                        value=pr.factfind_template(),
-                        height=220,
-                        key="pl_as_ff",
-                    )
-                    if st.form_submit_button("新增", type="primary", use_container_width=True):
-                        try:
+            with st.expander("＋ 新增準客戶（簽單）", expanded=False):
+                aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
+                an = st.text_input("Name", key="pl_as_name")
+                st.caption("填各產品年繳保費（可同時買多種）；FYC 會自動計。")
+                _render_product_inputs("pl_as")
+                live = {
+                    p["key"]: float(st.session_state.get(f"pl_as_{p['key']}", 0) or 0)
+                    for p in PRODUCT_CATALOG
+                    if float(st.session_state.get(f"pl_as_{p['key']}", 0) or 0) > 0
+                }
+                live_fyc = calc_fyc(live)
+                st.info(f"預計 FYC：**${live_fyc:,.2f}**")
+                aff = st.text_area(
+                    "Fact find（15 條）",
+                    value=pr.factfind_template(),
+                    height=220,
+                    key="pl_as_ff",
+                )
+                if st.button("新增", type="primary", use_container_width=True, key="pl_as_submit"):
+                    try:
+                        premiums = {
+                            p["key"]: float(st.session_state.get(f"pl_as_{p['key']}", 0) or 0)
+                            for p in PRODUCT_CATALOG
+                        }
+                        premiums = {k: v for k, v in premiums.items() if v > 0}
+                        if not an.strip():
+                            st.error("必須填寫 Name")
+                        elif not premiums:
+                            st.error("請至少填一個產品保費")
+                        else:
                             pr.add_sales_prospect(
                                 user,
                                 year=int(year),
                                 quarter=int(aq),
                                 name=an,
-                                selling_products=ap,
-                                fyc=float(af),
+                                premiums=premiums,
                                 factfind=aff,
                             )
-                            st.success(f"已加入 {an}")
+                            st.success(f"已加入 {an} · FYC ${calc_fyc(premiums):,.2f}")
                             st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
+                    except Exception as e:
+                        st.error(str(e))
 
         for q in pr.QUARTERS:
             qdf = sales[sales["quarter"] == q] if not sales.empty else sales
             q_total = float(qdf["fyc"].sum()) if not qdf.empty else 0.0
             n = len(qdf) if not qdf.empty else 0
-            with st.expander(f"Q{q} · {n} 位 · FYC ${q_total:,.0f}", expanded=(q == ((datetime.date.today().month - 1) // 3 + 1))):
+            with st.expander(
+                f"Q{q} · {n} 位 · FYC ${q_total:,.0f}",
+                expanded=(q == ((datetime.date.today().month - 1) // 3 + 1)),
+            ):
                 if qdf.empty:
-                    st.caption("呢季未有 prospect。")
+                    st.caption("呢季未有準客戶。")
                     continue
                 for _, row in qdf.iterrows():
                     rid = row["id"]
+                    premiums = pr.decode_products(row.get("selling_products"))
+                    prod_txt = pr.display_products(row.get("selling_products")) or "—"
                     st.markdown(
-                        f"**{row['name']}** · {row.get('selling_products') or '—'} · "
-                        f"FYC **${float(row['fyc']):,.0f}**"
+                        f"**{row['name']}** · FYC **${float(row['fyc']):,.2f}**  \n"
+                        f"<span style='color:#6B7280;font-size:0.9rem;'>{prod_txt}</span>",
+                        unsafe_allow_html=True,
                     )
-                    with st.expander("Fact find 15 條", expanded=False):
-                        ff_key = f"pl_ff_s_{rid}"
+                    with st.expander("產品保費 / Fact find", expanded=False):
+                        if can_edit:
+                            _render_product_inputs(f"pl_ed_{rid}", premiums)
+                            preview = {
+                                p["key"]: float(
+                                    st.session_state.get(f"pl_ed_{rid}_{p['key']}", 0) or 0
+                                )
+                                for p in PRODUCT_CATALOG
+                                if float(st.session_state.get(f"pl_ed_{rid}_{p['key']}", 0) or 0) > 0
+                            }
+                            st.caption(f"預計 FYC：${calc_fyc(preview):,.2f}")
+                        else:
+                            if premiums:
+                                for p in PRODUCT_CATALOG:
+                                    amt = float(premiums.get(p["key"]) or 0)
+                                    if amt > 0:
+                                        fyc_p = amt * rate_for(p["key"])
+                                        st.text(
+                                            f"{p['label']}: ${amt:,.0f} → FYC ${fyc_p:,.2f}"
+                                        )
+                            else:
+                                st.caption(prod_txt)
                         ff_val = st.text_area(
-                            "Fact find",
+                            "Fact find（15 條）",
                             value=str(row.get("factfind") or pr.factfind_template()),
                             height=200,
-                            key=ff_key,
-                            label_visibility="collapsed",
+                            key=f"pl_ff_s_{rid}",
                             disabled=not can_edit,
                         )
                         if can_edit:
-                            c_edit = st.columns([1, 1, 1, 1])
-                            with c_edit[0]:
-                                new_fyc = st.number_input(
-                                    "FYC",
-                                    min_value=0.0,
-                                    value=float(row["fyc"]),
-                                    step=1000.0,
-                                    key=f"pl_fyc_s_{rid}",
-                                )
-                            with c_edit[1]:
-                                new_prod = st.text_input(
-                                    "Products",
-                                    value=str(row.get("selling_products") or ""),
-                                    key=f"pl_prod_s_{rid}",
-                                )
-                            with c_edit[2]:
+                            c1, c2 = st.columns(2)
+                            with c1:
                                 if st.button("儲存", key=f"pl_save_s_{rid}", use_container_width=True):
                                     try:
+                                        new_prems = {
+                                            p["key"]: float(
+                                                st.session_state.get(f"pl_ed_{rid}_{p['key']}", 0)
+                                                or 0
+                                            )
+                                            for p in PRODUCT_CATALOG
+                                        }
+                                        new_prems = {k: v for k, v in new_prems.items() if v > 0}
                                         pr.update_prospect(
                                             rid,
-                                            {
-                                                "factfind": ff_val,
-                                                "fyc": new_fyc,
-                                                "selling_products": new_prod,
-                                            },
+                                            {"factfind": ff_val, "premiums": new_prems},
                                         )
                                         st.toast("已儲存", icon="✅")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(str(e))
-                            with c_edit[3]:
+                            with c2:
                                 if st.button("刪除", key=f"pl_del_s_{rid}", use_container_width=True):
                                     pr.delete_prospect(rid)
                                     st.rerun()
@@ -4558,7 +4624,7 @@ def page_prospect_list():
         )
 
         if can_edit:
-            with st.expander("＋ 新增招募 Prospect", expanded=False):
+            with st.expander("＋ 新增準客戶（招募）", expanded=False):
                 with st.form("pl_add_recruit", clear_on_submit=True):
                     aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_ar_q")
                     an = st.text_input("Name", key="pl_ar_name")
@@ -4592,19 +4658,18 @@ def page_prospect_list():
                 expanded=(q == ((datetime.date.today().month - 1) // 3 + 1)),
             ):
                 if qdf.empty:
-                    st.caption("呢季未有 prospect。")
+                    st.caption("呢季未有準客戶。")
                     continue
                 for _, row in qdf.iterrows():
                     rid = row["id"]
                     cat = row.get("recruit_category") or "—"
                     st.markdown(f"**{row['name']}** · `{cat}`")
                     with st.expander("Fact find 15 條", expanded=False):
-                        ff_key = f"pl_ff_r_{rid}"
                         ff_val = st.text_area(
                             "Fact find",
                             value=str(row.get("factfind") or pr.factfind_template()),
                             height=200,
-                            key=ff_key,
+                            key=f"pl_ff_r_{rid}",
                             label_visibility="collapsed",
                             disabled=not can_edit,
                         )
@@ -4638,6 +4703,7 @@ def page_prospect_list():
                                     pr.delete_prospect(rid)
                                     st.rerun()
                     st.divider()
+
 
 
 def page_profile():
@@ -4726,9 +4792,9 @@ elif "醫療融資" in menu:
     _safe_page("醫療融資計算機", page_medical_finance)
 elif "保險公司新人" in menu or "Package 對比" in menu:
     _safe_page("保險公司新人 Package 對比", page_recruit_package_compare)
-elif "Prospect List" in menu:
-    _safe_page("Prospect List", page_prospect_list)
+elif "準客戶名單" in menu or "Prospect List" in menu:
+    _safe_page("準客戶名單", page_prospect_list)
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T08:35Z
+# cloud_redeploy_stamp: 2026-10-16T09:00Z
