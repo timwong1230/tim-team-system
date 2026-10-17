@@ -336,14 +336,37 @@ def render_install_guide(*, compact: bool = False) -> None:
 
 
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
-    """Compact top navigation for phones (avoids opening sidebar every time)."""
-    idx = 0
-    if current and current in menu_items:
-        idx = menu_items.index(current)
+    """Compact top navigation for phones (avoids opening sidebar every time).
+
+    Important: programmatic jumps (Home buttons) must set session key
+    ``mobile_top_nav`` as well as ``_menu_choice``. Once a selectbox has a
+    ``key``, Streamlit ignores ``index=`` — so we sync the key *before*
+    instantiating the widget.
+    """
+    valid = list(menu_items or [])
+    if not valid:
+        return current or ""
+
+    # Prefer explicit current (from _menu_choice after a button nav)
+    target = current if current in valid else None
+    existing = st.session_state.get("mobile_top_nav")
+    if target is not None and existing != target:
+        st.session_state["mobile_top_nav"] = target
+    elif existing not in valid:
+        st.session_state["mobile_top_nav"] = target or valid[0]
+
     return st.selectbox(
         "功能選單",
-        menu_items,
-        index=idx,
+        valid,
         key="mobile_top_nav",
         label_visibility="collapsed",
     )
+
+
+def go_menu(label: str, **extra) -> None:
+    """Navigate to a menu page and keep mobile selectbox in sync."""
+    st.session_state["_menu_choice"] = label
+    st.session_state["mobile_top_nav"] = label
+    for k, v in extra.items():
+        st.session_state[k] = v
+    st.rerun()

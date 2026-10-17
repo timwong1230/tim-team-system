@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-17T03:15Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-17T03:35Z
 
 
 from __future__ import annotations
@@ -778,6 +778,7 @@ def service_account_email():
     return _drive().service_account_email()
 
 from tt_core.mobile import (
+    go_menu,
     inject_pwa_head,
     is_mobile,
     mobile_top_nav,
@@ -1110,19 +1111,21 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
             st.rerun()
     with c2:
         if st.button("去打卡更新", key=f"{key_prefix}_go_{rid}", use_container_width=True):
-            st.session_state["_menu_choice"] = "📝 打卡 Check-in"
-            st.session_state["ci_prefill_person"] = person
-            st.session_state["ci_prefill_track"] = track
-            st.rerun()
+            go_menu(
+                "📝 打卡 Check-in",
+                ci_prefill_person=person,
+                ci_prefill_track=track,
+            )
     with c3:
         if st.button("問 Coach Tim", key=f"{key_prefix}_coach_{rid}", use_container_width=True):
-            st.session_state["_menu_choice"] = "🧠 Coach Tim"
-            st.session_state["coach_tim_pending"] = (
-                f"幫我跟進呢單：{person}（{track}｜{stage}）。"
-                f"Next action：{action or '未填'}；日期：{nd_str}。"
-                "請俾我今日具體講法同下一步。"
+            go_menu(
+                "🧠 Coach Tim",
+                coach_tim_pending=(
+                    f"幫我跟進呢單：{person}（{track}｜{stage}）。"
+                    f"Next action：{action or '未填'}；日期：{nd_str}。"
+                    "請俾我今日具體講法同下一步。"
+                ),
             )
-            st.rerun()
     st.divider()
 
 
@@ -1176,26 +1179,35 @@ def page_home():
         for _, row in upcoming.iterrows():
             _render_followup_item(row, key_prefix="home_up")
 
-    b1, b2, b3 = st.columns(3)
-    with b1:
+    # Stack on mobile — 3 narrow columns made taps unreliable / easy to miss
+    if MOBILE:
         if st.button("＋ 去打卡（做數／招募）", type="primary", use_container_width=True, key="home_go_checkin"):
-            st.session_state["_menu_choice"] = "📝 打卡 Check-in"
-            st.rerun()
-    with b2:
+            go_menu("📝 打卡 Check-in")
         if st.button("📋 準客戶名單", use_container_width=True, key="home_go_prospects"):
-            st.session_state["_menu_choice"] = "📋 準客戶名單"
-            st.rerun()
-    with b3:
+            go_menu("📋 準客戶名單")
         if st.button("🧠 問 Coach Tim", use_container_width=True, key="home_go_coach"):
-            st.session_state["_menu_choice"] = "🧠 Coach Tim"
-            if not due.empty:
-                row0 = due.iloc[0]
-                st.session_state["coach_tim_pending"] = (
-                    f"幫我排今日優先次序，先從 {row0.get('person')} 開始點跟？"
+            pending = (
+                f"幫我排今日優先次序，先從 {due.iloc[0].get('person')} 開始點跟？"
+                if not due.empty
+                else "根據我而家嘅 M+2 數據，今日最應該做咩？"
+            )
+            go_menu("🧠 Coach Tim", coach_tim_pending=pending)
+    else:
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            if st.button("＋ 去打卡（做數／招募）", type="primary", use_container_width=True, key="home_go_checkin"):
+                go_menu("📝 打卡 Check-in")
+        with b2:
+            if st.button("📋 準客戶名單", use_container_width=True, key="home_go_prospects"):
+                go_menu("📋 準客戶名單")
+        with b3:
+            if st.button("🧠 問 Coach Tim", use_container_width=True, key="home_go_coach"):
+                pending = (
+                    f"幫我排今日優先次序，先從 {due.iloc[0].get('person')} 開始點跟？"
+                    if not due.empty
+                    else "根據我而家嘅 M+2 數據，今日最應該做咩？"
                 )
-            else:
-                st.session_state["coach_tim_pending"] = "根據我而家嘅 M+2 數據，今日最應該做咩？"
-            st.rerun()
+                go_menu("🧠 Coach Tim", coach_tim_pending=pending)
 
     with st.expander("團隊最新動態", expanded=False):
         acts = get_all_act().head(5)
@@ -2603,10 +2615,11 @@ def _render_stuck_case_rows(stuck: pd.DataFrame, *, key_prefix: str) -> None:
                 st.rerun()
         with b2:
             if st.button("去打卡更新", key=f"{key_prefix}_go_{rid}", use_container_width=True):
-                st.session_state["_menu_choice"] = "📝 打卡 Check-in"
-                st.session_state["ci_prefill_person"] = person
-                st.session_state["ci_prefill_track"] = track
-                st.rerun()
+                go_menu(
+                    "📝 打卡 Check-in",
+                    ci_prefill_person=person,
+                    ci_prefill_track=track,
+                )
         st.divider()
 
 
@@ -5026,10 +5039,11 @@ def _safe_page(label: str, fn):
     except Exception as e:
         st.session_state["_force_home_once"] = True
         st.session_state["_menu_choice"] = "🏠 我的主頁"
+        st.session_state["mobile_top_nav"] = "🏠 我的主頁"
         st.error(f"{label} 暫時無法開啟：{e}")
         st.caption("可以撳側欄其他功能，或登出再入。若持續出現請 Reboot app。")
         if st.button("返回主頁", type="primary", key=f"safe_home_{label}"):
-            st.rerun()
+            go_menu("🏠 我的主頁")
 
 if "我的主頁" in menu:
     _safe_page("我的主頁", page_home)
@@ -5065,4 +5079,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-17T03:15Z
+# cloud_redeploy_stamp: 2026-10-17T03:35Z
