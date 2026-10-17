@@ -20,6 +20,7 @@ from tt_core.coach_tim import (  # noqa: E402
     choose_tools,
     format_context_markdown,
     gather_live_context,
+    mask_api_key,
     offline_reply,
     reply,
     system_prompt,
@@ -216,6 +217,17 @@ def test_offline_uses_tool_hits_for_named_case():
     assert "Concept" in r or "約簽單" in r
 
 
+def test_mask_api_key():
+    assert "sk-proj" in mask_api_key("sk-proj-abcdefghijklmnop")
+    assert "…" in mask_api_key("sk-proj-abcdefghijklmnop")
+
+
+def test_system_prompt_telegram_style():
+    sp = system_prompt(_sample_ctx())
+    assert "Telegram" in sp or "私人教練" in sp
+    assert "Tim" in sp
+
+
 def test_app_wired():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "🧠 Coach Tim" in src
@@ -225,7 +237,8 @@ def test_app_wired():
     assert "嵌喺 M+2" not in src
     assert "嵌入 M+2" not in src
     assert "Phase 1 只俾建議" not in src
-    assert "查緊最新數據" in src
+    assert "save_openai_api_key" in src
+    assert "接通 AI" in src
     assert "TOOL_CATALOG" in src
 
 

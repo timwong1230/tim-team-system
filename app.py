@@ -1228,7 +1228,7 @@ def page_home():
 
 
 def page_coach_tim():
-    """Coach Tim chat with live M+2 context."""
+    """Coach Tim AI chat — personal M+2 context (Telegram-style team bot)."""
     try:
         from tt_core import coach_tim as ct
         import importlib
@@ -1240,11 +1240,21 @@ def page_coach_tim():
 
     user = st.session_state["user"]
     role = st.session_state.get("role") or "Member"
+    ai_on = ct.llm_configured()
 
     st.markdown("## 🧠 Coach Tim")
+    if ai_on:
+        st.success(
+            "AI 教練已接通——會按你嘅業績、跟進同準客戶即時答（全隊共用一把 key，好似 Telegram bot）。"
+        )
+    else:
+        st.info(
+            "而家用內建教練。Leader 喺下面「接通 AI」貼上 OpenAI key 之後，"
+            "全隊就可以好似 Telegram Coach Tim 咁自由傾偈。"
+        )
     st.caption(
-        "已讀你嘅今日要跟、本週活動、MDRT／Extra 10。"
-        "問個案名會即時查最新跟進／準客戶——直接問優先次序同下一句點開。"
+        "每次對話會讀你嘅今日要跟、本週活動、MDRT／Extra 10 同準客戶——"
+        "問下一步點做、拆邊單都得。"
     )
 
     try:
@@ -1272,24 +1282,71 @@ def page_coach_tim():
             "prospects": [],
         }
 
-    with st.expander("而家讀到嘅 M+2 數據", expanded=False):
+    with st.expander("而家讀到嘅我嘅 M+2 數據", expanded=False):
         st.markdown(ct.format_context_markdown(ctx))
-        # Secrets setup is admin-only — members just use Coach Tim.
-        if role == "Leader":
-            if ct.llm_configured():
-                st.success("已接 OpenAI（Streamlit secrets）")
-            else:
-                st.caption(
-                    "Admin：未設 OpenAI key 時用內建教練。"
-                    "可喺 secrets 加 `openai.api_key` 或 `coach_tim.api_key`。"
-                )
+
+    # Leader: paste OpenAI key once → whole team gets Telegram-like AI
+    if role == "Leader":
+        with st.expander("Leader：接通 AI 教練（全隊共用）", expanded=not ai_on):
+            st.markdown(
+                "好似 Telegram bot：**一把 OpenAI API key**，同事用自己帳號入嚟就自動帶自己數據傾偈。"
+                "Key 喺 [platform.openai.com](https://platform.openai.com/api-keys) 開（要儲值）。"
+            )
+            existing = ct._secret_openai_key()
+            if existing:
+                st.caption(f"而家用緊：`{ct.mask_api_key(existing)}`")
+            new_key = st.text_input(
+                "OpenAI API key",
+                value="",
+                type="password",
+                placeholder="sk-…",
+                key="ct_api_key_input",
+                help="只顯示俾 Leader；同事唔使自己有 ChatGPT。",
+            )
+            c_save, c_clear, c_tg = st.columns(3)
+            with c_save:
+                if st.button("儲存並接通 AI", type="primary", use_container_width=True, key="ct_save_key"):
+                    if new_key.strip().startswith("sk-") or new_key.strip().startswith("sk-proj-"):
+                        if ct.save_openai_api_key(new_key.strip()):
+                            st.session_state.pop("coach_tim_messages", None)
+                            st.toast("AI 教練已接通——全隊可用", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error("儲存失敗，請再試或改用 Streamlit Secrets。")
+                    else:
+                        st.warning("請貼以 sk- 開頭嘅 OpenAI API key。")
+            with c_clear:
+                if st.button("清除 key", use_container_width=True, key="ct_clear_key"):
+                    ct.clear_openai_api_key()
+                    st.session_state.pop("coach_tim_messages", None)
+                    st.toast("已清 key，改返內建教練", icon="ℹ️")
+                    st.rerun()
+            tg_default = ct.get_telegram_coach_url()
+            tg_url = st.text_input(
+                "（可選）Telegram Coach Tim 連結",
+                value=tg_default,
+                placeholder="https://t.me/你的bot",
+                key="ct_tg_url",
+            )
+            with c_tg:
+                if st.button("儲存 Telegram 連結", use_container_width=True, key="ct_save_tg"):
+                    ct.save_telegram_coach_url(tg_url)
+                    st.toast("已儲存", icon="✅")
+                    st.rerun()
+            st.caption(
+                "亦可以改喺 Streamlit Cloud → Settings → Secrets 加：\n"
+                '`openai.api_key = "sk-..."`'
+            )
+
+    tg_link = ct.get_telegram_coach_url()
+    if tg_link:
+        st.markdown(f"[亦可喺 Telegram 開 Coach Tim]({tg_link})")
 
     if "coach_tim_messages" not in st.session_state:
         st.session_state["coach_tim_messages"] = [
             {"role": "assistant", "content": ct.welcome_message(ctx)}
         ]
 
-    # Quick prompts
     q1, q2, q3 = st.columns(3)
     quick = None
     with q1:
@@ -1327,7 +1384,12 @@ def page_coach_tim():
             for m in st.session_state["coach_tim_messages"][:-1]
             if m["role"] in ("user", "assistant")
         ]
-        with st.spinner("Coach Tim 查緊最新數據…"):
+        # Skip welcome in API history to save tokens / reduce prompt noise
+        history = [m for m in history if not (
+            m["role"] == "assistant" and m["content"].startswith("你好")
+        )][-12:]
+        spinner = "Coach Tim AI 諗緊…" if ai_on else "Coach Tim 查緊最新數據…"
+        with st.spinner(spinner):
             result = ct.reply(user_text, history, ctx)
             if isinstance(result, tuple) and len(result) == 3:
                 answer, mode, meta = result
@@ -1335,7 +1397,7 @@ def page_coach_tim():
                 answer, mode = result[0], result[1]
                 meta = {}
             tools_used = (meta or {}).get("tools_used") or []
-            if tools_used:
+            if tools_used and mode == "offline":
                 labels = [ct.TOOL_CATALOG.get(t, t) for t in tools_used]
                 answer = answer + "\n\n—\n_已查：" + "、".join(labels) + "_"
         st.session_state["coach_tim_messages"].append({"role": "assistant", "content": answer})

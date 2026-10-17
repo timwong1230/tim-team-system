@@ -17,6 +17,10 @@ from tt_core.constants import MDRT_TARGET, Q1_TARGET, WEEKLY_MIN_ACTS
 COACH_MENU = "🧠 Coach Tim"
 DEFAULT_MODEL = "gpt-4o-mini"
 MAX_TOOLS_PER_TURN = 3
+SETTING_API_KEY = "coach_tim_openai_api_key"
+SETTING_MODEL = "coach_tim_openai_model"
+SETTING_TELEGRAM_URL = "coach_tim_telegram_url"
+_SETTINGS_SHEET = "system_settings"
 
 # Stable tool names (internal API — read only)
 TOOL_MEMBER_SNAPSHOT = "get_member_snapshot"
@@ -38,7 +42,78 @@ TOOL_CATALOG: dict[str, str] = {
 }
 
 
+def _settings_get(key: str, default: str = "") -> str:
+    """Read system_settings / session — same pattern as Team SC (Cloud-safe)."""
+    try:
+        import streamlit as st
+
+        ss = st.session_state.get(f"_setting_{key}")
+        if ss is not None and str(ss).strip():
+            return str(ss).strip()
+    except Exception:
+        pass
+    try:
+        from tt_core.db import read_data
+
+        df = read_data(_SETTINGS_SHEET)
+        if df is None or getattr(df, "empty", True) or "key" not in df.columns:
+            return default
+        hit = df[df["key"].astype(str) == key]
+        if hit.empty:
+            return default
+        return str(hit.iloc[0].get("value", default) or default).strip() or default
+    except Exception:
+        return default
+
+
+def _settings_set(key: str, value: str) -> bool:
+    import datetime as _dt
+
+    value = str(value or "").strip()
+    try:
+        import streamlit as st
+
+        if value:
+            st.session_state[f"_setting_{key}"] = value
+        else:
+            st.session_state.pop(f"_setting_{key}", None)
+    except Exception:
+        pass
+    try:
+        from tt_core.db import read_data, run_query_gs
+
+        now = str(_dt.datetime.now())
+        df = read_data(_SETTINGS_SHEET)
+        if df is not None and not df.empty and "key" in df.columns:
+            hit = df[df["key"].astype(str) == key]
+            if (
+                not hit.empty
+                and "id" in df.columns
+                and str(hit.iloc[0].get("id", "")).strip()
+            ):
+                return bool(
+                    run_query_gs(
+                        "UPDATE",
+                        _SETTINGS_SHEET,
+                        {"value": value, "updated_at": now},
+                        row_id=hit.iloc[0]["id"],
+                    )
+                )
+        if not value:
+            return True
+        return bool(
+            run_query_gs(
+                "INSERT",
+                _SETTINGS_SHEET,
+                {"key": key, "value": value, "updated_at": now},
+            )
+        )
+    except Exception:
+        return bool(value)  # session-only fallback still usable this run
+
+
 def _secret_openai_key() -> str:
+    """Streamlit secrets first (preferred), then Leader-saved system_settings."""
     try:
         import streamlit as st
 
@@ -62,7 +137,7 @@ def _secret_openai_key() -> str:
                 return str(st.secrets[k]).strip()
     except Exception:
         pass
-    return ""
+    return _settings_get(SETTING_API_KEY, "")
 
 
 def _secret_model() -> str:
@@ -77,11 +152,46 @@ def _secret_model() -> str:
                 return str(m).strip()
     except Exception:
         pass
-    return DEFAULT_MODEL
+    saved = _settings_get(SETTING_MODEL, "")
+    return saved or DEFAULT_MODEL
 
 
 def llm_configured() -> bool:
     return bool(_secret_openai_key())
+
+
+def save_openai_api_key(api_key: str) -> bool:
+    """Leader saves team OpenAI key (like one Telegram bot token for everyone)."""
+    key = str(api_key or "").strip()
+    if not key:
+        return False
+    return _settings_set(SETTING_API_KEY, key)
+
+
+def clear_openai_api_key() -> bool:
+    return _settings_set(SETTING_API_KEY, "")
+
+
+def mask_api_key(api_key: str) -> str:
+    k = str(api_key or "").strip()
+    if len(k) < 12:
+        return "••••" if k else ""
+    return f"{k[:7]}…{k[-4:]}"
+
+
+def get_telegram_coach_url() -> str:
+    try:
+        import streamlit as st
+
+        if "coach_tim" in st.secrets and st.secrets["coach_tim"].get("telegram_url"):
+            return str(st.secrets["coach_tim"]["telegram_url"]).strip()
+    except Exception:
+        pass
+    return _settings_get(SETTING_TELEGRAM_URL, "")
+
+
+def save_telegram_coach_url(url: str) -> bool:
+    return _settings_set(SETTING_TELEGRAM_URL, str(url or "").strip())
 
 
 def _fu_rows(df, limit: int = 8) -> list[dict]:
@@ -556,19 +666,22 @@ def system_prompt(ctx: dict[str, Any]) -> str:
     if tools_used:
         labels = [TOOL_CATALOG.get(t, t) for t in tools_used]
         tool_note = "\n本回合已即時查過：" + "、".join(labels) + "。\n"
-    return f"""你係 Coach Tim——TIM TEAM（M+2）嘅教練助手。用香港粵語為主、間中書面語，直接、務實、鼓勵但不吹水。
+    who = ctx.get("username") or "呢位同事"
+    return f"""你係 Coach Tim——TIM TEAM 嘅私人教練（同 Telegram Coach Tim 同一個角色）。
+用香港粵語為主、間中書面語。直接、務實、鼓勵但不吹水。好似喺 Telegram 一對一傾偈。
 
-你而家喺 M+2 管理系統入面，已經用內部 tools 讀到呢位同事嘅即時數據（唔好估數，以下係真相）：
+而家喺 M+2 App 入面同 **{who}** 傾偈。以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
 {tool_note}
 {briefing}
 
 職責：
-1. 幫佢決定「而家最緊要做邊一件」——優先清卡案／今日要跟，再補本週活動。
-2. 跟進建議要具體：下一句點開、點約 next appointment、Fact find 邊條要補。
-3. 業績／Extra 10／MDRT 只引用上面數字；唔好發明 FYC。
-4. 回覆短：2–6 句＋最多 3 個 bullet action。
-5. 如果問工具（醫療融資、準客戶、打卡），引導佢去 M+2 對應功能，並講點用。
-6. 你只讀數據同俾建議；唔好話自己已經改咗系統資料。
+1. 按佢問嘅問題答——唔好每次都背同一套 Extra 10 講稿。
+2. 幫佢決定「而家最緊要做邊一件」：優先清卡案／今日要跟，再補本週活動，再衝準客戶／MDRT。
+3. 跟進建議要具體：下一句點開、點約 next appointment、Fact find 邊條要補。
+4. 數字只引用上面 briefing；冇嘅就話未讀到，叫佢去對應頁更新。
+5. 回覆短：2–8 句＋最多 3 個 bullet action；可以追問個案名。
+6. 如果問醫療融資／保障缺口／打卡／準客戶名單，引導去 M+2 對應功能。
+7. 你只讀數據同俾建議；唔好話自己已經改咗系統資料。
 """
 
 
@@ -926,9 +1039,11 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     due_n = len(ctx.get("due") or [])
     name = ctx.get("username") or ""
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
+    ai = llm_configured()
+    mode = "（AI 教練——按你嘅即時數據自由傾）" if ai else "（內建教練——跟問題類型答）"
     return (
-        f"你好 {name}，我係 **Coach Tim**。"
-        f"我已經讀咗你嘅業績、本週活動同跟進清單。{bit}\n\n"
-        "可以問我：而家先做邊單、點開下一句、點補本週活動、Extra 10／MDRT 進度。"
-        "講個案名我會即時幫你查最新跟進／準客戶資料。"
+        f"你好 {name}，我係 **Coach Tim** {mode}。"
+        f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
+        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10——"
+        "講個案名我會即時查最新資料。"
     )
