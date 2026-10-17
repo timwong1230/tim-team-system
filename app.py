@@ -842,7 +842,7 @@ try:
     PHONE = is_phone()
 except Exception:
     PHONE = bool(MOBILE and not TABLET)
-# iPad / tablet: left sidebar menu (not the phone top selectbox)
+# iPad / tablet: left sidebar menu (not the phone top popover)
 SIDEBAR_NAV = (not MOBILE) or TABLET
 
 try:
@@ -1021,7 +1021,7 @@ except Exception:
     st.session_state.pop("_iris_last_preview", None)
 
 # One-time escape hatch after previous crash / bad menu
-# _nav_pending is applied by mobile_top_nav before the selectbox exists.
+# _nav_pending is applied by mobile_top_nav before the phone popover renders.
 if st.session_state.get("_force_home_once"):
     _reset_nav_to_home()
 
@@ -1128,7 +1128,7 @@ with st.sidebar:
         st.caption("尚未同步業績")
 
     st.markdown('<div class="tt-side-nav-label">導航</div>', unsafe_allow_html=True)
-    # Desktop + iPad: button nav (no radio dots). Phone: top selectbox.
+    # Desktop + iPad: button nav (no radio dots). Phone: top popover.
     menu = st.session_state.get("_menu_choice", menu_items[0])
     if SIDEBAR_NAV:
         menu = _render_sidebar_nav(menu_items)
@@ -5708,7 +5708,7 @@ def _safe_page(label: str, fn):
     try:
         fn()
     except Exception as e:
-        # Do not set mobile_top_nav here — selectbox already exists this run.
+        # Do not set mobile_top_nav here — phone nav already rendered this run.
         # _force_home_once + _menu_choice sync on the next script start.
         st.session_state["_force_home_once"] = True
         st.session_state["_menu_choice"] = HOME_MENU
