@@ -783,6 +783,8 @@ from tt_core.mobile import (
     go_menu,
     inject_pwa_head,
     is_mobile,
+    is_phone,
+    is_tablet,
     mobile_top_nav,
     render_install_guide,
 )
@@ -832,13 +834,23 @@ try:
     MOBILE = is_mobile()
 except Exception:
     MOBILE = False
+try:
+    TABLET = is_tablet()
+except Exception:
+    TABLET = False
+try:
+    PHONE = is_phone()
+except Exception:
+    PHONE = bool(MOBILE and not TABLET)
+# iPad / tablet: left sidebar menu (not the phone top selectbox)
+SIDEBAR_NAV = (not MOBILE) or TABLET
 
 try:
     st.set_page_config(
         page_title=BRAND_NAME,
         page_icon=page_icon_arg(),
-        layout="centered" if MOBILE else "wide",
-        initial_sidebar_state="collapsed" if MOBILE else "expanded",
+        layout="centered" if PHONE else "wide",
+        initial_sidebar_state="collapsed" if PHONE else "expanded",
     )
 except Exception:
     try:
@@ -1050,26 +1062,33 @@ elif _prev_menu in _LEGACY_RECRUIT_TOOL_MAP:
         st.session_state["_nav_pending"] = RECRUIT_TOOLS_MENU
 
 with st.sidebar:
-    st.markdown("<br>", unsafe_allow_html=True)
-    c_avt, c_txt = st.columns([1, 2])
-    with c_avt:
-        if st.session_state.get("avatar"):
-            st.image(st.session_state["avatar"], width=64 if MOBILE else 72)
-    with c_txt:
-        st.markdown(
-            f"<h3 style='margin:0'>{st.session_state['user']}</h3>",
-            unsafe_allow_html=True,
-        )
-        st.caption(f"{st.session_state['role']} · {BRAND_NAME}")
+    st.markdown(
+        f"""
+        <div class="tt-side-brand">
+          <div class="tt-side-kicker">{BRAND_SYSTEM}</div>
+          <div class="tt-side-user">{st.session_state['user']}</div>
+          <div class="tt-side-role">{st.session_state['role']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.session_state.get("avatar"):
+        st.image(st.session_state["avatar"], width=56 if SIDEBAR_NAV else 64)
 
     if conn["level"] == "ok":
-        st.success(conn["label"], icon="⚡")
+        st.caption(f"⚡ {conn['label']}")
     elif conn["level"] == "degraded":
-        st.warning(conn["label"], icon="📡")
+        st.caption(f"📡 {conn['label']}")
     else:
-        st.info(conn["label"])
+        st.caption(conn["label"])
 
-    if st.button("重新整理數據", use_container_width=True, help="強制向 Google Sheets 拉最新數據"):
+    if st.button(
+        "重新整理數據",
+        use_container_width=True,
+        type="secondary",
+        help="強制向 Google Sheets 拉最新數據",
+        key="sidebar_refresh",
+    ):
         with st.spinner("同步雲端…"):
             warm_cache(force=True)
         st.toast("數據已更新", icon="✅")
@@ -1077,17 +1096,13 @@ with st.sidebar:
 
     sync = last_iris_sync()
     if sync:
-        st.caption(f"Iris 上次同步：{str(sync.get('synced_at', ''))[:16]}")
+        st.caption(f"同步 {str(sync.get('synced_at', ''))[:16]}")
     else:
-        st.caption("Iris 尚未同步業績")
+        st.caption("尚未同步業績")
 
-    st.divider()
-    # Desktop: full radio menu in sidebar. Mobile: short list + top selectbox.
-    if MOBILE:
-        st.caption("手機可用上方選單切換功能；側欄放設定同登出。")
-        render_install_guide(compact=True)
-    else:
-        # Keyed radio so logout/login can reset to HOME_MENU (unstated radio sticks).
+    st.markdown('<div class="tt-side-nav-label">功能選單</div>', unsafe_allow_html=True)
+    # Desktop + iPad: radio nav in sidebar. Phone: top selectbox instead.
+    if SIDEBAR_NAV:
         if st.session_state.get("desktop_main_menu") not in menu_items:
             st.session_state["desktop_main_menu"] = (
                 st.session_state["_menu_choice"]
@@ -1101,14 +1116,17 @@ with st.sidebar:
             label_visibility="collapsed",
         )
         st.session_state["_menu_choice"] = menu_sidebar
+    else:
+        st.caption("用上方選單切換功能；側欄放設定同登出。")
+        render_install_guide(compact=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("登出", use_container_width=True, type="secondary"):
+    st.markdown('<div class="tt-side-spacer"></div>', unsafe_allow_html=True)
+    if st.button("登出", use_container_width=True, type="secondary", key="sidebar_logout"):
         st.session_state["logged_in"] = False
         _reset_nav_to_home()
         st.rerun()
 
-if MOBILE:
+if PHONE:
     st.markdown('<div class="tt-mobile-nav">', unsafe_allow_html=True)
     menu = mobile_top_nav(menu_items, st.session_state.get("_menu_choice"))
     st.session_state["_menu_choice"] = menu

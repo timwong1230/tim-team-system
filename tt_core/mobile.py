@@ -63,13 +63,16 @@ def _brand_bits():
     return name, system, favicon, icon, icon_big, icon_local, icon_local_big, data_icon
 
 
+def _user_agent() -> str:
+    try:
+        return (st.context.headers.get("User-Agent") or "") if hasattr(st, "context") else ""
+    except Exception:
+        return ""
+
+
 def is_mobile() -> bool:
     """Best-effort mobile/tablet detect from request User-Agent."""
-    try:
-        ua = (st.context.headers.get("User-Agent") or "") if hasattr(st, "context") else ""
-    except Exception:
-        ua = ""
-    ua_l = ua.lower()
+    ua_l = _user_agent().lower()
     return any(
         k in ua_l
         for k in (
@@ -84,12 +87,24 @@ def is_mobile() -> bool:
     )
 
 
+def is_tablet() -> bool:
+    """iPad / Android tablet — prefer left sidebar nav over phone top selectbox."""
+    ua_l = _user_agent().lower()
+    if "ipad" in ua_l or "tablet" in ua_l:
+        return True
+    # Android tablets often omit "mobile" in UA
+    if "android" in ua_l and "mobile" not in ua_l:
+        return True
+    return False
+
+
+def is_phone() -> bool:
+    """True phones only — not iPad/tablet."""
+    return bool(is_mobile() and not is_tablet())
+
+
 def is_ios() -> bool:
-    try:
-        ua = (st.context.headers.get("User-Agent") or "") if hasattr(st, "context") else ""
-    except Exception:
-        ua = ""
-    ua_l = ua.lower()
+    ua_l = _user_agent().lower()
     return any(k in ua_l for k in ("iphone", "ipad", "ipod"))
 
 
