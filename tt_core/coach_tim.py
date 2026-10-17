@@ -1175,12 +1175,8 @@ def reply(
             return text, "openai", meta
         except Exception as e:
             fallback = offline_reply(user_text, live_ctx)
-            hint = f"（AI 連線暫時失敗：{e}"
-            if gemini_err:
-                hint += f"；Gemini：{gemini_err}"
-            hint += "）"
             return (
-                f"{hint}\n\n改用本地教練建議：\n\n{fallback}",
+                f"（AI 暫時連線唔到）\n\n改用本地建議：\n\n{fallback}",
                 "offline",
                 meta,
             )
@@ -1188,7 +1184,7 @@ def reply(
     if gemini_err:
         fallback = offline_reply(user_text, live_ctx)
         return (
-            f"（免費 Gemini 連線失敗：{gemini_err}）\n\n改用本地教練：\n\n{fallback}",
+            f"（AI 暫時連線唔到）\n\n改用本地建議：\n\n{fallback}",
             "offline",
             meta,
         )
@@ -1199,15 +1195,9 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     due_n = len(ctx.get("due") or [])
     name = ctx.get("username") or ""
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
-    prov = llm_provider()
-    if prov == "gemini":
-        mode = "（免費 AI 教練 · Gemini——按你即時數據自由傾）"
-    elif prov == "openai":
-        mode = "（AI 教練——按你嘅即時數據自由傾）"
-    else:
-        mode = "（內建教練——跟問題類型答）"
+    mode = "AI 教練" if llm_configured() else "教練"
     return (
-        f"你好 {name}，我係 **Coach Tim** {mode}。"
+        f"你好 {name}，我係 **Coach Tim**（{mode}）。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
         "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10——"
         "講個案名我會即時查最新資料。"

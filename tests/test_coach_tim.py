@@ -272,7 +272,8 @@ def test_app_wired():
     assert "嵌入 M+2" not in src
     assert "Phase 1 只俾建議" not in src
     assert "save_gemini_api_key" in src
-    assert "免費接通 AI" in src
+    assert "接通 AI 教練" in src
+    assert "免費 AI（Gemini）" not in src
     assert "TOOL_CATALOG" in src
 
 
