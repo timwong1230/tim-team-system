@@ -47,10 +47,11 @@ def test_app_uses_button_sidebar_nav_not_radio():
     assert "st.button" in side_nav_fn
 
 
-def test_sidebar_css_has_gold_frame_on_active():
+def test_sidebar_css_has_subtle_active_state():
     assert ".tt-nav-item-active" in _STYLES
     assert ".tt-nav-bar" in _STYLES
-    assert "border: 1.5px solid #C5A028" in _STYLES
-    assert '[data-testid="stSidebar"] div.stButton > button' in _STYLES
-    # Inactive items keep a light frame
-    assert "border: 1.5px solid var(--line)" in _STYLES
+    assert "background: #F7F1DE" in _STYLES
+    assert "border: 1px solid #D4AF37" in _STYLES
+    # No flashy glow / top gold stripe
+    assert "tt-nav-item-active::before" not in _STYLES
+    assert "0 6px 18px rgba(197, 160, 40" not in _STYLES
