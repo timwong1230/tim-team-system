@@ -364,9 +364,15 @@ def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
 
 
 def go_menu(label: str, **extra) -> None:
-    """Navigate to a menu page and keep mobile selectbox in sync."""
+    """Navigate to a menu page; mobile selectbox syncs on the next run.
+
+    Only write ``_menu_choice`` here. On phones the ``mobile_top_nav`` selectbox
+    is already instantiated above Home buttons — assigning that widget key in
+    the same run raises ``StreamlitWidgetAlreadyInstantiatedError`` and the
+    click looks dead. ``mobile_top_nav()`` copies ``_menu_choice`` into the
+    selectbox key *before* creating the widget on the following rerun.
+    """
     st.session_state["_menu_choice"] = label
-    st.session_state["mobile_top_nav"] = label
     for k, v in extra.items():
         st.session_state[k] = v
     st.rerun()

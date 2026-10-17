@@ -945,8 +945,10 @@ except Exception:
     st.session_state.pop("_iris_last_preview", None)
 
 # One-time escape hatch after previous crash / bad menu
+# Runs before mobile selectbox — safe to sync both keys here.
 if st.session_state.get("_force_home_once"):
     st.session_state["_menu_choice"] = "🏠 我的主頁"
+    st.session_state["mobile_top_nav"] = "🏠 我的主頁"
     st.session_state.pop("_force_home_once", None)
 
 # Warm disk cache once per browser session so pages read locally (fast + offline-safe)
@@ -5037,9 +5039,10 @@ def _safe_page(label: str, fn):
     try:
         fn()
     except Exception as e:
+        # Do not set mobile_top_nav here — selectbox already exists this run.
+        # _force_home_once + _menu_choice sync on the next script start.
         st.session_state["_force_home_once"] = True
         st.session_state["_menu_choice"] = "🏠 我的主頁"
-        st.session_state["mobile_top_nav"] = "🏠 我的主頁"
         st.error(f"{label} 暫時無法開啟：{e}")
         st.caption("可以撳側欄其他功能，或登出再入。若持續出現請 Reboot app。")
         if st.button("返回主頁", type="primary", key=f"safe_home_{label}"):
