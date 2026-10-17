@@ -93,6 +93,28 @@ def test_offline_reply_week():
     assert "1/3" in r or "欠" in r
 
 
+def test_offline_meta_not_same_extra10_canned():
+    """Complaints about identical answers must not dump Extra 10 priority again."""
+    ctx = _sample_ctx(due=[], wk_count=3, wk_need=0, extra10_open=True)
+    r = offline_reply("即係我同你講咩，你都答一樣嘅答案？", ctx)
+    assert "分流" in r or "可以試" in r
+    assert "盈聚 5pay" not in r
+
+
+def test_offline_clarify_not_priority_template():
+    ctx = _sample_ctx(due=[], wk_need=0, extra10_open=True)
+    r = offline_reply("嗯", ctx)
+    assert "具體" in r or "例如" in r
+    assert "建議今日咁排" not in r
+
+
+def test_offline_priority_only_when_asked():
+    ctx = _sample_ctx(due=[], wk_need=0, extra10_open=True, prospects=[])
+    r = offline_reply("今日最應該做咩？", ctx)
+    assert "建議" in r or "排" in r
+    assert "Extra 10" in r or "準客戶" in r or "冇逾期" in r
+
+
 def test_welcome():
     w = welcome_message(_sample_ctx())
     assert "Coach Tim" in w

@@ -572,18 +572,129 @@ def system_prompt(ctx: dict[str, Any]) -> str:
 """
 
 
+def _offline_intent(text: str) -> str:
+    """Route offline replies by question type — avoid one canned answer for all."""
+    t = (text or "").strip()
+    low = t.lower()
+    if any(
+        k in t
+        for k in (
+            "一樣",
+            "同一個",
+            "每次都",
+            "都係答",
+            "重複",
+            "冇反應",
+            "聽唔明",
+            "答非所問",
+        )
+    ):
+        return "meta"
+    if any(k in t for k in ("你係邊", "你係誰", "你做咩", "點用你", "可以問咩", "點問")):
+        return "help"
+    if any(k in t for k in ("你好", "早晨", "晚安", "嗨", "hi ", "hello")) and len(t) < 12:
+        return "greet"
+    if any(k in low for k in ("mdrt", "業績", "extra 10", "extra10")) or (
+        "fyc" in low and "準客戶" not in t
+    ):
+        return "metrics"
+    if any(k in t for k in ("週", "活動", "罰款", "挑戰")) or (
+        "打卡" in t and "跟" not in t and "案" not in t
+    ):
+        return "week"
+    if any(k in t for k in ("招募", "出code", "IRP", "新人")):
+        return "recruit"
+    if any(k in t for k in ("準客戶", "prospect", "名單")):
+        return "prospect"
+    if any(k in t for k in ("未來", "七日", "7 日", "7日", "下週")):
+        return "upcoming"
+    if any(k in t for k in ("卡住", "stuck", "唔郁", "逾期好耐")):
+        return "stuck"
+    # Explicit priority / what should I do today
+    if any(k in t for k in ("優先", "最應該", "做咩", "今日做", "排程", "安排")):
+        return "priority"
+    if any(k in t for k in ("跟", "卡案", "要跟", "拆", "呢單", "個案", "follow", "next")):
+        return "followup"
+    if any(k in t for k in ("醫療融資", "保障缺口", "T-Account", "核保")):
+        return "tools"
+    return "clarify"
+
+
+def _priority_actions(ctx: dict[str, Any]) -> list[str]:
+    """Build priority bullets only when user asks what to do."""
+    due = ctx.get("due") or []
+    wk_need = int(ctx.get("wk_need") or 0)
+    actions: list[str] = []
+    if due:
+        top = due[0]
+        actions.append(
+            f"今日優先跟 **{top['person']}**（{top['track']}｜{top['stage']}）："
+            f"{top['next_action'] or '更新 Next action + 日期'}。"
+        )
+        if len(due) > 1:
+            actions.append(f"其餘仲有 {len(due) - 1} 宗今日／逾期案，清完先再拓新客。")
+    else:
+        actions.append("今日冇逾期／到期跟進——可以推準客戶或衝業績。")
+    if wk_need > 0:
+        actions.append(
+            f"本週仲欠 **{wk_need}** 次活動（而家 {ctx.get('wk_count')}/{ctx.get('wk_min')}）——"
+            "見面／傾保險／傾招募隨手打卡。"
+        )
+    pros = ctx.get("prospects") or []
+    if pros:
+        p = pros[0]
+        actions.append(
+            f"準客戶推進：**{p.get('name')}**（預估 FYC ${float(p.get('fyc') or 0):,.0f}）——"
+            "補 Fact find／約 next appointment。"
+        )
+    elif ctx.get("extra10_open"):
+        actions.append(
+            "Extra 10 已開——危疾／盈聚 5pay／扣稅年金用準客戶名單計 FYC。"
+        )
+    elif not ctx.get("extra10_open"):
+        actions.append(
+            f"Extra 10 尚欠 ${ctx.get('extra10_remaining', 0):,.0f} YTD 先有 ×1.1。"
+        )
+    return actions
+
+
 def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
-    """Useful coach without API key — grounded in live tool context."""
+    """Useful coach without API key — intent-routed, not one canned template."""
     text = (user_text or "").strip()
-    low = text.lower()
     due = ctx.get("due") or []
     wk_need = int(ctx.get("wk_need") or 0)
     name = ctx.get("username") or "你"
     hits = ctx.get("tool_hits") or {}
+    intent = _offline_intent(text)
 
-    # Specific follow-up hit from search tool
     fu_hits = hits.get("followups") or []
-    if fu_hits and any(k in text for k in ("跟", "案", "點", "拆", "next", "邊")):
+    pr_hits = hits.get("prospects") or []
+
+    if intent == "meta":
+        return (
+            f"{name}，唔好意思——未設 AI key 時我係按「你問咩類型」分流答，"
+            "唔係逐句自由傾偈。\n\n"
+            "你可以試呢啲，答案會唔同：\n"
+            "- **今日優先／最應該做咩** → 排優先次序\n"
+            "- **本週活動** → 欠幾多次\n"
+            "- **MDRT／Extra 10** → 業績數字\n"
+            "- **準客戶 + 人名**（如 Ave）→ 查嗰單 FYC／Fact find\n"
+            "- **幫我拆某某點跟** → 查跟進階段同 Next action\n"
+        )
+
+    if intent == "help":
+        return (
+            f"我係 **Coach Tim**，讀你 M+2 即時數據幫你排跟進同活動。\n"
+            "直接問：今日優先、本週活動、MDRT、招募，或者講個案名（例如「拆 Ave 點跟」）。"
+        )
+
+    if intent == "greet":
+        due_n = len(due)
+        bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案。"
+        return f"你好 {name}！{bit}想我幫你排優先、睇活動，定係拆某一單？"
+
+    # Named follow-up from live search
+    if fu_hits and intent in ("followup", "priority", "clarify"):
         d = fu_hits[0]
         return (
             f"{name}，我即時查過跟進名單，而家睇 **{d['person']}**：\n\n"
@@ -592,9 +703,8 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             f"- 建議：今日聯絡，確認 next appointment；打卡時更新 Fact find。\n"
         )
 
-    # Specific prospect hit
-    pr_hits = hits.get("prospects") or []
-    if pr_hits and any(k in text for k in ("準客戶", "prospect", "FYC", "fyc", "產品", "fact")):
+    # Named prospect
+    if pr_hits and intent in ("prospect", "metrics", "clarify"):
         p = pr_hits[0]
         return (
             f"{name}，準客戶 **{p.get('name')}**：\n"
@@ -620,43 +730,74 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             )
         return "\n".join(lines)
 
-    actions: list[str] = []
-    if due:
-        top = due[0]
-        actions.append(
-            f"今日優先跟 **{top['person']}**（{top['track']}｜{top['stage']}）："
-            f"{top['next_action'] or '更新 Next action + 日期'}。"
-        )
-        if len(due) > 1:
-            actions.append(f"其餘仲有 {len(due) - 1} 宗今日／逾期案，清完先再拓新客。")
-    if wk_need > 0:
-        actions.append(
-            f"本週仲欠 **{wk_need}** 次活動（而家 {ctx.get('wk_count')}/{ctx.get('wk_min')}）——"
-            "見面／傾保險／傾招募隨手打卡，避免罰款。"
-        )
-    if not ctx.get("extra10_open"):
-        actions.append(
-            f"Extra 10 尚欠 ${ctx.get('extra10_remaining', 0):,.0f} YTD；"
-            "危疾／5年供 Saving／扣稅年金過咗門檻先有 ×1.1。"
-        )
-    else:
-        actions.append("Extra 10 已開——賣危疾／盈聚 5pay／扣稅年金記得用準客戶名單自動計 FYC。")
-
-    if any(k in text for k in ("跟", "卡案", "今日", "follow", "next")) and due:
-        d = due[0]
+    if intent == "followup":
+        if due:
+            d = due[0]
+            return (
+                f"{name}，今日要跟 **{len(due)}** 宗，第一單：**{d['person']}**\n"
+                f"- {d['track']}｜{d['stage']}\n"
+                f"- Next：{d['next_action'] or '（未填）'} · {d['next_date']}\n"
+                f"- 建議：今日聯絡並打卡更新。\n"
+                + (f"\n本週仲欠 {wk_need} 次活動。" if wk_need else "\n本週活動已達標。")
+            )
+        ups = ctx.get("upcoming") or []
+        if ups:
+            u = ups[0]
+            return (
+                f"{name}，今日冇逾期案。最近一單係 **{u['person']}**"
+                f"（{u['next_date']}）：{u['next_action'] or '未填 Next action'}。"
+            )
         return (
-            f"{name}，我即時查過今日要跟，而家最緊要係清卡案。\n\n"
-            f"**第一單：{d['person']}**\n"
-            f"- Track：{d['track']}｜階段：{d['stage']}\n"
-            f"- Next：{d['next_action'] or '（未填）'} · 日期 {d['next_date']}\n"
-            f"- 建議：今日聯絡，確認 next appointment；打卡時填好 Fact find。\n\n"
-            f"清完再補本週活動"
-            + (f"（仲欠 {wk_need} 次）。" if wk_need else "（本週已達標，做得好）。")
+            f"{name}，今日冇逾期／到期跟進。可以去準客戶名單推下一單，"
+            "或者話我知個案名，我幫你查。"
         )
 
-    if any(k in low for k in ("mdrt", "業績", "fyc", "extra")):
+    if intent == "upcoming":
+        ups = ctx.get("upcoming") or []
+        if not ups:
+            return f"{name}，未來 7 日未有跟進日期——打卡時記得填 Next action + 日期。"
+        lines = [f"{name}，未來 7 日有 **{len(ups)}** 宗："]
+        for u in ups[:5]:
+            lines.append(
+                f"- **{u['person']}**（{u['track']}）· {u['next_date']} · "
+                f"{u['next_action'] or '—'}"
+            )
+        return "\n".join(lines)
+
+    if intent == "stuck":
+        stuck = hits.get("stuck") or due
+        if not stuck:
+            return f"{name}，而家未見明顯卡住個案。做得好，保持節奏。"
+        lines = [f"{name}，需要關注嘅卡住／逾期："]
+        for d in stuck[:5]:
+            extra = ""
+            if d.get("overdue_days"):
+                extra = f" · 逾期 {d['overdue_days']} 日"
+            lines.append(
+                f"- **{d['person']}**（{d['stage']}）→ {d['next_action'] or '—'}"
+                f"{extra}"
+            )
+        return "\n".join(lines)
+
+    if intent == "prospect":
+        pros = pr_hits or (ctx.get("prospects") or [])
+        if not pros:
+            return (
+                f"{name}，準客戶名單暫時未有資料。"
+                "去「準客戶名單」加名，之後問我「拆某某」我就可以查。"
+            )
+        lines = [f"{name}，你最近準客戶："]
+        for p in pros[:5]:
+            lines.append(
+                f"- **{p.get('name')}** · FYC ${float(p.get('fyc') or 0):,.0f}"
+                + (f" · {p.get('products')}" if p.get("products") else "")
+            )
+        lines.append("\n想拆邊單？回覆人名就得。")
+        return "\n".join(lines)
+
+    if intent == "metrics":
         return (
-            f"你嘅即時數字：\n"
+            f"{name}，即時數字：\n"
             f"- YTD FYC **${ctx.get('ytd_fyc', 0):,.0f}**"
             + (
                 "（Extra 10 已開）\n"
@@ -665,29 +806,49 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             )
             + f"- 2027 MDRT **${ctx.get('mdrt_progress', 0):,.0f}**"
             f"（{ctx.get('mdrt_pct', 0):.0f}%），尚欠 ${ctx.get('mdrt_remaining', 0):,.0f}\n\n"
-            "下一步：用準客戶名單計實每單 FYC；大單優先危疾／5年供／扣稅年金。"
+            "下一步：大單用準客戶名單計實 FYC；危疾／5年供／扣稅年金優先。"
         )
 
-    if any(k in text for k in ("週", "活動", "打卡", "罰款", "挑戰")):
+    if intent == "week":
         return (
-            f"本週活動 **{ctx.get('wk_count')}/{ctx.get('wk_min')}**"
+            f"{name}，本週活動 **{ctx.get('wk_count')}/{ctx.get('wk_min')}**"
             + (
-                f"——仲欠 {wk_need} 次，建議今日約見面或傾保險並即刻打卡。"
+                f"——仲欠 **{wk_need}** 次，今日約見面或傾保險並即刻打卡。"
                 if wk_need
-                else "——已達標，保持節奏，用時間清卡案同準客戶。"
+                else "——已達標。可以專心清卡案／推準客戶。"
             )
         )
 
-    if any(k in text for k in ("招募", "出code", "IRP", "新人")):
+    if intent == "recruit":
         return (
-            f"你而家招募人數 **{ctx.get('recruit', 0)}**（年度目標通常 2 人）。\n"
-            "建議：準客戶名單→招募 List 加名；打卡選「傾招募／報考試／出code」；"
-            "Dashboard 睇招募進度 bar。"
+            f"{name}，招募人數 **{ctx.get('recruit', 0)}**（年度目標通常 2 人）。\n"
+            "準客戶名單→招募 List 加名；打卡選「傾招募／報考試／出code」。"
         )
 
-    head = f"{name}，我即時查過你 M+2 數據，建議今日咁排："
-    bullets = "\n".join(f"{i+1}. {a}" for i, a in enumerate(actions[:3])) or "1. 去打卡／準客戶名單推進下一單。"
-    return f"{head}\n\n{bullets}\n\n有具體個案名，話我知，我幫你拆下一步。"
+    if intent == "tools":
+        return (
+            f"{name}，呢啲喺 M+2 側欄／選單：\n"
+            "- 醫療融資計算機、保障缺口、收入／支出 T-Account、常見疾病核保\n"
+            "用完可以返嚟問我點解釋俾客戶聽。"
+        )
+
+    if intent == "priority":
+        actions = _priority_actions(ctx)
+        bullets = "\n".join(f"{i+1}. {a}" for i, a in enumerate(actions[:3]))
+        return (
+            f"{name}，按而家 M+2 數據，今日建議咁排：\n\n{bullets}\n\n"
+            "想拆某一單，直接講人名。"
+        )
+
+    # clarify — do NOT dump the same Extra 10 priority template
+    return (
+        f"{name}，我未完全捉到你想問邊方面。你可以問得再具體啲，例如：\n"
+        "- 「今日最應該做咩」\n"
+        "- 「本週活動仲欠幾多」\n"
+        "- 「MDRT 進度」\n"
+        "- 「準客戶有邊幾個」\n"
+        "- 「幫我拆 Ave 點跟」\n"
+    )
 
 
 def openai_chat(
