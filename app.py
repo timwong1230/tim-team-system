@@ -1242,7 +1242,10 @@ def page_coach_tim():
     role = st.session_state.get("role") or "Member"
 
     st.markdown("## 🧠 Coach Tim")
-    st.caption("已讀你嘅今日要跟、本週活動、MDRT／Extra 10——直接問跟進同優先次序。")
+    st.caption(
+        "已讀你嘅今日要跟、本週活動、MDRT／Extra 10。"
+        "問個案名會即時查最新跟進／準客戶——直接問優先次序同下一句點開。"
+    )
 
     try:
         ctx = ct.build_coach_context(user, role=role)
@@ -1269,7 +1272,7 @@ def page_coach_tim():
             "prospects": [],
         }
 
-    with st.expander("而家注入嘅 M+2 數據", expanded=False):
+    with st.expander("而家讀到嘅 M+2 數據", expanded=False):
         st.markdown(ct.format_context_markdown(ctx))
         # Secrets setup is admin-only — members just use Coach Tim.
         if role == "Leader":
@@ -1324,12 +1327,18 @@ def page_coach_tim():
             for m in st.session_state["coach_tim_messages"][:-1]
             if m["role"] in ("user", "assistant")
         ]
-        # Drop welcome-only noise for API: keep as assistant turns is fine
-        with st.spinner("Coach Tim 諗緊…"):
-            answer, mode = ct.reply(user_text, history, ctx)
+        with st.spinner("Coach Tim 查緊最新數據…"):
+            result = ct.reply(user_text, history, ctx)
+            if isinstance(result, tuple) and len(result) == 3:
+                answer, mode, meta = result
+            else:
+                answer, mode = result[0], result[1]
+                meta = {}
+            tools_used = (meta or {}).get("tools_used") or []
+            if tools_used:
+                labels = [ct.TOOL_CATALOG.get(t, t) for t in tools_used]
+                answer = answer + "\n\n—\n_已查：" + "、".join(labels) + "_"
         st.session_state["coach_tim_messages"].append({"role": "assistant", "content": answer})
-        if mode == "offline" and not ct.llm_configured():
-            pass  # already noted in expander
         st.rerun()
 
 
