@@ -123,7 +123,7 @@ def test_welcome():
     assert "嵌喺" not in w
     assert "嵌入" not in w
     assert "Phase 1" not in w
-    assert "即時" in w or "個案" in w
+    assert "打卡" in w or "跟進" in w
 
 
 def test_choose_tools_limits_and_routes():

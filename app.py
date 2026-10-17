@@ -1388,6 +1388,159 @@ def page_coach_tim():
     if tg_link:
         st.markdown(f"[亦可喺 Telegram 開 AI Tim]({tg_link})")
 
+    # Phase 3: confirm-gated write card
+    try:
+        from tt_core import coach_writes as cw
+    except Exception:
+        cw = None
+
+    write_pending = st.session_state.get("coach_tim_write_pending")
+    if cw and write_pending:
+        with st.expander(
+            "待確認寫入（Phase 3）",
+            expanded=True,
+        ):
+            st.markdown(cw.summarize_pending(write_pending))
+            wtype = write_pending.get("type")
+            payload = dict(write_pending.get("payload") or {})
+            if wtype == cw.ACTION_CHECKIN:
+                st.caption(
+                    "打卡必須齊：名字、見面日期、Next action、跟進日期、階段、Fact find 15 條。"
+                )
+                track = st.selectbox(
+                    "軌道",
+                    [TRACK_SALES, TRACK_RECRUIT],
+                    index=0
+                    if payload.get("track") != TRACK_RECRUIT
+                    else 1,
+                    key="aitim_w_track",
+                )
+                stages = SALES_STAGES if track == TRACK_SALES else RECRUIT_STAGES
+                types = (
+                    SALES_ACTIVITY_TYPES if track == TRACK_SALES else RECRUIT_ACTIVITY_TYPES
+                )
+                payload["track"] = track
+                payload["person"] = st.text_input(
+                    "名字", value=str(payload.get("person") or ""), key="aitim_w_person"
+                )
+                try:
+                    ad = datetime.date.fromisoformat(
+                        str(payload.get("act_date") or "")[:10]
+                    )
+                except Exception:
+                    ad = datetime.date.today()
+                payload["act_date"] = str(
+                    st.date_input("見面日期", value=ad, key="aitim_w_act_date")
+                )
+                act_i = (
+                    types.index(payload["act_type"])
+                    if payload.get("act_type") in types
+                    else 0
+                )
+                payload["act_type"] = st.selectbox(
+                    "活動種類", types, index=act_i, key="aitim_w_act_type"
+                )
+                st_i = (
+                    stages.index(payload["stage"])
+                    if payload.get("stage") in stages
+                    else 0
+                )
+                payload["stage"] = st.selectbox(
+                    "階段", stages, index=st_i, key="aitim_w_stage"
+                )
+                payload["next_action"] = st.text_input(
+                    "Next action",
+                    value=str(payload.get("next_action") or ""),
+                    key="aitim_w_next",
+                )
+                try:
+                    nd = datetime.date.fromisoformat(
+                        str(payload.get("next_date") or "")[:10]
+                    )
+                except Exception:
+                    nd = datetime.date.today() + datetime.timedelta(days=3)
+                payload["next_date"] = str(
+                    st.date_input("跟進日期", value=nd, key="aitim_w_next_date")
+                )
+                payload["factfind"] = st.text_area(
+                    "Fact find（15 條要全部有答）",
+                    value=str(payload.get("factfind") or cw.factfind_template()),
+                    height=360,
+                    key="aitim_w_ff",
+                )
+                write_pending = cw.build_pending(
+                    cw.ACTION_CHECKIN,
+                    payload,
+                    username=user,
+                    role=role,
+                )
+                st.session_state["coach_tim_write_pending"] = write_pending
+                if write_pending.get("missing"):
+                    st.warning("仲欠：" + "、".join(write_pending["missing"]))
+                else:
+                    st.success("資料已齊——可以確認執行。")
+            elif wtype in (cw.ACTION_UPD_FYC, cw.ACTION_UPD_RECRUIT):
+                if not cw.is_admin(role, user):
+                    st.error("只有 Admin／Leader 可以確認改業績／招募數字。")
+                else:
+                    payload["target_user"] = st.text_input(
+                        "對象同事",
+                        value=str(payload.get("target_user") or ""),
+                        key="aitim_w_target",
+                    )
+                    if wtype == cw.ACTION_UPD_FYC:
+                        payload["month"] = st.text_input(
+                            "月份 YYYY-MM",
+                            value=str(
+                                payload.get("month")
+                                or datetime.date.today().strftime("%Y-%m")
+                            ),
+                            key="aitim_w_month",
+                        )
+                        payload["amount"] = st.number_input(
+                            "FYC 金額",
+                            value=float(payload.get("amount") or 0),
+                            key="aitim_w_amt",
+                        )
+                    else:
+                        payload["amount"] = st.number_input(
+                            "招募人數",
+                            value=int(float(payload.get("amount") or 0)),
+                            step=1,
+                            key="aitim_w_rec",
+                        )
+                    write_pending = cw.build_pending(
+                        wtype, payload, username=user, role=role
+                    )
+                    st.session_state["coach_tim_write_pending"] = write_pending
+
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button(
+                    "確認執行寫入",
+                    type="primary",
+                    use_container_width=True,
+                    key="aitim_confirm_write",
+                    disabled=not bool(write_pending.get("ready")),
+                ):
+                    result = cw.execute_pending(write_pending)
+                    if result.get("ok"):
+                        st.session_state.pop("coach_tim_write_pending", None)
+                        st.session_state.setdefault("coach_tim_messages", []).append(
+                            {
+                                "role": "assistant",
+                                "content": f"✅ {result.get('message')}",
+                            }
+                        )
+                        st.toast(result.get("message") or "已寫入", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(result.get("error") or "寫入失敗")
+            with b2:
+                if st.button("取消寫入", use_container_width=True, key="aitim_cancel_write"):
+                    st.session_state.pop("coach_tim_write_pending", None)
+                    st.rerun()
+
     if "coach_tim_messages" not in st.session_state:
         st.session_state["coach_tim_messages"] = [
             {"role": "assistant", "content": ct.welcome_message(ctx)}
@@ -1405,21 +1558,34 @@ def page_coach_tim():
         if st.button("MDRT / Extra 10", use_container_width=True, key="ct_q_mdrt"):
             quick = "講下我 MDRT 同 Extra 10 進度，下一步點衝？"
 
-    c_clear, _ = st.columns([1, 3])
+    c_clear, c_draft = st.columns([1, 1])
     with c_clear:
         if st.button("清空對話", use_container_width=True, key="ct_clear"):
             st.session_state["coach_tim_messages"] = [
                 {"role": "assistant", "content": ct.welcome_message(ctx)}
             ]
             st.rerun()
+    with c_draft:
+        if cw and st.button("開打卡待確認稿", use_container_width=True, key="ct_draft_checkin"):
+            st.session_state["coach_tim_write_pending"] = cw.build_pending(
+                cw.ACTION_CHECKIN,
+                {
+                    "track": TRACK_SALES,
+                    "factfind": cw.factfind_template(),
+                    "act_date": str(datetime.date.today()),
+                },
+                username=user,
+                role=role,
+            )
+            st.rerun()
 
     for msg in st.session_state["coach_tim_messages"]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    pending = st.session_state.pop("coach_tim_pending", None)
-    user_text = pending or quick
-    chat_in = st.chat_input("問 AI Tim…（例如：幫我拆呢單點跟）")
+    chat_pending = st.session_state.pop("coach_tim_pending", None)
+    user_text = chat_pending or quick
+    chat_in = st.chat_input("問 AI Tim…（例如：幫我打卡／拆呢單點跟）")
     if chat_in:
         user_text = chat_in
 
@@ -1430,7 +1596,6 @@ def page_coach_tim():
             for m in st.session_state["coach_tim_messages"][:-1]
             if m["role"] in ("user", "assistant")
         ]
-        # Skip welcome in API history to save tokens / reduce prompt noise
         history = [m for m in history if not (
             m["role"] == "assistant" and m["content"].startswith("你好")
         )][-12:]
@@ -1446,6 +1611,8 @@ def page_coach_tim():
             if tools_used and mode == "offline":
                 labels = [ct.TOOL_CATALOG.get(t, t) for t in tools_used]
                 answer = answer + "\n\n—\n_已查：" + "、".join(labels) + "_"
+            if (meta or {}).get("pending"):
+                st.session_state["coach_tim_write_pending"] = meta["pending"]
         st.session_state["coach_tim_messages"].append({"role": "assistant", "content": answer})
         st.rerun()
 

@@ -737,7 +737,7 @@ def system_prompt(ctx: dict[str, Any]) -> str:
         labels = [TOOL_CATALOG.get(t, t) for t in tools_used]
         tool_note = "\n本回合已即時查過：" + "、".join(labels) + "。\n"
     who = ctx.get("username") or "呢位同事"
-    return f"""你係 AI Tim——TIM TEAM 嘅私人教練（同 Telegram AI Tim／Coach Tim 同一個角色）。
+    base = f"""你係 AI Tim——TIM TEAM 嘅私人教練（同 Telegram AI Tim／Coach Tim 同一個角色）。
 用香港粵語為主、間中書面語。直接、務實、鼓勵但不吹水。好似喺 Telegram 一對一傾偈。
 
 而家喺 M+2 App 入面同 **{who}** 傾偈。以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
@@ -751,8 +751,18 @@ def system_prompt(ctx: dict[str, Any]) -> str:
 4. 數字只引用上面 briefing；冇嘅就話未讀到，叫佢去對應頁更新。
 5. 回覆短：2–8 句＋最多 3 個 bullet action；可以追問個案名。
 6. 如果問醫療融資／保障缺口／打卡／準客戶名單，引導去 M+2 對應功能。
-7. 你只讀數據同俾建議；唔好話自己已經改咗系統資料。
+7. 寫入系統必須經用戶確認（Phase 3）。未確認前唔好話已經改咗資料。
 """
+    try:
+        from tt_core.coach_writes import write_rules_for_prompt
+
+        rules = write_rules_for_prompt(
+            role=str(ctx.get("role") or "Member"),
+            username=str(ctx.get("username") or ""),
+        )
+        return base + "\n" + rules
+    except Exception:
+        return base
 
 
 def _offline_intent(text: str) -> str:
@@ -793,6 +803,19 @@ def _offline_intent(text: str) -> str:
         return "upcoming"
     if any(k in t for k in ("卡住", "stuck", "唔郁", "逾期好耐")):
         return "stuck"
+    if any(
+        k in t
+        for k in (
+            "幫我打卡",
+            "代打卡",
+            "寫入打卡",
+            "確認打卡",
+            "改 FYC",
+            "改業績",
+            "改招募",
+        )
+    ):
+        return "checkin_write"
     # Explicit priority / what should I do today
     if any(k in t for k in ("優先", "最應該", "做咩", "今日做", "排程", "安排")):
         return "priority"
@@ -1013,6 +1036,16 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             f"{name}，呢啲喺 M+2 側欄／選單：\n"
             "- 醫療融資計算機、保障缺口、收入／支出 T-Account、常見疾病核保\n"
             "用完可以返嚟問我點解釋俾客戶聽。"
+        )
+
+    if intent == "checkin_write":
+        return (
+            f"{name}，我可以幫你**提議打卡**，但要你確認先會寫入。\n"
+            "打卡一定要齊：\n"
+            "1. 名字　2. 見面日期　3. Next action　4. 跟進日期　5. 階段　"
+            "6. Fact find 15 條全部有答\n\n"
+            "請一次過俾齊（或者喺下面「待確認打卡」表格填），填完先可以撳確認執行。\n"
+            "（改業績／招募數字只有 Admin／Leader 可以提議。）"
         )
 
     if intent == "priority":
@@ -1276,7 +1309,7 @@ def reply(
                 st.session_state.pop("_coach_tim_last_error", None)
             except Exception:
                 pass
-            return text, "gemini", meta
+            return _finalize_reply(text, "gemini", meta, live_ctx)
         except Exception as e:
             gemini_err = str(e)[:400]
             _remember_err(gemini_err)
@@ -1294,24 +1327,61 @@ def reply(
                 st.session_state.pop("_coach_tim_last_error", None)
             except Exception:
                 pass
-            return text, "openai", meta
+            return _finalize_reply(text, "openai", meta, live_ctx)
         except Exception as e:
             _remember_err(str(e)[:400])
             fallback = offline_reply(user_text, live_ctx)
-            return (
+            return _finalize_reply(
                 f"（AI 暫時連線唔到）\n\n{fallback}",
                 "offline",
                 meta,
+                live_ctx,
             )
 
     if gemini_err:
         fallback = offline_reply(user_text, live_ctx)
-        return (
+        return _finalize_reply(
             f"（AI 暫時連線唔到）\n\n{fallback}",
             "offline",
             meta,
+            live_ctx,
         )
-    return offline_reply(user_text, live_ctx), "offline", meta
+    return _finalize_reply(
+        offline_reply(user_text, live_ctx), "offline", meta, live_ctx
+    )
+
+
+def _finalize_reply(
+    text: str,
+    mode: str,
+    meta: dict[str, Any],
+    live_ctx: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    """Parse optional write-action proposal from model text into meta.pending."""
+    try:
+        from tt_core.coach_writes import (
+            build_pending,
+            parse_action_from_reply,
+            strip_action_fence,
+            summarize_pending,
+        )
+
+        raw_action = parse_action_from_reply(text)
+        visible = strip_action_fence(text) if raw_action else text
+        if raw_action:
+            pending = build_pending(
+                str(raw_action.get("type") or ""),
+                {k: v for k, v in raw_action.items() if k != "type"},
+                username=str(live_ctx.get("username") or ""),
+                role=str(live_ctx.get("role") or "Member"),
+            )
+            meta["pending"] = pending
+            summary = summarize_pending(pending)
+            if summary and summary not in visible:
+                visible = f"{visible}\n\n{summary}"
+        return visible, mode, meta
+    except Exception:
+        return text, mode, meta
 
 
 def welcome_message(ctx: dict[str, Any]) -> str:
@@ -1322,6 +1392,6 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     return (
         f"你好 {name}，我係 **AI Tim**（{mode}）。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
-        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10——"
-        "講個案名我會即時查最新資料。"
+        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10；"
+        "要打卡可以講「幫我打卡」——齊料後你確認先會寫入。"
     )
