@@ -501,15 +501,14 @@ div.stButton > button[kind="secondary"] {
   padding: 14px 16px;
   margin: 10px 0 16px 0;
 }
-/* Marker only — Streamlit cannot nest the selectbox inside this div */
+/* Marker only — Streamlit cannot nest the popover inside this div */
 .tt-mobile-nav {
   display: none;
 }
 
-/* Phone top menu (selectbox right after marker): sticky + no copy/select */
+/* Phone top menu (popover right after marker): sticky + no copy/select */
 [data-testid="element-container"]:has(.tt-mobile-nav)
-  + [data-testid="element-container"],
-[data-testid="element-container"][data-tt-mobile-nav="1"] {
+  + [data-testid="element-container"] {
   position: sticky;
   top: 0;
   z-index: 20;
@@ -525,13 +524,28 @@ div.stButton > button[kind="secondary"] {
 [data-testid="element-container"]:has(.tt-mobile-nav)
   + [data-testid="element-container"] *,
 [data-testid="element-container"]:has(.tt-mobile-nav)
-  + [data-testid="element-container"] input,
-[data-testid="element-container"][data-tt-mobile-nav="1"] *,
-[data-testid="element-container"][data-tt-mobile-nav="1"] input {
+  + [data-testid="element-container"] button {
   -webkit-user-select: none !important;
   user-select: none !important;
   -webkit-touch-callout: none !important;
   caret-color: transparent !important;
+}
+/* Popover trigger — look like a nav bar, not an editable field */
+[data-testid="element-container"]:has(.tt-mobile-nav)
+  + [data-testid="element-container"] [data-testid="stPopover"] button,
+[data-testid="element-container"]:has(.tt-mobile-nav)
+  + [data-testid="element-container"] button[kind="secondary"] {
+  width: 100% !important;
+  min-height: 48px !important;
+  justify-content: space-between !important;
+  text-align: left !important;
+  font-size: 1.02rem !important;
+  font-weight: 600 !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 12px !important;
+  background: #FFFFFF !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
 }
 
 /* ---- Leaderboard cards ---- */
@@ -839,9 +853,16 @@ html[data-tt-standalone="1"] .block-container {
 
   /* Phone top menu sticky surface — dark mode */
   [data-testid="element-container"]:has(.tt-mobile-nav)
-    + [data-testid="element-container"],
-  [data-testid="element-container"][data-tt-mobile-nav="1"] {
+    + [data-testid="element-container"] {
     background: rgba(15, 20, 25, 0.92);
+  }
+  [data-testid="element-container"]:has(.tt-mobile-nav)
+    + [data-testid="element-container"] [data-testid="stPopover"] button,
+  [data-testid="element-container"]:has(.tt-mobile-nav)
+    + [data-testid="element-container"] button[kind="secondary"] {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+    border-color: var(--line) !important;
   }
 
   /* Sidebar button nav — dark mode */

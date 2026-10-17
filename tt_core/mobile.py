@@ -350,102 +350,16 @@ def render_install_guide(*, compact: bool = False) -> None:
         st.info(f"一次加好，成隊同事主畫面都有 {brand_name}，打卡會快好多。")
 
 
-def _inject_dom_script(script: str) -> None:
-    """Run JS in the main document (st.html), with iframe fallback."""
-    try:
-        st.html(script, unsafe_allow_javascript=True)
-        return
-    except Exception:
-        pass
-    try:
-        import streamlit.components.v1 as components
-
-        body = script.replace("var doc = document;", "var doc = window.parent.document;")
-        components.html(
-            f"<!DOCTYPE html><html><head></head><body>{body}</body></html>",
-            height=0,
-            width=0,
-        )
-    except Exception:
-        pass
-
-
-def _harden_phone_top_nav() -> None:
-    """Stop iPhone treating the top menu as editable text (keyboard + Copy)."""
-    _inject_dom_script(
-        """
-<script>
-(function () {
-  var doc = document;
-  function navHost() {
-    var marker = doc.querySelector('.tt-mobile-nav');
-    if (!marker) return null;
-    var box = marker.closest('[data-testid="element-container"]');
-    if (!box) return null;
-    var next = box.nextElementSibling;
-    while (next) {
-      if (next.querySelector('[data-testid="stSelectbox"], .stSelectbox, [data-baseweb="select"]')) {
-        return next;
-      }
-      next = next.nextElementSibling;
-    }
-    return null;
-  }
-  function lockInput(inp) {
-    if (!inp || inp.getAttribute('data-tt-nav-lock') === '1') return;
-    inp.setAttribute('data-tt-nav-lock', '1');
-    inp.setAttribute('readonly', 'readonly');
-    inp.setAttribute('inputmode', 'none');
-    inp.setAttribute('autocomplete', 'off');
-    inp.style.caretColor = 'transparent';
-    inp.style.webkitUserSelect = 'none';
-    inp.style.userSelect = 'none';
-    var clearSel = function () {
-      try {
-        var len = (inp.value || '').length;
-        inp.setSelectionRange(len, len);
-      } catch (e) {}
-    };
-    inp.addEventListener('focus', clearSel);
-    inp.addEventListener('select', clearSel);
-    inp.addEventListener('touchend', clearSel, { passive: true });
-  }
-  function harden() {
-    var host = navHost();
-    if (!host) return;
-    host.setAttribute('data-tt-mobile-nav', '1');
-    host.querySelectorAll('input').forEach(lockInput);
-    host.querySelectorAll('*').forEach(function (el) {
-      el.style.webkitUserSelect = 'none';
-      el.style.userSelect = 'none';
-      el.style.webkitTouchCallout = 'none';
-    });
-  }
-  harden();
-  var n = 0;
-  var timer = setInterval(function () {
-    harden();
-    n += 1;
-    if (n >= 40) clearInterval(timer);
-  }, 200);
-  try {
-    var obs = new MutationObserver(harden);
-    obs.observe(doc.body, { childList: true, subtree: true });
-    setTimeout(function () { try { obs.disconnect(); } catch (e) {} }, 12000);
-  } catch (e) {}
-})();
-</script>
-"""
-    )
-
-
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     """Compact top navigation for phones (avoids opening sidebar every time).
 
+    Uses a popover + buttons — never a selectbox/input — so iPhone does not
+    show the keyboard or Cut/Copy on the menu label.
+
     Programmatic jumps (Home CTAs via ``go_menu``) set ``_nav_pending`` for a
-    one-shot sync into the selectbox key *before* the widget is created.
+    one-shot sync into ``mobile_top_nav`` *before* the popover is rendered.
     We must NOT re-apply ``_menu_choice`` on every run — that locks users on
-    the page they jumped to and blocks the selectbox from changing pages.
+    the page they jumped to.
     """
     valid = list(menu_items or [])
     if not valid:
@@ -459,25 +373,34 @@ def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
         fallback = current if current in valid else valid[0]
         st.session_state["mobile_top_nav"] = fallback
 
-    choice = st.selectbox(
-        "功能選單",
-        valid,
-        key="mobile_top_nav",
-        label_visibility="collapsed",
-    )
-    _harden_phone_top_nav()
-    return choice
+    current_label = str(st.session_state.get("mobile_top_nav") or valid[0])
+
+    # Popover trigger is a real button (no text input → no iOS keyboard/copy).
+    with st.popover(
+        current_label,
+        use_container_width=True,
+        key="phone_top_nav_pop",
+    ):
+        for i, item in enumerate(valid):
+            if st.button(
+                item,
+                key=f"phone_top_nav_btn_{i}",
+                use_container_width=True,
+                type="primary" if item == current_label else "secondary",
+            ):
+                st.session_state["mobile_top_nav"] = item
+                st.rerun()
+
+    return str(st.session_state.get("mobile_top_nav") or current_label)
 
 
 def go_menu(label: str, **extra) -> None:
-    """Navigate to a menu page; mobile selectbox syncs on the next run.
+    """Navigate to a menu page; phone top nav syncs on the next run.
 
-    Only write ``_menu_choice`` + one-shot ``_nav_pending`` here. On phones the
-    ``mobile_top_nav`` selectbox is already instantiated above Home buttons —
-    assigning that widget key in the same run raises
-    ``StreamlitWidgetAlreadyInstantiatedError`` and the click looks dead.
-    ``mobile_top_nav()`` applies ``_nav_pending`` before creating the widget
-    on the following rerun, then leaves the selectbox free for user changes.
+    Only write ``_menu_choice`` + one-shot ``_nav_pending`` here. Do not assign
+    widget keys that may already exist this run (legacy selectbox path raised
+    ``StreamlitWidgetAlreadyInstantiatedError``). ``mobile_top_nav()`` applies
+    ``_nav_pending`` before rendering the popover on the following rerun.
     """
     st.session_state["_menu_choice"] = label
     st.session_state["_nav_pending"] = label
