@@ -350,6 +350,95 @@ def render_install_guide(*, compact: bool = False) -> None:
         st.info(f"一次加好，成隊同事主畫面都有 {brand_name}，打卡會快好多。")
 
 
+def _inject_dom_script(script: str) -> None:
+    """Run JS in the main document (st.html), with iframe fallback."""
+    try:
+        st.html(script, unsafe_allow_javascript=True)
+        return
+    except Exception:
+        pass
+    try:
+        import streamlit.components.v1 as components
+
+        body = script.replace("var doc = document;", "var doc = window.parent.document;")
+        components.html(
+            f"<!DOCTYPE html><html><head></head><body>{body}</body></html>",
+            height=0,
+            width=0,
+        )
+    except Exception:
+        pass
+
+
+def _harden_phone_top_nav() -> None:
+    """Stop iPhone treating the top menu as editable text (keyboard + Copy)."""
+    _inject_dom_script(
+        """
+<script>
+(function () {
+  var doc = document;
+  function navHost() {
+    var marker = doc.querySelector('.tt-mobile-nav');
+    if (!marker) return null;
+    var box = marker.closest('[data-testid="element-container"]');
+    if (!box) return null;
+    var next = box.nextElementSibling;
+    while (next) {
+      if (next.querySelector('[data-testid="stSelectbox"], .stSelectbox, [data-baseweb="select"]')) {
+        return next;
+      }
+      next = next.nextElementSibling;
+    }
+    return null;
+  }
+  function lockInput(inp) {
+    if (!inp || inp.getAttribute('data-tt-nav-lock') === '1') return;
+    inp.setAttribute('data-tt-nav-lock', '1');
+    inp.setAttribute('readonly', 'readonly');
+    inp.setAttribute('inputmode', 'none');
+    inp.setAttribute('autocomplete', 'off');
+    inp.style.caretColor = 'transparent';
+    inp.style.webkitUserSelect = 'none';
+    inp.style.userSelect = 'none';
+    var clearSel = function () {
+      try {
+        var len = (inp.value || '').length;
+        inp.setSelectionRange(len, len);
+      } catch (e) {}
+    };
+    inp.addEventListener('focus', clearSel);
+    inp.addEventListener('select', clearSel);
+    inp.addEventListener('touchend', clearSel, { passive: true });
+  }
+  function harden() {
+    var host = navHost();
+    if (!host) return;
+    host.setAttribute('data-tt-mobile-nav', '1');
+    host.querySelectorAll('input').forEach(lockInput);
+    host.querySelectorAll('*').forEach(function (el) {
+      el.style.webkitUserSelect = 'none';
+      el.style.userSelect = 'none';
+      el.style.webkitTouchCallout = 'none';
+    });
+  }
+  harden();
+  var n = 0;
+  var timer = setInterval(function () {
+    harden();
+    n += 1;
+    if (n >= 40) clearInterval(timer);
+  }, 200);
+  try {
+    var obs = new MutationObserver(harden);
+    obs.observe(doc.body, { childList: true, subtree: true });
+    setTimeout(function () { try { obs.disconnect(); } catch (e) {} }, 12000);
+  } catch (e) {}
+})();
+</script>
+"""
+    )
+
+
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     """Compact top navigation for phones (avoids opening sidebar every time).
 
@@ -370,12 +459,14 @@ def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
         fallback = current if current in valid else valid[0]
         st.session_state["mobile_top_nav"] = fallback
 
-    return st.selectbox(
+    choice = st.selectbox(
         "功能選單",
         valid,
         key="mobile_top_nav",
         label_visibility="collapsed",
     )
+    _harden_phone_top_nav()
+    return choice
 
 
 def go_menu(label: str, **extra) -> None:

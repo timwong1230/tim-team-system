@@ -501,14 +501,37 @@ div.stButton > button[kind="secondary"] {
   padding: 14px 16px;
   margin: 10px 0 16px 0;
 }
+/* Marker only — Streamlit cannot nest the selectbox inside this div */
 .tt-mobile-nav {
+  display: none;
+}
+
+/* Phone top menu (selectbox right after marker): sticky + no copy/select */
+[data-testid="element-container"]:has(.tt-mobile-nav)
+  + [data-testid="element-container"],
+[data-testid="element-container"][data-tt-mobile-nav="1"] {
   position: sticky;
   top: 0;
   z-index: 20;
   background: rgba(243,241,235,0.92);
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   padding: 6px 0 10px;
   margin-bottom: 8px;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+[data-testid="element-container"]:has(.tt-mobile-nav)
+  + [data-testid="element-container"] *,
+[data-testid="element-container"]:has(.tt-mobile-nav)
+  + [data-testid="element-container"] input,
+[data-testid="element-container"][data-tt-mobile-nav="1"] *,
+[data-testid="element-container"][data-tt-mobile-nav="1"] input {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  caret-color: transparent !important;
 }
 
 /* ---- Leaderboard cards ---- */
@@ -812,6 +835,13 @@ html[data-tt-standalone="1"] .block-container {
   }
   h1, h2, h3, h4 {
     color: var(--ink) !important;
+  }
+
+  /* Phone top menu sticky surface — dark mode */
+  [data-testid="element-container"]:has(.tt-mobile-nav)
+    + [data-testid="element-container"],
+  [data-testid="element-container"][data-tt-mobile-nav="1"] {
+    background: rgba(15, 20, 25, 0.92);
   }
 
   /* Sidebar button nav — dark mode */
