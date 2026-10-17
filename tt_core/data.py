@@ -179,8 +179,11 @@ def get_followups(username: str | None = None) -> pd.DataFrame:
     return work
 
 
-def get_due_followups(username: str, *, on_or_before=None) -> pd.DataFrame:
-    """Open follow-ups due on/before date (default: today) — 今日要跟."""
+def get_due_followups(username: str | None = None, *, on_or_before=None) -> pd.DataFrame:
+    """Open follow-ups due on/before date (default: today) — 今日要跟.
+
+    Pass ``username=None`` for the whole team (Admin / Leader home).
+    """
     today = on_or_before or datetime.date.today()
     cutoff = pd.Timestamp(today)
     df = get_followups(username)
@@ -190,13 +193,18 @@ def get_due_followups(username: str, *, on_or_before=None) -> pd.DataFrame:
     if open_df.empty:
         return open_df
     due = open_df[open_df["next_date"].notna() & (open_df["next_date"] <= cutoff)]
-    return due.sort_values(by=["next_date", "person"], ascending=True)
+    sort_cols = ["next_date", "username", "person"]
+    sort_cols = [c for c in sort_cols if c in due.columns]
+    return due.sort_values(by=sort_cols, ascending=True)
 
 
 def get_upcoming_followups(
-    username: str, *, days: int = 7, after=None
+    username: str | None = None, *, days: int = 7, after=None
 ) -> pd.DataFrame:
-    """Open follow-ups after `after` (default today) within N days."""
+    """Open follow-ups after `after` (default today) within N days.
+
+    Pass ``username=None`` for the whole team (Admin / Leader home).
+    """
     start = pd.Timestamp(after or datetime.date.today())
     end = start + pd.Timedelta(days=days)
     df = get_followups(username)
@@ -208,7 +216,9 @@ def get_upcoming_followups(
         & (open_df["next_date"] > start)
         & (open_df["next_date"] <= end)
     ]
-    return upcoming.sort_values(by=["next_date", "person"], ascending=True)
+    sort_cols = ["next_date", "username", "person"]
+    sort_cols = [c for c in sort_cols if c in upcoming.columns]
+    return upcoming.sort_values(by=sort_cols, ascending=True)
 
 
 def close_open_followups(username: str, person: str, track: str | None = None) -> int:

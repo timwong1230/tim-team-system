@@ -1077,8 +1077,11 @@ if is_leader:
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
-def _render_followup_item(row, *, key_prefix: str) -> None:
-    """One follow-up card with mark-done control."""
+def _render_followup_item(row, *, key_prefix: str, show_owner: bool = False) -> None:
+    """One follow-up card with mark-done control.
+
+    When ``show_owner`` is True (Admin / Leader home), show which colleague owns the case.
+    """
     nd = row.get("next_date")
     try:
         nd_str = pd.to_datetime(nd).strftime("%Y-%m-%d") if pd.notna(nd) else "—"
@@ -1099,8 +1102,10 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
     person = str(row.get("person") or "")
     stage = str(row.get("stage") or "")
     action = str(row.get("next_action") or "")
+    owner = str(row.get("username") or "").strip()
+    owner_bit = f" · **{owner}**" if show_owner and owner else ""
     st.markdown(
-        f"**{flag} · {person}**（{track}｜{stage}）  \n"
+        f"**{flag} · {person}**{owner_bit}（{track}｜{stage}）  \n"
         f"Next：{action}  \n"
         f"日期：`{nd_str}`"
     )
@@ -1123,8 +1128,9 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
             go_menu(
                 "🧠 AI Tim",
                 coach_tim_pending=(
-                    f"幫我跟進呢單：{person}（{track}｜{stage}）。"
-                    f"Next action：{action or '未填'}；日期：{nd_str}。"
+                    f"幫我跟進呢單：{person}（{track}｜{stage}）"
+                    + (f"｜同事 {owner}" if owner else "")
+                    + f"。Next action：{action or '未填'}；日期：{nd_str}。"
                     "請俾我今日具體講法同下一步。"
                 ),
             )
@@ -1133,22 +1139,33 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
 
 def page_home():
     user = st.session_state["user"]
-    snap = get_member_snapshot(user) if st.session_state["role"] == "Member" else None
+    role = st.session_state.get("role") or "Member"
+    # Admin / Leader see every colleague's overdue + due follow-ups
+    from tt_core.coach_writes import is_admin as _is_admin_home
+
+    is_admin_home = _is_admin_home(role, user)
+    snap = get_member_snapshot(user) if role == "Member" else None
     team = get_data("Yearly")
 
+    hero_sub = (
+        f"你好，{user} · 顯示**全隊**過期同今日要跟個案"
+        if is_admin_home
+        else f"你好，{user} · 過期同今日要跟嘅案會出現喺呢度"
+    )
     st.markdown(
         f"""
         <div class="tt-hero">
           <div class="tt-kicker">{BRAND_APP if MOBILE else BRAND_SYSTEM}</div>
           <h1 style="margin:0;">今日行動清單</h1>
-          <p class="tt-sub">你好，{user} · 過期同今日要跟嘅案會出現喺呢度</p>
+          <p class="tt-sub">{hero_sub}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    due = get_due_followups(user)
-    upcoming = get_upcoming_followups(user, days=7)
+    # Leader / Admin: whole-team follow-ups; Members: own only
+    due = get_due_followups(None if is_admin_home else user)
+    upcoming = get_upcoming_followups(None if is_admin_home else user, days=7)
 
     # Compact KPI strip
     if snap:
@@ -1166,20 +1183,27 @@ def page_home():
         r1[1].metric("Team SC", f"${get_team_sc(calc):,.0f}")
         st.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
 
-    st.markdown("### 今日要跟")
+    st.markdown("### 今日要跟" + ("（全隊）" if is_admin_home else ""))
     if due.empty:
         st.success("暫時冇逾期／今日到期項目 — 保持！")
     else:
-        st.caption(f"共 {len(due)} 項（已過期或今日到期）")
+        st.caption(
+            f"共 {len(due)} 項（已過期或今日到期）"
+            + (" · 含所有同事" if is_admin_home else "")
+        )
         for _, row in due.iterrows():
-            _render_followup_item(row, key_prefix="home_due")
+            _render_followup_item(
+                row, key_prefix="home_due", show_owner=is_admin_home
+            )
 
-    st.markdown("### 未來 7 日")
+    st.markdown("### 未來 7 日" + ("（全隊）" if is_admin_home else ""))
     if upcoming.empty:
         st.info("未有未來 7 日跟進。去打卡時記得填 Next action + 日期。")
     else:
         for _, row in upcoming.iterrows():
-            _render_followup_item(row, key_prefix="home_up")
+            _render_followup_item(
+                row, key_prefix="home_up", show_owner=is_admin_home
+            )
 
     # Stack on mobile — 3 narrow columns made taps unreliable / easy to miss
     if MOBILE:
