@@ -17,6 +17,7 @@ from tt_core.constants import MDRT_TARGET, Q1_TARGET, WEEKLY_MIN_ACTS
 
 COACH_MENU = "🧠 Coach Tim"
 DEFAULT_MODEL = "gpt-4o-mini"
+# AI Studio now issues AQ.* auth keys; prefer current flash models
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 MAX_TOOLS_PER_TURN = 3
 SETTING_API_KEY = "coach_tim_openai_api_key"
@@ -1095,7 +1096,11 @@ def gemini_chat(
     model: str = DEFAULT_GEMINI_MODEL,
     timeout: int = 60,
 ) -> str:
-    """Google AI Studio free-tier generateContent (no OpenAI billing)."""
+    """Google AI Studio generateContent.
+
+    New AI Studio keys are auth keys (``AQ.…``). Prefer ``x-goog-api-key``
+    header; also try ``?key=`` for older ``AIza…`` traffic keys.
+    """
     key = str(api_key or "").strip()
     if not key:
         raise RuntimeError("未設定 AI key")
@@ -1105,15 +1110,17 @@ def gemini_chat(
     model_candidates = [model_id]
     for alt in (
         "gemini-2.0-flash",
+        "gemini-2.0-flash-001",
         "gemini-2.0-flash-lite",
         "gemini-1.5-flash",
         "gemini-1.5-flash-latest",
         "gemini-flash-latest",
+        "gemini-2.5-flash",
     ):
         if alt not in model_candidates:
             model_candidates.append(alt)
 
-    # Try with systemInstruction first; some keys/models reject it → prepend to user msg
+    # systemInstruction first; fallback prepends system into the first user turn
     payload_variants: list[dict[str, Any]] = [
         {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -1122,8 +1129,7 @@ def gemini_chat(
         },
     ]
     merged = [dict(c) for c in contents]
-    first = merged[0]
-    first_text = first["parts"][0]["text"]
+    first_text = merged[0]["parts"][0]["text"]
     merged[0] = {
         "role": "user",
         "parts": [{"text": f"{system}\n\n---\n\n{first_text}"}],
@@ -1132,49 +1138,62 @@ def gemini_chat(
         {"contents": merged, "generationConfig": {"temperature": 0.6}}
     )
 
+    # Auth styles: header (recommended for AQ auth keys) then query param
+    auth_styles = ("header", "query")
+
     last_err = ""
     for mid in model_candidates:
         for payload in payload_variants:
-            qs = urllib.parse.urlencode({"key": key})
-            url = (
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{urllib.parse.quote(mid, safe='')}:generateContent?{qs}"
-            )
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                # Blocked / safety
-                cands = data.get("candidates") or []
-                if not cands:
-                    pf = data.get("promptFeedback") or {}
-                    last_err = f"Gemini 無回覆（{mid}）：{pf or data}"[:300]
+            for auth in auth_styles:
+                if auth == "header":
+                    url = (
+                        "https://generativelanguage.googleapis.com/v1beta/models/"
+                        f"{urllib.parse.quote(mid, safe='')}:generateContent"
+                    )
+                    headers = {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": key,
+                    }
+                else:
+                    qs = urllib.parse.urlencode({"key": key})
+                    url = (
+                        "https://generativelanguage.googleapis.com/v1beta/models/"
+                        f"{urllib.parse.quote(mid, safe='')}:generateContent?{qs}"
+                    )
+                    headers = {"Content-Type": "application/json"}
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST",
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    cands = data.get("candidates") or []
+                    if not cands:
+                        pf = data.get("promptFeedback") or {}
+                        last_err = f"無回覆（{mid}/{auth}）：{pf or data}"[:300]
+                        continue
+                    parts = cands[0].get("content", {}).get("parts", [])
+                    text = "".join(str(p.get("text") or "") for p in parts).strip()
+                    if not text:
+                        last_err = f"回覆空白（{mid}/{auth}）"
+                        continue
+                    return text
+                except urllib.error.HTTPError as e:
+                    body = e.read().decode("utf-8", errors="replace")[:400]
+                    last_err = f"HTTP {e.code}（{mid}/{auth}）：{body}"
+                    # Hard auth failure on both styles → stop early after query try
+                    if e.code in (401, 403) and auth == "query":
+                        raise RuntimeError(
+                            "AI key 無效或未開權限。請確認係 AI Studio 嘅 Gemini API key "
+                            "（而家可以係 AQ… 或 AIza…），再撳「測試連線」。"
+                        ) from e
                     continue
-                parts = cands[0].get("content", {}).get("parts", [])
-                text = "".join(str(p.get("text") or "") for p in parts).strip()
-                if not text:
-                    last_err = f"Gemini 回覆空白（{mid}）"
+                except Exception as e:
+                    last_err = str(e)[:300]
                     continue
-                return text
-            except urllib.error.HTTPError as e:
-                body = e.read().decode("utf-8", errors="replace")[:400]
-                last_err = f"HTTP {e.code}（{mid}）：{body}"
-                # Invalid key / permission — no point trying more models with same key shape
-                if e.code in (401, 403):
-                    raise RuntimeError(
-                        "AI key 無效或未開權限。請去 aistudio.google.com/apikey "
-                        "開新 key（通常以 AIza 開頭），再貼上儲存。"
-                    ) from e
-                # 404 model missing → next model; 400 bad request → try other payload
-                continue
-            except Exception as e:
-                last_err = str(e)[:300]
-                continue
     raise RuntimeError(last_err or "AI 連線失敗")
 
 

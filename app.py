@@ -1294,23 +1294,18 @@ def page_coach_tim():
             st.markdown(
                 "全隊共用一把 AI key；同事只見「Coach Tim AI」，唔會見到供應商名稱。\n\n"
                 "去 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) "
-                "**Create API key** → 複製（多數以 `AIza` 開頭）→ 貼下面儲存 → 撳「測試連線」。"
+                "**Create API key** → 複製（而家可以係 `AQ…` 或 `AIza…`）→ 貼下面儲存 → 撳「測試連線」。"
             )
             g_existing = ct._secret_gemini_key()
             if g_existing:
                 st.caption(f"已儲存：`{ct.mask_api_key(g_existing)}`")
-                if not g_existing.startswith("AIza"):
-                    st.warning(
-                        "呢把 key 唔似 AI Studio 標準格式（通常 `AIza…`）。"
-                        "請重新開一把 Generative Language / Gemini API key，唔好貼錯其他 Google key。"
-                    )
             if last_err:
                 st.error(f"上次 AI 連線失敗原因：{last_err}")
             gem_key = st.text_input(
                 "AI API key",
                 value="",
                 type="password",
-                placeholder="AIza…（貼新 key）",
+                placeholder="貼 AI Studio 複製嘅 key（AQ… 或 AIza…）",
                 key="ct_gemini_key_input",
             )
             g1, g2, g3 = st.columns(3)

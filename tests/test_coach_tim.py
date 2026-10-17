@@ -292,7 +292,11 @@ def test_app_wired():
     assert "save_gemini_api_key" in src
     assert "接通 AI 教練" in src
     assert "免費 AI（Gemini）" not in src
+    assert "通常 `AIza…`" not in src  # AQ auth keys are valid now
     assert "TOOL_CATALOG" in src
+    assert "x-goog-api-key" in (_ROOT / "tt_core" / "coach_tim.py").read_text(
+        encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":
