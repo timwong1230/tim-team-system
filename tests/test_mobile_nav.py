@@ -65,6 +65,10 @@ def test_nav_pending_roundtrip_simulation():
         def selectbox(label, options, key=None, label_visibility=None):
             return ss.get(key) or options[0]
 
+        @staticmethod
+        def html(script, unsafe_allow_javascript=False):
+            return None
+
     mob.st = FakeSt()
 
     mob.go_menu("📝 打卡 Check-in")
@@ -122,6 +126,22 @@ def test_app_uses_go_menu_on_home_buttons():
     assert "mobile_top_nav" in mob
     assert "go_menu" in mob
     assert "StreamlitWidgetAlreadyInstantiatedError" in mob
+
+
+def test_phone_top_nav_blocks_text_selection():
+    """iPhone must not treat the top menu as copyable / editable text."""
+    styles = (_ROOT / "tt_core" / "styles.py").read_text(encoding="utf-8")
+    assert "tt-mobile-nav" in styles
+    assert "-webkit-user-select: none" in styles
+    assert "-webkit-touch-callout: none" in styles
+    assert 'data-tt-mobile-nav="1"' in styles
+    mob = (_ROOT / "tt_core" / "mobile.py").read_text(encoding="utf-8")
+    assert "_harden_phone_top_nav" in mob
+    assert 'readonly' in mob
+    assert 'inputmode' in mob
+    assert "_harden_phone_top_nav()" in mob[
+        mob.index("def mobile_top_nav") : mob.index("def go_menu")
+    ]
 
 
 if __name__ == "__main__":
