@@ -2128,44 +2128,15 @@ def page_dashboard():
     st.markdown(f"## Dashboard · {st.session_state['user']}")
     if is_leader:
         with st.expander("每週戰報生成器（Leader）", expanded=False):
+            st.caption(
+                "獎罰唔包 Tim（分數照顯示）。無人罰款時 Tim 獎 $100 俾最高分同事；"
+                "若 Tim 最高分則獎第 2 高。"
+            )
             if st.button("生成上週結算戰報"):
+                from tt_core.weekly_report import build_weekly_settlement_report
+
                 wk_df, start, end = get_last_week_data()
-                max_score = wk_df["wk_score"].max() if not wk_df.empty else 0
-                winners = (
-                    wk_df[wk_df["wk_score"] == max_score]
-                    if not wk_df.empty and max_score > 0
-                    else pd.DataFrame()
-                )
-                losers = wk_df[wk_df["wk_count"] < WEEKLY_MIN_ACTS] if not wk_df.empty else pd.DataFrame()
-                penalty_total = len(losers) * WEEKLY_PENALTY
-                prize = (
-                    penalty_total / len(winners)
-                    if penalty_total > 0 and not winners.empty
-                    else (WEEKLY_PENALTY / len(winners) if not winners.empty else 0)
-                )
-                report = f"📅 *【TIM TEAM 上週戰報 ({start} ~ {end})】*\n\n"
-                if max_score > 0 and not winners.empty:
-                    report += f"🏆 *上週 MVP (獨得獎金 ${int(prize)}):*\n"
-                    for _, w in winners.iterrows():
-                        report += f"👑 *{w['username']}* ({int(w['wk_score'])}分)\n"
-                    report += (
-                        f"_多謝 {len(losers)} 位同事贊助獎金池！_\n\n"
-                        if penalty_total > 0
-                        else "_全員達標！Tim 自掏 $100 請飲茶！_\n\n"
-                    )
-                else:
-                    report += "⚠️ *上週全軍覆沒？* 無人開工？\n\n"
-                if not losers.empty:
-                    report += f"💸 *【罰款名單 - 每人 ${WEEKLY_PENALTY}】*\n"
-                    for _, l in losers.iterrows():
-                        report += f"❌ {l['username']} (得 {int(l['wk_count'])} 次)\n"
-                else:
-                    report += "✅ *上週無人罰款！Excellent！*\n"
-                report += "\n📊 *詳細戰況：*\n"
-                if not wk_df.empty:
-                    for _, row in wk_df.sort_values(by="wk_score", ascending=False).iterrows():
-                        report += f"{row['username']}: {int(row['wk_score'])}分 ({int(row['wk_count'])}次)\n"
-                report += "\n🚀 *新一週由零開始，大家加油！*"
+                report = build_weekly_settlement_report(wk_df, start, end)
                 st.code(report)
                 st.link_button("Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
 
