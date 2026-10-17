@@ -1241,16 +1241,21 @@ def page_coach_tim():
     user = st.session_state["user"]
     role = st.session_state.get("role") or "Member"
     ai_on = ct.llm_configured()
+    provider = ct.llm_provider()
 
     st.markdown("## 🧠 Coach Tim")
-    if ai_on:
+    if provider == "gemini":
         st.success(
-            "AI 教練已接通——會按你嘅業績、跟進同準客戶即時答（全隊共用一把 key，好似 Telegram bot）。"
+            "免費 AI（Gemini）已接通——按你嘅業績、跟進同準客戶自由答，唔使額外交 OpenAI。"
+        )
+    elif provider == "openai":
+        st.success(
+            "AI 教練已接通（OpenAI）——會按你嘅即時數據答。"
         )
     else:
         st.info(
-            "而家用內建教練。Leader 喺下面「接通 AI」貼上 OpenAI key 之後，"
-            "全隊就可以好似 Telegram Coach Tim 咁自由傾偈。"
+            "而家用內建教練。Leader 用下面「免費接通 AI」貼 Google Gemini key（免費），"
+            "全隊就可以自由傾偈——唔使額外交錢。"
         )
     st.caption(
         "每次對話會讀你嘅今日要跟、本週活動、MDRT／Extra 10 同準客戶——"
@@ -1285,42 +1290,78 @@ def page_coach_tim():
     with st.expander("而家讀到嘅我嘅 M+2 數據", expanded=False):
         st.markdown(ct.format_context_markdown(ctx))
 
-    # Leader: paste OpenAI key once → whole team gets Telegram-like AI
+    # Leader: free Gemini key (recommended) — Cursor fee does not cover app AI
     if role == "Leader":
-        with st.expander("Leader：接通 AI 教練（全隊共用）", expanded=not ai_on):
+        with st.expander("Leader：免費接通 AI（推薦 Gemini）", expanded=not ai_on):
             st.markdown(
-                "好似 Telegram bot：**一把 OpenAI API key**，同事用自己帳號入嚟就自動帶自己數據傾偈。"
-                "Key 喺 [platform.openai.com](https://platform.openai.com/api-keys) 開（要儲值）。"
+                "**Cursor 月費唔包**同事喺 M+2 用 AI。"
+                "唔想額外交 OpenAI 的話，用 **Google Gemini 免費 key**（AI Studio）：\n\n"
+                "1. 開 [aistudio.google.com/apikey](https://aistudio.google.com/apikey)（Google 帳號）\n"
+                "2. Create API key → 複製\n"
+                "3. 貼下面 → 儲存——全隊共用，每人傾偈自動帶自己業績／準客戶"
             )
-            existing = ct._secret_openai_key()
-            if existing:
-                st.caption(f"而家用緊：`{ct.mask_api_key(existing)}`")
-            new_key = st.text_input(
-                "OpenAI API key",
+            g_existing = ct._secret_gemini_key()
+            if g_existing:
+                st.caption(f"而家用緊免費 Gemini：`{ct.mask_api_key(g_existing)}`")
+            gem_key = st.text_input(
+                "Gemini API key（免費）",
                 value="",
                 type="password",
-                placeholder="sk-…",
-                key="ct_api_key_input",
-                help="只顯示俾 Leader；同事唔使自己有 ChatGPT。",
+                placeholder="AIza…",
+                key="ct_gemini_key_input",
             )
-            c_save, c_clear, c_tg = st.columns(3)
-            with c_save:
-                if st.button("儲存並接通 AI", type="primary", use_container_width=True, key="ct_save_key"):
-                    if new_key.strip().startswith("sk-") or new_key.strip().startswith("sk-proj-"):
-                        if ct.save_openai_api_key(new_key.strip()):
+            g1, g2 = st.columns(2)
+            with g1:
+                if st.button(
+                    "儲存免費 AI",
+                    type="primary",
+                    use_container_width=True,
+                    key="ct_save_gemini",
+                ):
+                    raw = gem_key.strip()
+                    if len(raw) >= 20:
+                        if ct.save_gemini_api_key(raw):
                             st.session_state.pop("coach_tim_messages", None)
-                            st.toast("AI 教練已接通——全隊可用", icon="✅")
+                            st.toast("免費 Gemini AI 已接通——全隊可用", icon="✅")
                             st.rerun()
                         else:
-                            st.error("儲存失敗，請再試或改用 Streamlit Secrets。")
+                            st.error("儲存失敗，請再試。")
                     else:
-                        st.warning("請貼以 sk- 開頭嘅 OpenAI API key。")
-            with c_clear:
-                if st.button("清除 key", use_container_width=True, key="ct_clear_key"):
-                    ct.clear_openai_api_key()
+                        st.warning("請貼完整 Gemini API key。")
+            with g2:
+                if st.button("清除 Gemini key", use_container_width=True, key="ct_clear_gemini"):
+                    ct.clear_gemini_api_key()
                     st.session_state.pop("coach_tim_messages", None)
-                    st.toast("已清 key，改返內建教練", icon="ℹ️")
+                    st.toast("已清 Gemini key", icon="ℹ️")
                     st.rerun()
+
+            with st.expander("（可選）改用要收費嘅 OpenAI", expanded=False):
+                existing = ct._secret_openai_key()
+                if existing:
+                    st.caption(f"OpenAI：`{ct.mask_api_key(existing)}`")
+                new_key = st.text_input(
+                    "OpenAI API key",
+                    value="",
+                    type="password",
+                    placeholder="sk-…",
+                    key="ct_api_key_input",
+                )
+                o1, o2 = st.columns(2)
+                with o1:
+                    if st.button("儲存 OpenAI", use_container_width=True, key="ct_save_key"):
+                        if new_key.strip().startswith("sk-"):
+                            ct.save_openai_api_key(new_key.strip())
+                            st.session_state.pop("coach_tim_messages", None)
+                            st.toast("OpenAI 已儲存", icon="✅")
+                            st.rerun()
+                        else:
+                            st.warning("請貼 sk- 開頭嘅 key。")
+                with o2:
+                    if st.button("清除 OpenAI", use_container_width=True, key="ct_clear_key"):
+                        ct.clear_openai_api_key()
+                        st.session_state.pop("coach_tim_messages", None)
+                        st.rerun()
+
             tg_default = ct.get_telegram_coach_url()
             tg_url = st.text_input(
                 "（可選）Telegram Coach Tim 連結",
@@ -1328,15 +1369,10 @@ def page_coach_tim():
                 placeholder="https://t.me/你的bot",
                 key="ct_tg_url",
             )
-            with c_tg:
-                if st.button("儲存 Telegram 連結", use_container_width=True, key="ct_save_tg"):
-                    ct.save_telegram_coach_url(tg_url)
-                    st.toast("已儲存", icon="✅")
-                    st.rerun()
-            st.caption(
-                "亦可以改喺 Streamlit Cloud → Settings → Secrets 加：\n"
-                '`openai.api_key = "sk-..."`'
-            )
+            if st.button("儲存 Telegram 連結", use_container_width=True, key="ct_save_tg"):
+                ct.save_telegram_coach_url(tg_url)
+                st.toast("已儲存", icon="✅")
+                st.rerun()
 
     tg_link = ct.get_telegram_coach_url()
     if tg_link:
@@ -1388,7 +1424,11 @@ def page_coach_tim():
         history = [m for m in history if not (
             m["role"] == "assistant" and m["content"].startswith("你好")
         )][-12:]
-        spinner = "Coach Tim AI 諗緊…" if ai_on else "Coach Tim 查緊最新數據…"
+        spinner = (
+            "Coach Tim（免費 Gemini）諗緊…"
+            if provider == "gemini"
+            else ("Coach Tim AI 諗緊…" if ai_on else "Coach Tim 查緊最新數據…")
+        )
         with st.spinner(spinner):
             result = ct.reply(user_text, history, ctx)
             if isinstance(result, tuple) and len(result) == 3:

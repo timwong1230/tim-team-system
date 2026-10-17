@@ -1,7 +1,7 @@
-"""Coach Tim AI — live M+2 read tools + chat (OpenAI or offline).
+"""Coach Tim AI — live M+2 read tools + chat (Gemini free / OpenAI / offline).
 
-Phase 2: each reply can call a small set of read-only tools so answers
-use fresh data (not only the page-load snapshot). No write-back.
+Prefer free Google Gemini (AI Studio) so the team gets real AI answers
+without OpenAI billing. Cursor subscription does not cover this app.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -16,9 +17,12 @@ from tt_core.constants import MDRT_TARGET, Q1_TARGET, WEEKLY_MIN_ACTS
 
 COACH_MENU = "🧠 Coach Tim"
 DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 MAX_TOOLS_PER_TURN = 3
 SETTING_API_KEY = "coach_tim_openai_api_key"
 SETTING_MODEL = "coach_tim_openai_model"
+SETTING_GEMINI_KEY = "coach_tim_gemini_api_key"
+SETTING_GEMINI_MODEL = "coach_tim_gemini_model"
 SETTING_TELEGRAM_URL = "coach_tim_telegram_url"
 _SETTINGS_SHEET = "system_settings"
 
@@ -156,12 +160,77 @@ def _secret_model() -> str:
     return saved or DEFAULT_MODEL
 
 
+def _secret_gemini_key() -> str:
+    """Free Google AI Studio key — secrets first, then Leader-saved setting."""
+    try:
+        import streamlit as st
+
+        if "gemini" in st.secrets:
+            block = st.secrets["gemini"]
+            if isinstance(block, dict) or hasattr(block, "get"):
+                for k in ("api_key", "key", "GEMINI_API_KEY"):
+                    v = block.get(k) if hasattr(block, "get") else None
+                    if v:
+                        return str(v).strip()
+            elif block:
+                return str(block).strip()
+        if "coach_tim" in st.secrets:
+            block = st.secrets["coach_tim"]
+            for k in ("gemini_api_key", "gemini_key"):
+                v = block.get(k) if hasattr(block, "get") else None
+                if v:
+                    return str(v).strip()
+        for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+            if k in st.secrets and st.secrets[k]:
+                return str(st.secrets[k]).strip()
+    except Exception:
+        pass
+    return _settings_get(SETTING_GEMINI_KEY, "")
+
+
+def _secret_gemini_model() -> str:
+    try:
+        import streamlit as st
+
+        if "coach_tim" in st.secrets and st.secrets["coach_tim"].get("gemini_model"):
+            return str(st.secrets["coach_tim"]["gemini_model"]).strip()
+        if "gemini" in st.secrets and hasattr(st.secrets["gemini"], "get"):
+            m = st.secrets["gemini"].get("model")
+            if m:
+                return str(m).strip()
+    except Exception:
+        pass
+    return _settings_get(SETTING_GEMINI_MODEL, "") or DEFAULT_GEMINI_MODEL
+
+
 def llm_configured() -> bool:
-    return bool(_secret_openai_key())
+    """True when any free/paid LLM key is available (Gemini preferred)."""
+    return bool(_secret_gemini_key() or _secret_openai_key())
+
+
+def llm_provider() -> str:
+    """Active provider label: gemini | openai | offline."""
+    if _secret_gemini_key():
+        return "gemini"
+    if _secret_openai_key():
+        return "openai"
+    return "offline"
+
+
+def save_gemini_api_key(api_key: str) -> bool:
+    """Leader saves free Gemini key for the whole team."""
+    key = str(api_key or "").strip()
+    if not key:
+        return False
+    return _settings_set(SETTING_GEMINI_KEY, key)
+
+
+def clear_gemini_api_key() -> bool:
+    return _settings_set(SETTING_GEMINI_KEY, "")
 
 
 def save_openai_api_key(api_key: str) -> bool:
-    """Leader saves team OpenAI key (like one Telegram bot token for everyone)."""
+    """Optional paid OpenAI key (not required if Gemini is set)."""
     key = str(api_key or "").strip()
     if not key:
         return False
@@ -995,6 +1064,69 @@ def openai_chat(
         raise RuntimeError(f"OpenAI HTTP {e.code}: {body}") from e
 
 
+def gemini_chat(
+    messages: list[dict[str, str]],
+    *,
+    system: str,
+    api_key: str,
+    model: str = DEFAULT_GEMINI_MODEL,
+    timeout: int = 60,
+) -> str:
+    """Google AI Studio free-tier generateContent (no OpenAI billing)."""
+    contents: list[dict[str, Any]] = []
+    for m in messages:
+        role = "user" if m.get("role") == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": str(m.get("content") or "")}]})
+    # Gemini needs alternating roles; ensure we end on user
+    if contents and contents[0]["role"] == "model":
+        contents.insert(0, {"role": "user", "parts": [{"text": "（開始）"}]})
+
+    model_id = (model or DEFAULT_GEMINI_MODEL).strip()
+    # Prefer requested model; fall back if free tier renamed a model id
+    model_candidates = [model_id]
+    for alt in ("gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"):
+        if alt not in model_candidates:
+            model_candidates.append(alt)
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.6},
+    }
+    last_err = ""
+    for mid in model_candidates:
+        qs = urllib.parse.urlencode({"key": api_key})
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{urllib.parse.quote(mid, safe='')}:generateContent?{qs}"
+        )
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            parts = (
+                data.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [])
+            )
+            text = "".join(str(p.get("text") or "") for p in parts).strip()
+            if not text:
+                raise RuntimeError("Gemini 回覆空白")
+            return text
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")[:400]
+            last_err = f"Gemini HTTP {e.code} ({mid}): {body}"
+            if e.code not in (404, 400):
+                raise RuntimeError(last_err) from e
+            continue
+    raise RuntimeError(last_err or "Gemini 失敗")
+
+
 def reply(
     user_text: str,
     history: list[dict[str, str]],
@@ -1002,36 +1134,64 @@ def reply(
 ) -> tuple[str, str, dict[str, Any]]:
     """
     Returns (assistant_text, mode, meta).
-    mode: 'openai' | 'offline'
-    meta: {tools_used: [...]}
-    Each turn refreshes live data via read-only tools (max 3).
+    mode: 'gemini' | 'openai' | 'offline'
+    Prefer free Gemini, then OpenAI, then offline templates.
     """
     username = str((ctx or {}).get("username") or "")
     role = str((ctx or {}).get("role") or "Member")
     live_ctx, tools_used = gather_live_context(
         username, user_text, role=role, base_ctx=ctx
     )
-    meta = {"tools_used": tools_used}
+    meta = {"tools_used": tools_used, "provider": llm_provider()}
 
     system = system_prompt(live_ctx)
     messages = list(history or []) + [{"role": "user", "content": user_text}]
     if len(messages) > 16:
         messages = messages[-16:]
 
-    key = _secret_openai_key()
-    if key:
+    gemini_key = _secret_gemini_key()
+    gemini_err = ""
+    if gemini_key:
+        try:
+            text = gemini_chat(
+                messages,
+                system=system,
+                api_key=gemini_key,
+                model=_secret_gemini_model(),
+            )
+            meta["provider"] = "gemini"
+            return text, "gemini", meta
+        except Exception as e:
+            # Fall through to OpenAI / offline
+            gemini_err = str(e)[:180]
+
+    openai_key = _secret_openai_key()
+    if openai_key:
         try:
             text = openai_chat(
-                messages, system=system, api_key=key, model=_secret_model()
+                messages, system=system, api_key=openai_key, model=_secret_model()
             )
+            meta["provider"] = "openai"
             return text, "openai", meta
         except Exception as e:
             fallback = offline_reply(user_text, live_ctx)
+            hint = f"（AI 連線暫時失敗：{e}"
+            if gemini_err:
+                hint += f"；Gemini：{gemini_err}"
+            hint += "）"
             return (
-                f"（AI 連線暫時失敗：{e}）\n\n改用本地教練建議：\n\n{fallback}",
+                f"{hint}\n\n改用本地教練建議：\n\n{fallback}",
                 "offline",
                 meta,
             )
+
+    if gemini_err:
+        fallback = offline_reply(user_text, live_ctx)
+        return (
+            f"（免費 Gemini 連線失敗：{gemini_err}）\n\n改用本地教練：\n\n{fallback}",
+            "offline",
+            meta,
+        )
     return offline_reply(user_text, live_ctx), "offline", meta
 
 
@@ -1039,8 +1199,13 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     due_n = len(ctx.get("due") or [])
     name = ctx.get("username") or ""
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
-    ai = llm_configured()
-    mode = "（AI 教練——按你嘅即時數據自由傾）" if ai else "（內建教練——跟問題類型答）"
+    prov = llm_provider()
+    if prov == "gemini":
+        mode = "（免費 AI 教練 · Gemini——按你即時數據自由傾）"
+    elif prov == "openai":
+        mode = "（AI 教練——按你嘅即時數據自由傾）"
+    else:
+        mode = "（內建教練——跟問題類型答）"
     return (
         f"你好 {name}，我係 **Coach Tim** {mode}。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"

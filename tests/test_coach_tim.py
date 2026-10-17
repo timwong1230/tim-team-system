@@ -228,6 +228,40 @@ def test_system_prompt_telegram_style():
     assert "Tim" in sp
 
 
+def test_llm_provider_prefers_gemini():
+    from tt_core import coach_tim as ct
+
+    with patch.object(ct, "_secret_gemini_key", return_value="AIza-test"):
+        with patch.object(ct, "_secret_openai_key", return_value="sk-test"):
+            assert ct.llm_provider() == "gemini"
+            assert ct.llm_configured() is True
+    with patch.object(ct, "_secret_gemini_key", return_value=""):
+        with patch.object(ct, "_secret_openai_key", return_value=""):
+            assert ct.llm_provider() == "offline"
+
+
+def test_reply_uses_gemini_when_configured():
+    from tt_core import coach_tim as ct
+
+    base = _sample_ctx()
+
+    def fake_gather(username, user_text, *, role="Member", base_ctx=None):
+        live = dict(base_ctx or base)
+        live["_tools_used"] = [TOOL_MEMBER_SNAPSHOT]
+        return live, [TOOL_MEMBER_SNAPSHOT]
+
+    with patch.object(ct, "gather_live_context", side_effect=fake_gather):
+        with patch.object(ct, "_secret_gemini_key", return_value="AIza-free"):
+            with patch.object(ct, "_secret_openai_key", return_value=""):
+                with patch.object(
+                    ct, "gemini_chat", return_value="今日先跟 Sam，下一句約聽 concept。"
+                ):
+                    text, mode, meta = ct.reply("今日點做", [], base)
+    assert mode == "gemini"
+    assert "Sam" in text
+    assert meta.get("provider") == "gemini"
+
+
 def test_app_wired():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "🧠 Coach Tim" in src
@@ -237,8 +271,8 @@ def test_app_wired():
     assert "嵌喺 M+2" not in src
     assert "嵌入 M+2" not in src
     assert "Phase 1 只俾建議" not in src
-    assert "save_openai_api_key" in src
-    assert "接通 AI" in src
+    assert "save_gemini_api_key" in src
+    assert "免費接通 AI" in src
     assert "TOOL_CATALOG" in src
 
 
