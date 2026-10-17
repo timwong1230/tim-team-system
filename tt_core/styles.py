@@ -67,22 +67,32 @@ h3 { font-size: 1.45rem !important; }
 }
 .tt-side-spacer { height: 18px; }
 
-/* Active nav row (HTML — never a radio) */
+/* Active nav row — gold frame "着燈" (match leaderboard top card) */
 .tt-nav-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 11px 12px; margin: 2px 0; border-radius: 10px;
-  background: transparent;
+  padding: 11px 12px; margin: 3px 0; border-radius: 12px;
+  background: #FFFFFF;
+  border: 1.5px solid var(--line);
+  box-sizing: border-box;
 }
 .tt-nav-item-active {
-  background: linear-gradient(90deg, rgba(197,160,40,0.18) 0%, rgba(197,160,40,0.06) 100%);
-  box-shadow: inset 0 0 0 1px rgba(197,160,40,0.22);
+  background: linear-gradient(145deg, #FFFDF5 0%, #FFFFFF 60%);
+  border: 1.5px solid #C5A028 !important;
+  box-shadow: 0 6px 18px rgba(197, 160, 40, 0.18);
+  position: relative;
+}
+.tt-nav-item-active::before {
+  content: "";
+  position: absolute; left: 10px; right: 10px; top: 0; height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, #D4AF37, #F0D078, #D4AF37);
 }
 .tt-nav-bar {
   width: 3px; align-self: stretch; min-height: 18px; border-radius: 2px;
   background: var(--gold); flex-shrink: 0;
 }
 .tt-nav-item-active .tt-nav-text {
-  font-weight: 650; color: #5C4A12; font-size: 0.94rem; line-height: 1.35;
+  font-weight: 700; color: #5C4A12; font-size: 0.94rem; line-height: 1.35;
 }
 
 /* Main content primary buttons */
@@ -102,32 +112,33 @@ div.stButton > button[kind="secondary"] {
   box-shadow: none;
 }
 
-/* Sidebar: quiet professional nav buttons (no dots, no card stack) */
+/* Sidebar inactive nav — keep a light frame so selection does not "lose" a box */
 [data-testid="stSidebar"] div.stButton > button,
 [data-testid="stSidebar"] div.stButton > button[kind="secondary"],
 [data-testid="stSidebar"] div.stButton > button[kind="primary"] {
-  background: transparent !important;
+  background: #FFFFFF !important;
   color: var(--ink) !important;
-  border: none !important;
-  border-radius: 10px !important;
+  border: 1.5px solid var(--line) !important;
+  border-radius: 12px !important;
   box-shadow: none !important;
   justify-content: flex-start !important;
   text-align: left !important;
   font-weight: 500 !important;
   font-size: 0.92rem !important;
   letter-spacing: 0.01em !important;
-  padding: 11px 12px 11px 15px !important;
+  padding: 11px 12px !important;
   min-height: 44px !important;
-  margin: 2px 0 !important;
+  margin: 3px 0 !important;
 }
 [data-testid="stSidebar"] div.stButton > button:hover {
-  background: rgba(197, 160, 40, 0.10) !important;
+  background: #FFFDF5 !important;
   color: #5C4A12 !important;
-  border: none !important;
+  border-color: #E2C56A !important;
 }
 [data-testid="stSidebar"] div.stButton > button:focus {
   box-shadow: none !important;
   outline: none !important;
+  border-color: #C5A028 !important;
 }
 
 .tt-hero {
@@ -813,16 +824,22 @@ html[data-tt-standalone="1"] .block-container {
   /* Sidebar button nav — dark mode */
   [data-testid="stSidebar"] div.stButton > button,
   [data-testid="stSidebar"] div.stButton > button[kind="secondary"] {
-    background: transparent !important;
+    background: var(--surface) !important;
     color: var(--ink) !important;
-    border: none !important;
+    border: 1.5px solid var(--line) !important;
   }
   [data-testid="stSidebar"] div.stButton > button:hover {
     background: rgba(197, 160, 40, 0.14) !important;
+    border-color: #C5A028 !important;
+  }
+  .tt-nav-item {
+    background: var(--surface) !important;
+    border-color: var(--line) !important;
   }
   .tt-nav-item-active {
-    background: rgba(197, 160, 40, 0.16) !important;
-    box-shadow: inset 0 0 0 1px rgba(197, 160, 40, 0.28) !important;
+    background: rgba(197, 160, 40, 0.14) !important;
+    border: 1.5px solid #C5A028 !important;
+    box-shadow: 0 6px 18px rgba(197, 160, 40, 0.22) !important;
   }
   .tt-nav-item-active .tt-nav-text { color: #F5E6B8 !important; }
   .tt-side-kicker { color: var(--gold) !important; }
@@ -848,11 +865,11 @@ html[data-tt-standalone="1"] .block-container {
     color: var(--ink) !important;
     border: 1px solid var(--line) !important;
   }
-  /* Keep sidebar nav flat in dark mode (override secondary chrome above) */
+  /* Keep sidebar nav framed in dark mode (override secondary chrome above) */
   [data-testid="stSidebar"] div.stButton > button,
   [data-testid="stSidebar"] div.stButton > button[kind="secondary"] {
-    background: transparent !important;
-    border: none !important;
+    background: var(--surface) !important;
+    border: 1.5px solid var(--line) !important;
     color: var(--ink) !important;
     box-shadow: none !important;
   }
