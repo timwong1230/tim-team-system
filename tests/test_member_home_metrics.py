@@ -63,10 +63,15 @@ def test_member_home_metrics_recruit_met(monkeypatch):
 def test_page_home_scorecard_order_in_source():
     assert "def _render_member_home_scorecard" in _APP
     assert "def _html_member_home_scorecard" in _APP
-    assert "tt-scorecard" in _APP
+    assert "components.html" in _APP[
+        _APP.index("def _render_member_home_scorecard") : _APP.index(
+            "def page_home"
+        )
+    ]
     assert "本月完成" in _APP
     assert "全年完成" in _APP
     assert "今年招募" in _APP
+    assert "markdown drops" in _APP or "strips custom CSS" in _APP
     assert 'f"你好，{user}"' in _APP or "你好，{user}" in _APP
     assert "### 今日跟進事項" in _APP
     # Follow-ups section appears before member scorecard call
@@ -75,8 +80,12 @@ def test_page_home_scorecard_order_in_source():
     assert due_i < score_i
 
 
-def test_html_member_scorecard_renders_numbers():
-    # Import via exec of helper would pull streamlit; assert CSS class in styles instead
-    styles = (_ROOT / "tt_core" / "styles.py").read_text(encoding="utf-8")
-    assert ".tt-scorecard" in styles
-    assert ".tt-score-card-accent" in styles
+def test_html_member_scorecard_is_self_contained():
+    """Must embed <style> like Dashboard KPIs — page CSS does not reach markdown."""
+    fn_start = _APP.index("def _html_member_home_scorecard")
+    fn_end = _APP.index("def _render_member_home_scorecard")
+    body = _APP[fn_start:fn_end]
+    assert "<style>" in body
+    assert "components.html" not in body  # html builder only
+    assert "border-radius:16px" in body or "border-radius:16px" in body.replace(" ", "")
+    assert "linear-gradient" in body
