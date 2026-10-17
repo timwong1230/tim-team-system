@@ -51,6 +51,7 @@ from tt_core.data import (
     get_team_coach_overview,
     get_upcoming_followups,
     get_weekly_data,
+    member_home_metrics,
     weekly_activity_shortfall,
     last_iris_sync,
     login,
@@ -1257,6 +1258,55 @@ def _render_followup_item(row, *, key_prefix: str, show_owner: bool = False) -> 
     st.divider()
 
 
+def _render_member_home_scorecard(user: str) -> None:
+    """After follow-ups: 本月 → 全年/MDRT → 招募."""
+    try:
+        m = member_home_metrics(user)
+    except Exception:
+        m = None
+    if not m:
+        st.info("業績數據暫時未能載入。")
+        return
+
+    st.markdown("### 我的業績")
+
+    st.markdown("#### 本月")
+    st.metric("本月完成", f"${m['mtd_fyc']:,.0f}")
+    st.caption(f"{m['month']} · 來自 Iris Daily Completion")
+
+    st.markdown("#### 全年 · MDRT")
+    y1, y2 = st.columns(2)
+    y1.metric("全年完成", f"${m['ytd_fyc']:,.0f}")
+    y2.metric("MDRT 進度", f"{m['mdrt_pct']:.0f}%")
+    if m["mdrt_met"]:
+        st.caption(
+            f"MDRT 已有 ${m['mdrt_progress']:,.0f}／目標 ${m['mdrt_target']:,.0f} · 已達標"
+        )
+    else:
+        st.caption(
+            f"MDRT 已有 ${m['mdrt_progress']:,.0f}／目標 ${m['mdrt_target']:,.0f}"
+            f" · 尚欠 **${m['mdrt_remaining']:,.0f}**"
+        )
+    pct = min(max(float(m["mdrt_pct"]), 0.0), 100.0)
+    st.markdown(
+        f"""
+        <div style="background:#F3F4F6;border-radius:999px;height:10px;overflow:hidden;margin:4px 0 12px 0;">
+          <div style="width:{pct:.1f}%;height:100%;background:#C5A028;border-radius:999px;"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("#### 招募")
+    st.metric("今年招募", f"{m['recruit']} / {m['recruit_target']}")
+    if m["recruit_remaining"] > 0:
+        st.caption(f"仲要請 **{m['recruit_remaining']}** 人先達標（目標 {m['recruit_target']} 人／年）")
+    else:
+        st.caption(f"招募目標已達標（{m['recruit_target']} 人／年）")
+
+    st.caption(f"本週活動 {m['wk_count']}/{WEEKLY_MIN_ACTS} 次 · {m['wk_score']} 分")
+
+
 def page_home():
     user = st.session_state["user"]
     role = st.session_state.get("role") or "Member"
@@ -1264,13 +1314,13 @@ def page_home():
     from tt_core.coach_writes import is_admin as _is_admin_home
 
     is_admin_home = _is_admin_home(role, user)
-    snap = get_member_snapshot(user) if role == "Member" else None
+    is_member_home = role == "Member" and not is_admin_home
     team = get_data("Yearly")
 
     hero_sub = (
         f"你好，{user} · 作戰台：全隊跟進、欠活動、Iris 同步、週報"
         if is_admin_home
-        else f"你好，{user} · 過期同今日要跟嘅案會出現喺呢度"
+        else f"你好，{user} · 先跟進今日個案，再睇本月／全年／MDRT／招募"
     )
     st.markdown(
         f"""
@@ -1294,21 +1344,15 @@ def page_home():
         r1[0].metric("Team SC", f"${get_team_sc(calc):,.0f}")
         r1[1].metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
         _render_admin_ops_desk(due_count=len(due))
-    elif snap:
-        mdrt = mdrt_card_metrics(user)
-        r1 = st.columns(2)
-        r1[0].metric("今日要跟", len(due))
-        r1[1].metric("7日內", len(upcoming))
-        r2 = st.columns(2)
-        r2[0].metric("本週活動", f"{snap['wk_count']}/{WEEKLY_MIN_ACTS}")
-        r2[1].metric("MDRT", f"{mdrt['mdrt_pct']:.0f}%")
-    else:
+    elif not is_member_home:
+        # Non-member fallback (e.g. unexpected role)
         calc = float(team["fyc"].sum()) if not team.empty else 0.0
         r1 = st.columns(2)
         r1[0].metric("今日要跟", len(due))
         r1[1].metric("Team SC", f"${get_team_sc(calc):,.0f}")
         st.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
 
+    # Members: follow-ups first (no KPI strip above the list)
     st.markdown("### 今日要跟" + ("（全隊）" if is_admin_home else ""))
     if due.empty:
         st.success("暫時冇逾期／今日到期項目 — 保持！")
@@ -1330,6 +1374,10 @@ def page_home():
             _render_followup_item(
                 row, key_prefix="home_up", show_owner=is_admin_home
             )
+
+    # Member scorecard sits under the action list
+    if is_member_home:
+        _render_member_home_scorecard(user)
 
     # Stack on mobile — 3 narrow columns made taps unreliable / easy to miss
     if MOBILE:

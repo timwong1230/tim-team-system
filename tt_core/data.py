@@ -10,7 +10,12 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-from tt_core.constants import INACTIVE_MEMBERS, MDRT_TARGET, WEEKLY_MIN_ACTS
+from tt_core.constants import (
+    INACTIVE_MEMBERS,
+    MDRT_TARGET,
+    RECRUIT_YEAR_TARGET,
+    WEEKLY_MIN_ACTS,
+)
 from tt_core.db import read_data, run_query_gs, update_user_field
 
 
@@ -822,6 +827,31 @@ def get_member_snapshot(username: str) -> dict:
         "wk_end": wk_end,
         "team_fyc": float(yearly["fyc"].sum()) if not yearly.empty else 0.0,
         "team_acts": int(yearly["Total_Score"].sum()) if not yearly.empty else 0,
+    }
+
+
+def member_home_metrics(username: str, *, today=None) -> dict:
+    """Member homepage scorecard: MTD → YTD/MDRT → recruit remaining."""
+    today = today or datetime.date.today()
+    month = today.strftime("%Y-%m")
+    snap = get_member_snapshot(username)
+    mtd = get_mtd_fyc(username, month)
+    recruit = int(snap.get("recruit") or 0)
+    target = int(RECRUIT_YEAR_TARGET) if RECRUIT_YEAR_TARGET else 0
+    return {
+        "month": month,
+        "mtd_fyc": float(mtd),
+        "ytd_fyc": float(snap.get("fyc") or 0),
+        "mdrt_progress": float(snap.get("mdrt_progress") or 0),
+        "mdrt_pct": float(snap.get("mdrt_pct") or 0),
+        "mdrt_remaining": float(snap.get("mdrt_remaining") or 0),
+        "mdrt_met": bool(snap.get("mdrt_met")),
+        "mdrt_target": float(MDRT_TARGET) if MDRT_TARGET else 0.0,
+        "recruit": recruit,
+        "recruit_target": target,
+        "recruit_remaining": max(0, target - recruit),
+        "wk_count": int(snap.get("wk_count") or 0),
+        "wk_score": int(snap.get("wk_score") or 0),
     }
 
 
