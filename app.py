@@ -945,10 +945,10 @@ except Exception:
     st.session_state.pop("_iris_last_preview", None)
 
 # One-time escape hatch after previous crash / bad menu
-# Runs before mobile selectbox — safe to sync both keys here.
+# _nav_pending is applied by mobile_top_nav before the selectbox exists.
 if st.session_state.get("_force_home_once"):
     st.session_state["_menu_choice"] = "🏠 我的主頁"
-    st.session_state["mobile_top_nav"] = "🏠 我的主頁"
+    st.session_state["_nav_pending"] = "🏠 我的主頁"
     st.session_state.pop("_force_home_once", None)
 
 # Warm disk cache once per browser session so pages read locally (fast + offline-safe)

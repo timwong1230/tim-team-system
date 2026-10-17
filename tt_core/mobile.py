@@ -338,22 +338,22 @@ def render_install_guide(*, compact: bool = False) -> None:
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     """Compact top navigation for phones (avoids opening sidebar every time).
 
-    Important: programmatic jumps (Home buttons) must set session key
-    ``mobile_top_nav`` as well as ``_menu_choice``. Once a selectbox has a
-    ``key``, Streamlit ignores ``index=`` — so we sync the key *before*
-    instantiating the widget.
+    Programmatic jumps (Home CTAs via ``go_menu``) set ``_nav_pending`` for a
+    one-shot sync into the selectbox key *before* the widget is created.
+    We must NOT re-apply ``_menu_choice`` on every run — that locks users on
+    the page they jumped to and blocks the selectbox from changing pages.
     """
     valid = list(menu_items or [])
     if not valid:
         return current or ""
 
-    # Prefer explicit current (from _menu_choice after a button nav)
-    target = current if current in valid else None
+    pending = st.session_state.pop("_nav_pending", None)
     existing = st.session_state.get("mobile_top_nav")
-    if target is not None and existing != target:
-        st.session_state["mobile_top_nav"] = target
+    if pending in valid:
+        st.session_state["mobile_top_nav"] = pending
     elif existing not in valid:
-        st.session_state["mobile_top_nav"] = target or valid[0]
+        fallback = current if current in valid else valid[0]
+        st.session_state["mobile_top_nav"] = fallback
 
     return st.selectbox(
         "功能選單",
@@ -366,13 +366,15 @@ def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
 def go_menu(label: str, **extra) -> None:
     """Navigate to a menu page; mobile selectbox syncs on the next run.
 
-    Only write ``_menu_choice`` here. On phones the ``mobile_top_nav`` selectbox
-    is already instantiated above Home buttons — assigning that widget key in
-    the same run raises ``StreamlitWidgetAlreadyInstantiatedError`` and the
-    click looks dead. ``mobile_top_nav()`` copies ``_menu_choice`` into the
-    selectbox key *before* creating the widget on the following rerun.
+    Only write ``_menu_choice`` + one-shot ``_nav_pending`` here. On phones the
+    ``mobile_top_nav`` selectbox is already instantiated above Home buttons —
+    assigning that widget key in the same run raises
+    ``StreamlitWidgetAlreadyInstantiatedError`` and the click looks dead.
+    ``mobile_top_nav()`` applies ``_nav_pending`` before creating the widget
+    on the following rerun, then leaves the selectbox free for user changes.
     """
     st.session_state["_menu_choice"] = label
+    st.session_state["_nav_pending"] = label
     for k, v in extra.items():
         st.session_state[k] = v
     st.rerun()
