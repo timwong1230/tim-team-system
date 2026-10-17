@@ -1258,6 +1258,63 @@ def _render_followup_item(row, *, key_prefix: str, show_owner: bool = False) -> 
     st.divider()
 
 
+def _html_member_home_scorecard(m: dict) -> str:
+    """Compact card stack for member home performance."""
+    pct = min(max(float(m.get("mdrt_pct") or 0), 0.0), 100.0)
+    mtd = f"${float(m.get('mtd_fyc') or 0):,.0f}"
+    ytd = f"${float(m.get('ytd_fyc') or 0):,.0f}"
+    mdrt_pct = f"{float(m.get('mdrt_pct') or 0):.0f}%"
+    progress = float(m.get("mdrt_progress") or 0)
+    target = float(m.get("mdrt_target") or 0)
+    remaining = float(m.get("mdrt_remaining") or 0)
+    if m.get("mdrt_met"):
+        mdrt_hint = f"已有 ${progress:,.0f}／目標 ${target:,.0f} · 已達標"
+    else:
+        mdrt_hint = f"已有 ${progress:,.0f}／目標 ${target:,.0f} · 尚欠 ${remaining:,.0f}"
+    recruit = int(m.get("recruit") or 0)
+    recruit_target = int(m.get("recruit_target") or 0)
+    recruit_left = int(m.get("recruit_remaining") or 0)
+    if recruit_left > 0:
+        recruit_hint = f"仲要請 {recruit_left} 人 · 目標 {recruit_target} 人／年"
+    else:
+        recruit_hint = f"已達標 · 目標 {recruit_target} 人／年"
+    month = _esc(m.get("month") or "")
+    wk = f"{int(m.get('wk_count') or 0)}/{WEEKLY_MIN_ACTS} 次 · {int(m.get('wk_score') or 0)} 分"
+    return f"""
+    <div class="tt-scorecard">
+      <div class="tt-score-card tt-score-card-accent">
+        <div class="tt-score-kicker">本月完成 · {month}</div>
+        <div class="tt-score-value">{mtd}</div>
+      </div>
+      <div class="tt-score-card">
+        <div class="tt-score-kicker">全年 · MDRT</div>
+        <div class="tt-score-row-split">
+          <div>
+            <div class="tt-score-kicker">全年完成</div>
+            <div class="tt-score-value tt-score-value-sm">{ytd}</div>
+          </div>
+          <div>
+            <div class="tt-score-kicker">MDRT 進度</div>
+            <div class="tt-score-value tt-score-value-sm">{mdrt_pct}</div>
+          </div>
+        </div>
+        <div class="tt-score-hint">{mdrt_hint}</div>
+        <div class="tt-score-bar"><span style="width:{pct:.1f}%;"></span></div>
+      </div>
+      <div class="tt-score-card">
+        <div class="tt-score-row">
+          <div>
+            <div class="tt-score-kicker">今年招募</div>
+            <div class="tt-score-value tt-score-value-sm">{recruit} / {recruit_target}</div>
+          </div>
+        </div>
+        <div class="tt-score-hint">{recruit_hint}</div>
+      </div>
+      <div class="tt-score-foot">本週活動 {wk}</div>
+    </div>
+    """
+
+
 def _render_member_home_scorecard(user: str) -> None:
     """After follow-ups: 本月 → 全年/MDRT → 招募."""
     try:
@@ -1269,42 +1326,7 @@ def _render_member_home_scorecard(user: str) -> None:
         return
 
     st.markdown("### 我的業績")
-
-    st.markdown("#### 本月")
-    st.metric("本月完成", f"${m['mtd_fyc']:,.0f}")
-    st.caption(f"{m['month']} · 來自 Iris Daily Completion")
-
-    st.markdown("#### 全年 · MDRT")
-    y1, y2 = st.columns(2)
-    y1.metric("全年完成", f"${m['ytd_fyc']:,.0f}")
-    y2.metric("MDRT 進度", f"{m['mdrt_pct']:.0f}%")
-    if m["mdrt_met"]:
-        st.caption(
-            f"MDRT 已有 ${m['mdrt_progress']:,.0f}／目標 ${m['mdrt_target']:,.0f} · 已達標"
-        )
-    else:
-        st.caption(
-            f"MDRT 已有 ${m['mdrt_progress']:,.0f}／目標 ${m['mdrt_target']:,.0f}"
-            f" · 尚欠 **${m['mdrt_remaining']:,.0f}**"
-        )
-    pct = min(max(float(m["mdrt_pct"]), 0.0), 100.0)
-    st.markdown(
-        f"""
-        <div style="background:#F3F4F6;border-radius:999px;height:10px;overflow:hidden;margin:4px 0 12px 0;">
-          <div style="width:{pct:.1f}%;height:100%;background:#C5A028;border-radius:999px;"></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("#### 招募")
-    st.metric("今年招募", f"{m['recruit']} / {m['recruit_target']}")
-    if m["recruit_remaining"] > 0:
-        st.caption(f"仲要請 **{m['recruit_remaining']}** 人先達標（目標 {m['recruit_target']} 人／年）")
-    else:
-        st.caption(f"招募目標已達標（{m['recruit_target']} 人／年）")
-
-    st.caption(f"本週活動 {m['wk_count']}/{WEEKLY_MIN_ACTS} 次 · {m['wk_score']} 分")
+    st.markdown(_html_member_home_scorecard(m), unsafe_allow_html=True)
 
 
 def page_home():
@@ -1317,11 +1339,7 @@ def page_home():
     is_member_home = role == "Member" and not is_admin_home
     team = get_data("Yearly")
 
-    hero_sub = (
-        f"你好，{user} · 作戰台：全隊跟進、欠活動、Iris 同步、週報"
-        if is_admin_home
-        else f"你好，{user} · 先跟進今日個案，再睇本月／全年／MDRT／招募"
-    )
+    hero_sub = f"你好，{user}"
     st.markdown(
         f"""
         <div class="tt-hero">
@@ -1348,12 +1366,12 @@ def page_home():
         # Non-member fallback (e.g. unexpected role)
         calc = float(team["fyc"].sum()) if not team.empty else 0.0
         r1 = st.columns(2)
-        r1[0].metric("今日要跟", len(due))
+        r1[0].metric("今日跟進", len(due))
         r1[1].metric("Team SC", f"${get_team_sc(calc):,.0f}")
         st.metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
 
     # Members: follow-ups first (no KPI strip above the list)
-    st.markdown("### 今日要跟" + ("（全隊）" if is_admin_home else ""))
+    st.markdown("### 今日跟進事項" + ("（全隊）" if is_admin_home else ""))
     if due.empty:
         st.success("暫時冇逾期／今日到期項目 — 保持！")
     else:

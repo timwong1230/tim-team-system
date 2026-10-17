@@ -533,11 +533,73 @@ div.stButton > button[kind="secondary"] {
   font-family: 'Instrument Serif', Georgia, serif;
   font-size: 1.35rem; color: #1C2430; margin-top: 4px; line-height: 1.1;
 }
+
+/* Member home — 我的業績 */
+.tt-scorecard { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 8px; }
+.tt-score-card {
+  background: #FFFEFA;
+  border: 1px solid #E8E4D9;
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 4px 14px rgba(28, 36, 48, 0.04);
+}
+.tt-score-card-accent { border-left: 4px solid #C5A028; }
+.tt-score-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: #6B7280;
+  margin: 0 0 6px;
+}
+.tt-score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+.tt-score-row-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.tt-score-value {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 1.75rem;
+  color: #1C2430;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.tt-score-value-sm { font-size: 1.45rem; }
+.tt-score-hint {
+  font-size: 0.78rem;
+  color: #6B7280;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+.tt-score-bar {
+  background: #F3F4F6;
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.tt-score-bar > span {
+  display: block;
+  height: 100%;
+  background: #C5A028;
+  border-radius: 999px;
+}
+.tt-score-foot {
+  font-size: 0.78rem;
+  color: #6B7280;
+  margin: 2px 2px 0;
+}
+
 @media (max-width: 900px) {
   .dash-kpis { grid-template-columns: 1fr; gap: 8px; }
   .dash-kpi .v { font-size: 1.55rem; }
   .lb-fyc { font-size: 1.25rem; }
   .lb-avatar { width: 44px; height: 44px; }
+  .tt-score-value { font-size: 1.85rem; }
 }
 
 /* ---- iPhone / iPad ---- */
@@ -750,13 +812,17 @@ html[data-tt-standalone="1"] .block-container {
   [data-testid="stAlert"] { color: var(--ink) !important; }
 
   /* Custom cards */
-  .tt-card, .activity-card, .dash-kpi, .lb-card, .offer-table-wrap {
+  .tt-card, .activity-card, .dash-kpi, .lb-card, .offer-table-wrap, .tt-score-card {
     background: var(--surface) !important;
     border-color: var(--line) !important;
     color: var(--ink) !important;
   }
-  .tt-label, .tt-hint, .dash-kpi .k, .act-time { color: var(--muted) !important; }
-  .tt-value, .dash-kpi .v, .act-name, .lb-name, .lb-fyc { color: var(--ink) !important; }
+  .tt-label, .tt-hint, .dash-kpi .k, .act-time,
+  .tt-score-kicker, .tt-score-hint, .tt-score-foot { color: var(--muted) !important; }
+  .tt-value, .dash-kpi .v, .act-name, .lb-name, .lb-fyc, .tt-score-value {
+    color: var(--ink) !important;
+  }
+  .tt-score-bar { background: #2A3340 !important; }
   .act-content {
     background: #121820 !important;
     color: var(--ink) !important;
