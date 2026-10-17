@@ -976,16 +976,20 @@ except Exception as e:
     st.info("請重新登入。若仍然 Oh no：右下角紅色 Manage app → ⋮ → Reboot app。")
     st.stop()
 
-# Sales / client tools live under one hub so mobile top-nav stays short.
+# Sales / recruit tools live under hubs so mobile top-nav stays short.
 CLIENT_TOOLS_MENU = "🧰 客戶工具"
 CLIENT_TOOL_LABELS = [
     "🩺 常見疾病核保",
     "💹 收入／支出 T-Account",
     "🛡️ 保障缺口",
     "🏥 醫療融資計算機",
+]
+RECRUIT_TOOLS_MENU = "🎯 招募工具"
+RECRUIT_TOOL_LABELS = [
     "🆚 保險公司新人 Package 對比",
 ]
 _LEGACY_CLIENT_TOOL_MAP = {label: label for label in CLIENT_TOOL_LABELS}
+_LEGACY_RECRUIT_TOOL_MAP = {label: label for label in RECRUIT_TOOL_LABELS}
 
 menu_items = [
     "🏠 我的主頁",
@@ -997,6 +1001,7 @@ menu_items = [
     "🎁 季度優惠 & 獎賞",
     "📁 常用表格",
     CLIENT_TOOLS_MENU,
+    RECRUIT_TOOLS_MENU,
 ]
 if is_leader:
     # After Dashboard (index shifts with AI Tim at 1)
@@ -1007,7 +1012,7 @@ if is_leader:
         menu_items.insert(3, "🔄 業績報告同步")
 menu_items.append("👤 設定")
 
-# Old bookmarks / session still on a leaf tool → open hub with that tool selected
+# Old bookmarks / session still on a leaf tool → open the right hub
 _prev_menu = st.session_state.get("_menu_choice")
 if _prev_menu in _LEGACY_CLIENT_TOOL_MAP:
     st.session_state["_menu_choice"] = CLIENT_TOOLS_MENU
@@ -1015,6 +1020,12 @@ if _prev_menu in _LEGACY_CLIENT_TOOL_MAP:
     st.session_state["_client_tool_force"] = True
     if st.session_state.get("_nav_pending") == _prev_menu:
         st.session_state["_nav_pending"] = CLIENT_TOOLS_MENU
+elif _prev_menu in _LEGACY_RECRUIT_TOOL_MAP:
+    st.session_state["_menu_choice"] = RECRUIT_TOOLS_MENU
+    st.session_state["_recruit_tool"] = _LEGACY_RECRUIT_TOOL_MAP[_prev_menu]
+    st.session_state["_recruit_tool_force"] = True
+    if st.session_state.get("_nav_pending") == _prev_menu:
+        st.session_state["_nav_pending"] = RECRUIT_TOOLS_MENU
 
 with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
@@ -3911,9 +3922,9 @@ def _medical_uw():
 
 
 def page_client_tools():
-    """Hub for sales / client tools — keeps root menu short on mobile."""
+    """Hub for client-facing sales tools — keeps root menu short on mobile."""
     st.markdown("## 🧰 客戶工具")
-    st.caption("見客同招募用工具；主選單只留一格，入嚟再揀。")
+    st.caption("見客用工具（核保／缺口／融資等）；招募 Package 對比喺「招募工具」。")
 
     options = list(CLIENT_TOOL_LABELS)
     preferred = st.session_state.get("_client_tool")
@@ -3942,10 +3953,37 @@ def page_client_tools():
         page_protection_gap()
     elif "醫療融資" in pick:
         page_medical_finance()
-    elif "Package" in pick or "保險公司新人" in pick:
-        page_recruit_package_compare()
     else:
         st.info("請揀一個客戶工具。")
+
+
+def page_recruit_tools():
+    """Hub for recruitment interview tools."""
+    st.markdown("## 🎯 招募工具")
+    st.caption("招募面談用——新人 Package 對比等。")
+
+    options = list(RECRUIT_TOOL_LABELS)
+    preferred = st.session_state.get("_recruit_tool")
+    if preferred not in options:
+        preferred = options[0]
+    if st.session_state.pop("_recruit_tool_force", None) and preferred in options:
+        st.session_state["recruit_tool_pick"] = preferred
+    elif st.session_state.get("recruit_tool_pick") not in options:
+        st.session_state["recruit_tool_pick"] = preferred
+
+    pick = st.selectbox(
+        "揀招募工具",
+        options,
+        key="recruit_tool_pick",
+        label_visibility="collapsed" if MOBILE else "visible",
+    )
+    st.session_state["_recruit_tool"] = pick
+    st.divider()
+
+    if "Package" in pick or "保險公司新人" in pick:
+        page_recruit_package_compare()
+    else:
+        st.info("請揀一個招募工具。")
 
 
 def page_medical_uw():
@@ -4568,19 +4606,23 @@ def page_protection_gap():
 
     if gaps:
         st.markdown("##### 分類缺口明細")
-        show = pd.DataFrame(gaps)
-        st.dataframe(
-            show,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "已有保額": st.column_config.NumberColumn(format="$%d"),
-                "建議保額": st.column_config.NumberColumn(format="$%d"),
-                "保障缺口": st.column_config.NumberColumn(format="$%d"),
-                "已保障%": st.column_config.NumberColumn(format="%.1f%%"),
-                "現有月保費": st.column_config.NumberColumn(format="$%d"),
-            },
-        )
+        try:
+            st.markdown(pg.html_gap_detail_cards(gaps), unsafe_allow_html=True)
+        except Exception:
+            # Fallback if Cloud has a stale protection_gap without cards helper
+            show = pd.DataFrame(gaps)
+            st.dataframe(
+                show,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "已有保額": st.column_config.NumberColumn(format="$%d"),
+                    "建議保額": st.column_config.NumberColumn(format="$%d"),
+                    "保障缺口": st.column_config.NumberColumn(format="$%d"),
+                    "已保障%": st.column_config.NumberColumn(format="%.1f%%"),
+                    "現有月保費": st.column_config.NumberColumn(format="$%d"),
+                },
+            )
 
     if summary["missing_names"] or summary["short_names"]:
         bits = []
@@ -5504,6 +5546,8 @@ elif "常用表格" in menu:
     _safe_page("常用表格", page_common_forms)
 elif "客戶工具" in menu:
     _safe_page("客戶工具", page_client_tools)
+elif "招募工具" in menu:
+    _safe_page("招募工具", page_recruit_tools)
 # Legacy leaf routes (session / deep-link) → hub
 elif (
     "常見疾病核保" in menu
@@ -5513,14 +5557,20 @@ elif (
     or "Cashflow" in menu
     or "保障缺口" in menu
     or "醫療融資" in menu
-    or "保險公司新人" in menu
-    or "Package 對比" in menu
 ):
     for label in CLIENT_TOOL_LABELS:
         if label in menu or any(bit in menu for bit in label.split() if len(bit) > 1):
             st.session_state["_client_tool"] = label
+            st.session_state["_client_tool_force"] = True
             break
     _safe_page("客戶工具", page_client_tools)
+elif "保險公司新人" in menu or "Package 對比" in menu:
+    for label in RECRUIT_TOOL_LABELS:
+        if label in menu or "Package" in menu:
+            st.session_state["_recruit_tool"] = label
+            st.session_state["_recruit_tool_force"] = True
+            break
+    _safe_page("招募工具", page_recruit_tools)
 elif "準客戶名單" in menu or "Prospect List" in menu:
     _safe_page("準客戶名單", page_prospect_list)
 elif "設定" in menu:

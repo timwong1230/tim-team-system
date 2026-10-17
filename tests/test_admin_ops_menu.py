@@ -33,10 +33,19 @@ def test_weekly_activity_shortfall_empty():
     ).empty
 
 
-def test_root_menu_uses_client_tools_hub():
+def test_root_menu_uses_client_and_recruit_hubs():
     assert 'CLIENT_TOOLS_MENU = "🧰 客戶工具"' in _APP
+    assert 'RECRUIT_TOOLS_MENU = "🎯 招募工具"' in _APP
     assert "def page_client_tools" in _APP
+    assert "def page_recruit_tools" in _APP
     assert "def _render_admin_ops_desk" in _APP
+    # Package compare belongs to recruit hub, not client hub
+    assert "🆚 保險公司新人 Package 對比" not in _APP[
+        _APP.index("CLIENT_TOOL_LABELS = [") : _APP.index("]", _APP.index("CLIENT_TOOL_LABELS = ["))
+    ]
+    assert "🆚 保險公司新人 Package 對比" in _APP[
+        _APP.index("RECRUIT_TOOL_LABELS = [") : _APP.index("]", _APP.index("RECRUIT_TOOL_LABELS = ["))
+    ]
     # Leaf tools must not sit in the root menu_items list literal
     menu_block_start = _APP.index("menu_items = [")
     menu_block_end = _APP.index("]", menu_block_start)
@@ -50,6 +59,7 @@ def test_root_menu_uses_client_tools_hub():
     ):
         assert leaf not in menu_block
     assert "CLIENT_TOOLS_MENU" in menu_block
+    assert "RECRUIT_TOOLS_MENU" in menu_block
 
 
 def test_admin_ops_desk_has_iris_and_weekly_entrypoints():
