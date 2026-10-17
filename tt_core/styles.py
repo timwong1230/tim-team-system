@@ -67,32 +67,25 @@ h3 { font-size: 1.45rem !important; }
 }
 .tt-side-spacer { height: 18px; }
 
-/* Active nav row — gold frame "着燈" (match leaderboard top card) */
+/* Active nav — subtle light-up only (no heavy glow / top bar) */
 .tt-nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 11px 12px; margin: 3px 0; border-radius: 12px;
   background: #FFFFFF;
-  border: 1.5px solid var(--line);
+  border: 1px solid var(--line);
   box-sizing: border-box;
 }
 .tt-nav-item-active {
-  background: linear-gradient(145deg, #FFFDF5 0%, #FFFFFF 60%);
-  border: 1.5px solid #C5A028 !important;
-  box-shadow: 0 6px 18px rgba(197, 160, 40, 0.18);
-  position: relative;
-}
-.tt-nav-item-active::before {
-  content: "";
-  position: absolute; left: 10px; right: 10px; top: 0; height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: linear-gradient(90deg, #D4AF37, #F0D078, #D4AF37);
+  background: #F7F1DE;
+  border: 1px solid #D4AF37;
+  box-shadow: none;
 }
 .tt-nav-bar {
-  width: 3px; align-self: stretch; min-height: 18px; border-radius: 2px;
+  width: 3px; align-self: stretch; min-height: 16px; border-radius: 2px;
   background: var(--gold); flex-shrink: 0;
 }
 .tt-nav-item-active .tt-nav-text {
-  font-weight: 700; color: #5C4A12; font-size: 0.94rem; line-height: 1.35;
+  font-weight: 600; color: #5C4A12; font-size: 0.94rem; line-height: 1.35;
 }
 
 /* Main content primary buttons */
@@ -837,9 +830,9 @@ html[data-tt-standalone="1"] .block-container {
     border-color: var(--line) !important;
   }
   .tt-nav-item-active {
-    background: rgba(197, 160, 40, 0.14) !important;
-    border: 1.5px solid #C5A028 !important;
-    box-shadow: 0 6px 18px rgba(197, 160, 40, 0.22) !important;
+    background: rgba(197, 160, 40, 0.12) !important;
+    border: 1px solid #C5A028 !important;
+    box-shadow: none !important;
   }
   .tt-nav-item-active .tt-nav-text { color: #F5E6B8 !important; }
   .tt-side-kicker { color: var(--gold) !important; }
