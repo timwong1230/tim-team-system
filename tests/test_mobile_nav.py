@@ -147,6 +147,57 @@ def test_phone_top_nav_blocks_text_selection():
     assert "st.button" in nav_src
 
 
+def test_phone_top_nav_closes_popover_after_pick():
+    """Selecting a page must remount the popover closed (new key nonce)."""
+    from tt_core import mobile as mob
+
+    class FakeSS(dict):
+        def pop(self, key, default=None):
+            if key in self:
+                return dict.pop(self, key)
+            return default
+
+    ss = FakeSS()
+    ss["mobile_top_nav"] = "🏠 我的主頁"
+    ss["phone_top_nav_pop_nonce"] = 0
+    clicks = {"n": 0}
+    keys_seen = []
+
+    class FakeSt:
+        session_state = ss
+
+        @staticmethod
+        def rerun():
+            clicks["n"] += 1
+
+        @staticmethod
+        @contextmanager
+        def popover(label, **kwargs):
+            keys_seen.append(kwargs.get("key"))
+            yield
+
+        @staticmethod
+        def button(label, **kwargs):
+            # Simulate tapping 準客戶名單 once
+            if label == "📋 準客戶名單" and clicks["n"] == 0:
+                return True
+            return False
+
+    mob.st = FakeSt()
+    items = ["🏠 我的主頁", "📋 準客戶名單", "📝 打卡 Check-in"]
+
+    # First render: button click bumps nonce and reruns
+    mob.mobile_top_nav(items)
+    assert ss["mobile_top_nav"] == "📋 準客戶名單"
+    assert ss["phone_top_nav_pop_nonce"] == 1
+    assert clicks["n"] == 1
+
+    # Next render: popover key uses new nonce → starts closed
+    menu = mob.mobile_top_nav(items)
+    assert menu == "📋 準客戶名單"
+    assert keys_seen[-1] == "phone_top_nav_pop_1"
+
+
 if __name__ == "__main__":
     test_go_menu_exported()
     test_go_menu_sets_nav_pending_not_widget_key()

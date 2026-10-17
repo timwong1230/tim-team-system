@@ -350,6 +350,13 @@ def render_install_guide(*, compact: bool = False) -> None:
         st.info(f"一次加好，成隊同事主畫面都有 {brand_name}，打卡會快好多。")
 
 
+def _bump_phone_nav_popover() -> int:
+    """Remount popover with a new key so it starts closed after a pick."""
+    n = int(st.session_state.get("phone_top_nav_pop_nonce") or 0) + 1
+    st.session_state["phone_top_nav_pop_nonce"] = n
+    return n
+
+
 def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     """Compact top navigation for phones (avoids opening sidebar every time).
 
@@ -360,6 +367,9 @@ def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     one-shot sync into ``mobile_top_nav`` *before* the popover is rendered.
     We must NOT re-apply ``_menu_choice`` on every run — that locks users on
     the page they jumped to.
+
+    After a menu pick (or pending jump), bump ``phone_top_nav_pop_nonce`` so
+    the popover remounts closed instead of staying open across the rerun.
     """
     valid = list(menu_items or [])
     if not valid:
@@ -369,26 +379,30 @@ def mobile_top_nav(menu_items: list[str], current: str | None = None) -> str:
     existing = st.session_state.get("mobile_top_nav")
     if pending in valid:
         st.session_state["mobile_top_nav"] = pending
+        _bump_phone_nav_popover()
     elif existing not in valid:
         fallback = current if current in valid else valid[0]
         st.session_state["mobile_top_nav"] = fallback
 
     current_label = str(st.session_state.get("mobile_top_nav") or valid[0])
+    pop_nonce = int(st.session_state.get("phone_top_nav_pop_nonce") or 0)
 
     # Popover trigger is a real button (no text input → no iOS keyboard/copy).
+    # Key includes nonce so a pick remounts the popover in the closed state.
     with st.popover(
         current_label,
         use_container_width=True,
-        key="phone_top_nav_pop",
+        key=f"phone_top_nav_pop_{pop_nonce}",
     ):
         for i, item in enumerate(valid):
             if st.button(
                 item,
-                key=f"phone_top_nav_btn_{i}",
+                key=f"phone_top_nav_btn_{pop_nonce}_{i}",
                 use_container_width=True,
                 type="primary" if item == current_label else "secondary",
             ):
                 st.session_state["mobile_top_nav"] = item
+                _bump_phone_nav_popover()
                 st.rerun()
 
     return str(st.session_state.get("mobile_top_nav") or current_label)
