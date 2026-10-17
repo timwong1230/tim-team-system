@@ -51,6 +51,7 @@ from tt_core.data import (
     get_team_coach_overview,
     get_upcoming_followups,
     get_weekly_data,
+    weekly_activity_shortfall,
     last_iris_sync,
     login,
     mark_followup_done,
@@ -975,6 +976,17 @@ except Exception as e:
     st.info("請重新登入。若仍然 Oh no：右下角紅色 Manage app → ⋮ → Reboot app。")
     st.stop()
 
+# Sales / client tools live under one hub so mobile top-nav stays short.
+CLIENT_TOOLS_MENU = "🧰 客戶工具"
+CLIENT_TOOL_LABELS = [
+    "🩺 常見疾病核保",
+    "💹 收入／支出 T-Account",
+    "🛡️ 保障缺口",
+    "🏥 醫療融資計算機",
+    "🆚 保險公司新人 Package 對比",
+]
+_LEGACY_CLIENT_TOOL_MAP = {label: label for label in CLIENT_TOOL_LABELS}
+
 menu_items = [
     "🏠 我的主頁",
     "🧠 AI Tim",
@@ -984,11 +996,7 @@ menu_items = [
     "🏅 龍虎榜",
     "🎁 季度優惠 & 獎賞",
     "📁 常用表格",
-    "🩺 常見疾病核保",
-    "💹 收入／支出 T-Account",
-    "🛡️ 保障缺口",
-    "🏥 醫療融資計算機",
-    "🆚 保險公司新人 Package 對比",
+    CLIENT_TOOLS_MENU,
 ]
 if is_leader:
     # After Dashboard (index shifts with AI Tim at 1)
@@ -998,6 +1006,15 @@ if is_leader:
     except ValueError:
         menu_items.insert(3, "🔄 業績報告同步")
 menu_items.append("👤 設定")
+
+# Old bookmarks / session still on a leaf tool → open hub with that tool selected
+_prev_menu = st.session_state.get("_menu_choice")
+if _prev_menu in _LEGACY_CLIENT_TOOL_MAP:
+    st.session_state["_menu_choice"] = CLIENT_TOOLS_MENU
+    st.session_state["_client_tool"] = _LEGACY_CLIENT_TOOL_MAP[_prev_menu]
+    st.session_state["_client_tool_force"] = True
+    if st.session_state.get("_nav_pending") == _prev_menu:
+        st.session_state["_nav_pending"] = CLIENT_TOOLS_MENU
 
 with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1060,7 +1077,8 @@ if conn["level"] == "degraded":
         icon="📡",
     )
 
-if is_leader:
+# Global Iris banner kept light — Admin home has the actionable CTA.
+if is_leader and "我的主頁" not in str(menu or ""):
     try:
         if get_daily_folder_id() or get_mdrt_folder_id():
             new_iris = has_new_inbox_file()
@@ -1069,7 +1087,7 @@ if is_leader:
                 kind_label = "MDRT Progress" if kind == "mdrt" else "Daily Production"
                 st.info(
                     f"Drive {kind_label} 有新檔：**{new_iris.get('name')}** — "
-                    "去側欄「業績報告同步」撳對應「同步最新檔」。",
+                    "主頁或「業績報告同步」可一鍵去同步。",
                     icon="📥",
                 )
     except Exception:
@@ -1077,6 +1095,97 @@ if is_leader:
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
+def _render_admin_ops_desk(*, due_count: int = 0) -> None:
+    """Leader/Admin home: weekly shortfall, Iris CTA, weekly settlement."""
+    st.markdown("### 作戰台")
+    overview = pd.DataFrame()
+    try:
+        overview = get_team_coach_overview()
+    except Exception:
+        overview = pd.DataFrame()
+
+    try:
+        short = weekly_activity_shortfall(overview)
+    except Exception:
+        short = pd.DataFrame()
+    stuck_n = (
+        int((overview["stuck_count"] > 0).sum())
+        if not overview.empty and "stuck_count" in overview.columns
+        else 0
+    )
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("今日要跟", due_count)
+    k2.metric("欠本週活動", len(short))
+    k3.metric("有卡案同事", stuck_n)
+
+    # Iris new-file CTA
+    new_iris = None
+    try:
+        if get_daily_folder_id() or get_mdrt_folder_id():
+            new_iris = has_new_inbox_file()
+    except Exception:
+        new_iris = None
+    if new_iris:
+        kind = new_iris.get("report_kind") or "daily"
+        kind_label = "MDRT Progress" if kind == "mdrt" else "Daily Production"
+        st.warning(
+            f"Drive **{kind_label}** 有新檔：`{new_iris.get('name')}`",
+            icon="📥",
+        )
+        if st.button(
+            "去同步最新業績檔",
+            type="primary",
+            use_container_width=True,
+            key="home_ops_iris_sync",
+        ):
+            go_menu("🔄 業績報告同步")
+    else:
+        sync = last_iris_sync()
+        if sync:
+            st.caption(f"Iris 上次同步：{str(sync.get('synced_at', ''))[:16]}")
+        else:
+            st.caption("Iris 尚未同步業績")
+
+    st.markdown("#### 本週欠活動")
+    if short.empty:
+        st.success(f"全隊都達標（≥ {WEEKLY_MIN_ACTS} 次）— 保持！")
+    else:
+        st.caption(f"少於 {WEEKLY_MIN_ACTS} 次 · 結算前要追")
+        for _, r in short.iterrows():
+            need = max(0, WEEKLY_MIN_ACTS - int(r.get("wk_count") or 0))
+            stuck_bit = (
+                f" · 卡案 {int(r['stuck_count'])}"
+                if int(r.get("stuck_count") or 0) > 0
+                else ""
+            )
+            st.markdown(
+                f"- **{r['username']}**：{int(r['wk_count'])}/{WEEKLY_MIN_ACTS}"
+                f"（仲欠 {need}）{stuck_bit}"
+            )
+        if st.button("去龍虎榜經理視圖", use_container_width=True, key="home_ops_coach"):
+            go_menu("🏅 龍虎榜")
+
+    with st.expander("每週戰報（WhatsApp）", expanded=False):
+        st.caption(
+            "獎罰唔包 Tim（分數照顯示）。無人罰款時 Tim 獎 $100 俾最高分同事；"
+            "若 Tim 最高分則獎第 2 高。"
+        )
+        if st.button("生成上週結算戰報", key="home_ops_weekly_report"):
+            from tt_core.weekly_report import build_weekly_settlement_report
+
+            wk_df, start, end = get_last_week_data()
+            report = build_weekly_settlement_report(wk_df, start, end)
+            st.session_state["_home_weekly_report"] = report
+        report = st.session_state.get("_home_weekly_report")
+        if report:
+            st.code(report)
+            st.link_button(
+                "Send to WhatsApp",
+                f"https://wa.me/?text={urllib.parse.quote(report)}",
+            )
+
+
 def _render_followup_item(row, *, key_prefix: str, show_owner: bool = False) -> None:
     """One follow-up card with mark-done control.
 
@@ -1148,7 +1257,7 @@ def page_home():
     team = get_data("Yearly")
 
     hero_sub = (
-        f"你好，{user} · 顯示**全隊**過期同今日要跟個案"
+        f"你好，{user} · 作戰台：全隊跟進、欠活動、Iris 同步、週報"
         if is_admin_home
         else f"你好，{user} · 過期同今日要跟嘅案會出現喺呢度"
     )
@@ -1167,8 +1276,14 @@ def page_home():
     due = get_due_followups(None if is_admin_home else user)
     upcoming = get_upcoming_followups(None if is_admin_home else user, days=7)
 
-    # Compact KPI strip
-    if snap:
+    if is_admin_home:
+        # Ops desk first: shortfall + Iris + weekly report, then team follow-ups
+        calc = float(team["fyc"].sum()) if not team.empty else 0.0
+        r1 = st.columns(2)
+        r1[0].metric("Team SC", f"${get_team_sc(calc):,.0f}")
+        r1[1].metric("Recruits", int(team["recruit"].sum()) if not team.empty else 0)
+        _render_admin_ops_desk(due_count=len(due))
+    elif snap:
         mdrt = mdrt_card_metrics(user)
         r1 = st.columns(2)
         r1[0].metric("今日要跟", len(due))
@@ -1218,6 +1333,10 @@ def page_home():
                 else "根據我而家嘅 M+2 數據，今日最應該做咩？"
             )
             go_menu("🧠 AI Tim", coach_tim_pending=pending)
+        if is_admin_home and st.button(
+            "🧰 客戶工具", use_container_width=True, key="home_go_client_tools"
+        ):
+            go_menu(CLIENT_TOOLS_MENU)
     else:
         b1, b2, b3 = st.columns(3)
         with b1:
@@ -3791,6 +3910,44 @@ def _medical_uw():
         return None
 
 
+def page_client_tools():
+    """Hub for sales / client tools — keeps root menu short on mobile."""
+    st.markdown("## 🧰 客戶工具")
+    st.caption("見客同招募用工具；主選單只留一格，入嚟再揀。")
+
+    options = list(CLIENT_TOOL_LABELS)
+    preferred = st.session_state.get("_client_tool")
+    if preferred not in options:
+        preferred = options[0]
+    # Legacy deep-link / force: sync selectbox before widget is created
+    if st.session_state.pop("_client_tool_force", None) and preferred in options:
+        st.session_state["client_tool_pick"] = preferred
+    elif st.session_state.get("client_tool_pick") not in options:
+        st.session_state["client_tool_pick"] = preferred
+
+    pick = st.selectbox(
+        "揀工具",
+        options,
+        key="client_tool_pick",
+        label_visibility="collapsed" if MOBILE else "visible",
+    )
+    st.session_state["_client_tool"] = pick
+    st.divider()
+
+    if "核保" in pick:
+        page_medical_uw()
+    elif "T-Account" in pick or "收入／支出" in pick:
+        page_cashflow_taccount()
+    elif "保障缺口" in pick:
+        page_protection_gap()
+    elif "醫療融資" in pick:
+        page_medical_finance()
+    elif "Package" in pick or "保險公司新人" in pick:
+        page_recruit_package_compare()
+    else:
+        st.info("請揀一個客戶工具。")
+
+
 def page_medical_uw():
     """見客用：按 Medical Manual 常見疾病一步步問答，顯示參考核保結果。"""
     st.markdown("## 🩺 常見疾病核保")
@@ -5345,16 +5502,25 @@ elif "季度優惠" in menu:
     _safe_page("季度優惠", page_quarterly_offers)
 elif "常用表格" in menu:
     _safe_page("常用表格", page_common_forms)
-elif "常見疾病核保" in menu or "核保" in menu:
-    _safe_page("常見疾病核保", page_medical_uw)
-elif "T-Account" in menu or "收入／支出" in menu or "Cashflow" in menu:
-    _safe_page("收入／支出 T-Account", page_cashflow_taccount)
-elif "保障缺口" in menu:
-    _safe_page("保障缺口", page_protection_gap)
-elif "醫療融資" in menu:
-    _safe_page("醫療融資計算機", page_medical_finance)
-elif "保險公司新人" in menu or "Package 對比" in menu:
-    _safe_page("保險公司新人 Package 對比", page_recruit_package_compare)
+elif "客戶工具" in menu:
+    _safe_page("客戶工具", page_client_tools)
+# Legacy leaf routes (session / deep-link) → hub
+elif (
+    "常見疾病核保" in menu
+    or "核保" in menu
+    or "T-Account" in menu
+    or "收入／支出" in menu
+    or "Cashflow" in menu
+    or "保障缺口" in menu
+    or "醫療融資" in menu
+    or "保險公司新人" in menu
+    or "Package 對比" in menu
+):
+    for label in CLIENT_TOOL_LABELS:
+        if label in menu or any(bit in menu for bit in label.split() if len(bit) > 1):
+            st.session_state["_client_tool"] = label
+            break
+    _safe_page("客戶工具", page_client_tools)
 elif "準客戶名單" in menu or "Prospect List" in menu:
     _safe_page("準客戶名單", page_prospect_list)
 elif "設定" in menu:

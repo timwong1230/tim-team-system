@@ -428,6 +428,24 @@ def get_team_coach_overview(*, today=None) -> pd.DataFrame:
     )
 
 
+def weekly_activity_shortfall(overview: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Members below WEEKLY_MIN_ACTS — Admin home ops desk list.
+
+    Pass an existing overview frame to avoid a second Sheets round-trip.
+    """
+    if overview is None:
+        overview = get_team_coach_overview()
+    if overview is None or getattr(overview, "empty", True):
+        return pd.DataFrame()
+    if "needs_acts" not in overview.columns:
+        return pd.DataFrame()
+    short = overview[overview["needs_acts"]].copy()
+    if short.empty:
+        return short
+    sort_cols = [c for c in ("wk_count", "username") if c in short.columns]
+    return short.sort_values(by=sort_cols, ascending=True) if sort_cols else short
+
+
 def _quarterly_sheet_items(quarter: str, kind: str) -> list[dict]:
     q = str(quarter or "").strip().upper()
     k = str(kind or "").strip().lower()
