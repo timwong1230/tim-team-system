@@ -1323,7 +1323,6 @@ def _html_member_home_scorecard(m: dict) -> str:
   <div class="card card-gold">
     <div class="k">本月完成 · {month}</div>
     <div class="v">{mtd}</div>
-    <div class="sub">Iris Daily Completion</div>
   </div>
   <div class="card">
     <div class="k">全年 · MDRT</div>
