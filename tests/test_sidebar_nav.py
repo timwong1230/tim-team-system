@@ -1,4 +1,4 @@
-"""iPad / desktop sidebar nav polish."""
+"""iPad / desktop sidebar nav — professional button rail (no radio dots)."""
 
 from __future__ import annotations
 
@@ -33,17 +33,22 @@ def test_is_phone_excludes_ipad():
         assert mob.is_phone() is True
 
 
-def test_app_uses_sidebar_nav_flag():
+def test_app_uses_button_sidebar_nav_not_radio():
     assert "SIDEBAR_NAV" in _APP
-    assert "is_tablet" in _APP
-    assert "is_phone" in _APP
-    assert "tt-side-nav-label" in _APP
-    assert "tt-side-brand" in _APP
+    assert "def _render_sidebar_nav" in _APP
+    assert "tt-nav-item-active" in _APP
+    # Must not use st.radio for the main sidebar menu anymore
+    side_nav_fn = _APP[
+        _APP.index("def _render_sidebar_nav") : _APP.index(
+            "if \"logged_in\" not in st.session_state"
+        )
+    ]
+    assert "st.radio" not in side_nav_fn
+    assert "st.button" in side_nav_fn
 
 
-def test_sidebar_css_is_flat_rail_not_card_stack():
-    assert "[data-testid=\"stSidebar\"] div[role=\"radiogroup\"] label:has(input:checked)" in _STYLES
-    assert "border-left: 3px solid" in _STYLES or "border-left: 3px solid var(--gold)" in _STYLES
-    # Must not restyle sidebar items as bordered white cards
-    assert ".tt-side-nav-label" in _STYLES
-    assert "Hide Streamlit radio control" in _STYLES or "radio control" in _STYLES.lower()
+def test_sidebar_css_has_active_item_and_flat_buttons():
+    assert ".tt-nav-item-active" in _STYLES
+    assert ".tt-nav-bar" in _STYLES
+    assert '[data-testid="stSidebar"] div.stButton > button' in _STYLES
+    assert "background: transparent !important" in _STYLES
