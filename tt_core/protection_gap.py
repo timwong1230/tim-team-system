@@ -1,6 +1,6 @@
 """保障缺口 — existing policies vs recommended cover for protection sales.
 
-Redeploy stamp: 2026-10-15T15:35Z (pillar_status / svg_pillar_status_pie).
+Redeploy stamp: 2026-10-17T10:45Z (html_gap_detail_cards).
 """
 
 from __future__ import annotations
@@ -364,4 +364,75 @@ def html_pillar_gap_bars(pillars: list[dict[str, Any]]) -> str:
         '<div style="font-size:13px;color:#6B7280;margin-bottom:8px;">'
         "每條代表建議保額；色條係已有，灰色空白就係缺口。"
         f"</div>{''.join(blocks)}</div>"
+    )
+
+
+def html_gap_detail_cards(gaps: list[dict[str, Any]]) -> str:
+    """Mobile-friendly gap detail cards — replaces cramped st.dataframe."""
+    cards: list[str] = []
+    for g in gaps or []:
+        ptype = str(g.get("保單類型") or "")
+        have = _num(g.get("已有保額"))
+        need = _num(g.get("建議保額"))
+        gap = _num(g.get("保障缺口"))
+        pct = min(_num(g.get("已保障%")), 999.0)
+        prem = _num(g.get("現有月保費"))
+        count = int(g.get("保單數") or 0)
+        if ptype == "其他" and have <= 0 and need <= 0:
+            continue
+        status = classify_pillar(have, need)
+        color = STATUS_COLORS[status]
+        label = STATUS_LABELS[status]
+        short = ptype.replace("保險", "") if ptype.endswith("保險") else ptype
+        gap_style = "color:#DC2626;font-weight:700;" if gap > 0 else "color:#059669;font-weight:600;"
+        prem_bit = (
+            f'<div style="font-size:12px;color:#6B7280;margin-top:8px;">'
+            f"現有月保費 {format_hkd(prem)}"
+            + (f" · {count} 份保單" if count > 0 else "")
+            + "</div>"
+        )
+        cards.append(
+            f'<div style="border:1px solid #E8E4D9;border-left:4px solid {color};'
+            f'border-radius:12px;padding:12px 14px;background:#FFFEFA;'
+            f'margin:0 0 10px 0;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'gap:8px;margin-bottom:10px;">'
+            f'<strong style="font-size:15px;color:#1C2430;">{ptype}</strong>'
+            f'<span style="font-size:11px;font-weight:600;color:{color};'
+            f'background:{color}18;border:1px solid {color}44;border-radius:999px;'
+            f'padding:3px 9px;white-space:nowrap;">{label}</span>'
+            f"</div>"
+            f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;'
+            f'text-align:center;">'
+            f'<div><div style="font-size:11px;color:#6B7280;">已有</div>'
+            f'<div style="font-size:14px;font-weight:600;color:#1C2430;font-variant-numeric:tabular-nums;">'
+            f"{format_hkd(have)}</div></div>"
+            f'<div><div style="font-size:11px;color:#6B7280;">建議</div>'
+            f'<div style="font-size:14px;font-weight:600;color:#1C2430;font-variant-numeric:tabular-nums;">'
+            f"{format_hkd(need)}</div></div>"
+            f'<div><div style="font-size:11px;color:#6B7280;">缺口</div>'
+            f'<div style="font-size:14px;font-variant-numeric:tabular-nums;{gap_style}">'
+            f"{format_hkd(gap)}</div></div>"
+            f"</div>"
+            f'<div style="margin-top:10px;">'
+            f'<div style="display:flex;justify-content:space-between;font-size:11px;'
+            f'color:#6B7280;margin-bottom:4px;">'
+            f"<span>已保障</span><span>{pct:.0f}%</span></div>"
+            f'<div style="background:#F3F4F6;border-radius:999px;height:8px;overflow:hidden;">'
+            f'<div style="width:{min(pct, 100.0):.1f}%;height:100%;background:{color};'
+            f'border-radius:999px;"></div></div>'
+            f"</div>"
+            f"{prem_bit}"
+            f"</div>"
+        )
+    if not cards:
+        return (
+            '<div style="border:1px dashed #D1D5DB;border-radius:12px;padding:16px;'
+            'color:#6B7280;font-size:13px;text-align:center;">暫時未有分類缺口資料。</div>'
+        )
+    return (
+        '<div class="tt-gap-detail-cards">'
+        '<div style="font-size:12px;color:#6B7280;margin:0 0 10px 0;">'
+        f"每個分類：已有／建議／缺口 · 狀態色同上面進度一致。"
+        f"</div>{''.join(cards)}</div>"
     )

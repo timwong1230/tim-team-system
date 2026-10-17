@@ -9,6 +9,7 @@ from tt_core.protection_gap import (
     classify_pillar,
     completeness_summary,
     gap_table,
+    html_gap_detail_cards,
     html_pillar_gap_bars,
     normalize_rows,
     pie_current_cover,
@@ -101,3 +102,10 @@ def test_pillar_status_always_four_and_missing_visible():
     assert "#DC2626" in svg  # missing red
     bars = html_pillar_gap_bars(pillars)
     assert "人壽" in bars and "未做／缺口" in bars
+
+    cards = html_gap_detail_cards(gaps)
+    assert "人壽保險" in cards and "危疾保險" in cards
+    assert "$1,000,000" in cards
+    assert "已有" in cards and "建議" in cards and "缺口" in cards
+    assert "tt-gap-detail-cards" in cards
+    assert "#DC2626" in cards  # missing status accent
