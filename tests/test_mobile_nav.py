@@ -98,7 +98,7 @@ def test_app_uses_go_menu_on_home_buttons():
     assert "go_menu" in src
     assert 'go_menu("📝 打卡 Check-in")' in src
     assert 'go_menu("📋 準客戶名單")' in src
-    assert 'go_menu("🧠 Coach Tim"' in src
+    assert 'go_menu("🧠 AI Tim"' in src
     mob = (_ROOT / "tt_core" / "mobile.py").read_text(encoding="utf-8")
     assert "mobile_top_nav" in mob
     assert "go_menu" in mob

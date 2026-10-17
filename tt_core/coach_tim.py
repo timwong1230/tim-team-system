@@ -1,4 +1,4 @@
-"""Coach Tim AI — live M+2 read tools + chat (Gemini free / OpenAI / offline).
+"""AI Tim — live M+2 read tools + chat (Gemini free / OpenAI / offline).
 
 Prefer free Google Gemini (AI Studio) so the team gets real AI answers
 without OpenAI billing. Cursor subscription does not cover this app.
@@ -15,7 +15,7 @@ from typing import Any
 
 from tt_core.constants import MDRT_TARGET, Q1_TARGET, WEEKLY_MIN_ACTS
 
-COACH_MENU = "🧠 Coach Tim"
+COACH_MENU = "🧠 AI Tim"
 DEFAULT_MODEL = "gpt-4o-mini"
 # AI Studio now issues AQ.* auth keys; prefer current flash models
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
@@ -290,7 +290,7 @@ def _fu_rows(df, limit: int = 8) -> list[dict]:
 
 
 def build_coach_context(username: str, *, role: str = "Member") -> dict[str, Any]:
-    """Pull live M+2 snapshot for Coach Tim (also used as get_member_snapshot tool)."""
+    """Pull live M+2 snapshot for AI Tim (also used as get_member_snapshot tool)."""
     from tt_core.data import (
         get_due_followups,
         get_member_snapshot,
@@ -737,7 +737,7 @@ def system_prompt(ctx: dict[str, Any]) -> str:
         labels = [TOOL_CATALOG.get(t, t) for t in tools_used]
         tool_note = "\n本回合已即時查過：" + "、".join(labels) + "。\n"
     who = ctx.get("username") or "呢位同事"
-    return f"""你係 Coach Tim——TIM TEAM 嘅私人教練（同 Telegram Coach Tim 同一個角色）。
+    return f"""你係 AI Tim——TIM TEAM 嘅私人教練（同 Telegram AI Tim／Coach Tim 同一個角色）。
 用香港粵語為主、間中書面語。直接、務實、鼓勵但不吹水。好似喺 Telegram 一對一傾偈。
 
 而家喺 M+2 App 入面同 **{who}** 傾偈。以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
@@ -867,7 +867,7 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
 
     if intent == "help":
         return (
-            f"我係 **Coach Tim**，讀你 M+2 即時數據幫你排跟進同活動。\n"
+            f"我係 **AI Tim**，讀你 M+2 即時數據幫你排跟進同活動。\n"
             "直接問：今日優先、本週活動、MDRT、招募，或者講個案名（例如「拆 Ave 點跟」）。"
         )
 
@@ -1204,7 +1204,7 @@ def test_ai_connection() -> tuple[bool, str]:
         try:
             text = gemini_chat(
                 [{"role": "user", "content": "用一句粵語講：已接通。"}],
-                system="你係 Coach Tim。只回一句短確認。",
+                system="你係 AI Tim。只回一句短確認。",
                 api_key=gemini_key,
                 model=_secret_gemini_model(),
                 timeout=45,
@@ -1217,7 +1217,7 @@ def test_ai_connection() -> tuple[bool, str]:
         try:
             text = openai_chat(
                 [{"role": "user", "content": "用一句粵語講：已接通。"}],
-                system="你係 Coach Tim。只回一句短確認。",
+                system="你係 AI Tim。只回一句短確認。",
                 api_key=openai_key,
                 model=_secret_model(),
                 timeout=45,
@@ -1320,7 +1320,7 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
     mode = "AI 教練" if llm_configured() else "教練"
     return (
-        f"你好 {name}，我係 **Coach Tim**（{mode}）。"
+        f"你好 {name}，我係 **AI Tim**（{mode}）。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
         "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10——"
         "講個案名我會即時查最新資料。"

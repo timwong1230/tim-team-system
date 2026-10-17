@@ -977,7 +977,7 @@ except Exception as e:
 
 menu_items = [
     "🏠 我的主頁",
-    "🧠 Coach Tim",
+    "🧠 AI Tim",
     "📊 團隊 Dashboard",
     "📋 準客戶名單",
     "📝 打卡 Check-in",
@@ -991,7 +991,7 @@ menu_items = [
     "🆚 保險公司新人 Package 對比",
 ]
 if is_leader:
-    # After Dashboard (index shifts with Coach Tim at 1)
+    # After Dashboard (index shifts with AI Tim at 1)
     try:
         dash_i = menu_items.index("📊 團隊 Dashboard")
         menu_items.insert(dash_i + 1, "🔄 業績報告同步")
@@ -1119,9 +1119,9 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
                 ci_prefill_track=track,
             )
     with c3:
-        if st.button("問 Coach Tim", key=f"{key_prefix}_coach_{rid}", use_container_width=True):
+        if st.button("問 AI Tim", key=f"{key_prefix}_coach_{rid}", use_container_width=True):
             go_menu(
-                "🧠 Coach Tim",
+                "🧠 AI Tim",
                 coach_tim_pending=(
                     f"幫我跟進呢單：{person}（{track}｜{stage}）。"
                     f"Next action：{action or '未填'}；日期：{nd_str}。"
@@ -1187,13 +1187,13 @@ def page_home():
             go_menu("📝 打卡 Check-in")
         if st.button("📋 準客戶名單", use_container_width=True, key="home_go_prospects"):
             go_menu("📋 準客戶名單")
-        if st.button("🧠 問 Coach Tim", use_container_width=True, key="home_go_coach"):
+        if st.button("🧠 問 AI Tim", use_container_width=True, key="home_go_coach"):
             pending = (
                 f"幫我排今日優先次序，先從 {due.iloc[0].get('person')} 開始點跟？"
                 if not due.empty
                 else "根據我而家嘅 M+2 數據，今日最應該做咩？"
             )
-            go_menu("🧠 Coach Tim", coach_tim_pending=pending)
+            go_menu("🧠 AI Tim", coach_tim_pending=pending)
     else:
         b1, b2, b3 = st.columns(3)
         with b1:
@@ -1203,13 +1203,13 @@ def page_home():
             if st.button("📋 準客戶名單", use_container_width=True, key="home_go_prospects"):
                 go_menu("📋 準客戶名單")
         with b3:
-            if st.button("🧠 問 Coach Tim", use_container_width=True, key="home_go_coach"):
+            if st.button("🧠 問 AI Tim", use_container_width=True, key="home_go_coach"):
                 pending = (
                     f"幫我排今日優先次序，先從 {due.iloc[0].get('person')} 開始點跟？"
                     if not due.empty
                     else "根據我而家嘅 M+2 數據，今日最應該做咩？"
                 )
-                go_menu("🧠 Coach Tim", coach_tim_pending=pending)
+                go_menu("🧠 AI Tim", coach_tim_pending=pending)
 
     with st.expander("團隊最新動態", expanded=False):
         acts = get_all_act().head(5)
@@ -1228,14 +1228,14 @@ def page_home():
 
 
 def page_coach_tim():
-    """Coach Tim AI chat — personal M+2 context (Telegram-style team bot)."""
+    """AI Tim chat — personal M+2 context (Telegram-style team bot)."""
     try:
         from tt_core import coach_tim as ct
         import importlib
 
         importlib.reload(ct)
     except Exception as e:
-        st.error(f"Coach Tim 未能載入：{e}")
+        st.error(f"AI Tim 未能載入：{e}")
         return
 
     user = st.session_state["user"]
@@ -1243,13 +1243,13 @@ def page_coach_tim():
     ai_on = ct.llm_configured()
     provider = ct.llm_provider()
 
-    st.markdown("## 🧠 Coach Tim")
+    st.markdown("## 🧠 AI Tim")
     if ai_on:
         st.success(
-            "Coach Tim AI 已接通——按你嘅業績、跟進同準客戶即時答。"
+            "AI Tim 已接通——按你嘅業績、跟進同準客戶即時答。"
         )
     else:
-        st.info("Coach Tim 就緒——問跟進、活動同下一步都得。")
+        st.info("AI Tim 就緒——問跟進、活動同下一步都得。")
     st.caption(
         "每次對話會讀你嘅今日要跟、本週活動、MDRT／Extra 10 同準客戶——"
         "問下一步點做、拆邊單都得。"
@@ -1292,7 +1292,7 @@ def page_coach_tim():
             expanded=(not ai_on) or bool(last_err),
         ):
             st.markdown(
-                "全隊共用一把 AI key；同事只見「Coach Tim AI」，唔會見到供應商名稱。\n\n"
+                "全隊共用一把 AI key；同事只見「AI Tim」，唔會見到供應商名稱。\n\n"
                 "去 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) "
                 "**Create API key** → 複製（而家可以係 `AQ…` 或 `AIza…`）→ 貼下面儲存 → 撳「測試連線」。"
             )
@@ -1374,7 +1374,7 @@ def page_coach_tim():
 
             tg_default = ct.get_telegram_coach_url()
             tg_url = st.text_input(
-                "（可選）Telegram Coach Tim 連結",
+                "（可選）Telegram AI Tim 連結",
                 value=tg_default,
                 placeholder="https://t.me/你的bot",
                 key="ct_tg_url",
@@ -1386,7 +1386,7 @@ def page_coach_tim():
 
     tg_link = ct.get_telegram_coach_url()
     if tg_link:
-        st.markdown(f"[亦可喺 Telegram 開 Coach Tim]({tg_link})")
+        st.markdown(f"[亦可喺 Telegram 開 AI Tim]({tg_link})")
 
     if "coach_tim_messages" not in st.session_state:
         st.session_state["coach_tim_messages"] = [
@@ -1419,7 +1419,7 @@ def page_coach_tim():
 
     pending = st.session_state.pop("coach_tim_pending", None)
     user_text = pending or quick
-    chat_in = st.chat_input("問 Coach Tim…（例如：幫我拆呢單點跟）")
+    chat_in = st.chat_input("問 AI Tim…（例如：幫我拆呢單點跟）")
     if chat_in:
         user_text = chat_in
 
@@ -1434,7 +1434,7 @@ def page_coach_tim():
         history = [m for m in history if not (
             m["role"] == "assistant" and m["content"].startswith("你好")
         )][-12:]
-        spinner = "Coach Tim 諗緊…" if ai_on else "Coach Tim 查緊最新數據…"
+        spinner = "AI Tim 諗緊…" if ai_on else "AI Tim 查緊最新數據…"
         with st.spinner(spinner):
             result = ct.reply(user_text, history, ctx)
             if isinstance(result, tuple) and len(result) == 3:
@@ -5166,8 +5166,8 @@ def _safe_page(label: str, fn):
 
 if "我的主頁" in menu:
     _safe_page("我的主頁", page_home)
-elif "Coach Tim" in menu:
-    _safe_page("Coach Tim", page_coach_tim)
+elif "AI Tim" in menu:
+    _safe_page("AI Tim", page_coach_tim)
 elif "打卡" in menu:
     _safe_page("打卡", page_checkin)
 elif "Dashboard" in menu:

@@ -64,7 +64,7 @@ def _sample_ctx(**over):
 
 
 def test_menu_constant():
-    assert "Coach Tim" in COACH_MENU
+    assert "AI Tim" in COACH_MENU
 
 
 def test_context_markdown_includes_extra10_and_due():
@@ -76,7 +76,7 @@ def test_context_markdown_includes_extra10_and_due():
 
 def test_system_prompt_grounded():
     sp = system_prompt(_sample_ctx())
-    assert "Coach Tim" in sp
+    assert "AI Tim" in sp
     assert "100,000" in sp or "100000" in sp.replace(",", "")
     assert "唔好估數" in sp or "唔好發明" in sp
     assert "Phase 1" not in sp
@@ -118,7 +118,7 @@ def test_offline_priority_only_when_asked():
 
 def test_welcome():
     w = welcome_message(_sample_ctx())
-    assert "Coach Tim" in w
+    assert "AI Tim" in w
     assert "1" in w  # due count
     assert "嵌喺" not in w
     assert "嵌入" not in w
@@ -282,10 +282,10 @@ def test_gemini_contents_alternates_roles():
 
 def test_app_wired():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert "🧠 Coach Tim" in src
+    assert "🧠 AI Tim" in src
     assert "page_coach_tim" in src
     assert "coach_tim_pending" in src
-    assert "問 Coach Tim" in src
+    assert "問 AI Tim" in src
     assert "嵌喺 M+2" not in src
     assert "嵌入 M+2" not in src
     assert "Phase 1 只俾建議" not in src
