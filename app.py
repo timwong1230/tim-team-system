@@ -861,6 +861,28 @@ except Exception:
 
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
+HOME_MENU = "🏠 我的主頁"
+
+
+def _reset_nav_to_home() -> None:
+    """Every fresh login lands on 我的主頁 (clear sticky menu widget state)."""
+    st.session_state["_menu_choice"] = HOME_MENU
+    st.session_state["_nav_pending"] = HOME_MENU
+    st.session_state["mobile_top_nav"] = HOME_MENU
+    st.session_state["desktop_main_menu"] = HOME_MENU
+    for k in (
+        "client_tool_pick",
+        "recruit_tool_pick",
+        "_client_tool",
+        "_recruit_tool",
+        "_client_tool_force",
+        "_recruit_tool_force",
+        "_home_weekly_report",
+        "_force_home_once",
+    ):
+        st.session_state.pop(k, None)
+
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
@@ -897,6 +919,7 @@ if not st.session_state["logged_in"]:
             )
             st.session_state.pop("_notif_checked_this_login", None)
             st.session_state.pop("_notif_pending_payload", None)
+            _reset_nav_to_home()
             st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
             st.rerun()
         else:
@@ -935,7 +958,7 @@ if not st.session_state["logged_in"]:
 # Recover broken session (e.g. after a mid-upload crash) instead of Oh-no screen
 if not st.session_state.get("user"):
     st.session_state["logged_in"] = False
-    st.session_state.pop("_menu_choice", None)
+    _reset_nav_to_home()
     st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
 
@@ -949,9 +972,7 @@ except Exception:
 # One-time escape hatch after previous crash / bad menu
 # _nav_pending is applied by mobile_top_nav before the selectbox exists.
 if st.session_state.get("_force_home_once"):
-    st.session_state["_menu_choice"] = "🏠 我的主頁"
-    st.session_state["_nav_pending"] = "🏠 我的主頁"
-    st.session_state.pop("_force_home_once", None)
+    _reset_nav_to_home()
 
 # Warm disk cache once per browser session so pages read locally (fast + offline-safe)
 try:
@@ -1066,12 +1087,25 @@ with st.sidebar:
         st.caption("手機可用上方選單切換功能；側欄放設定同登出。")
         render_install_guide(compact=True)
     else:
-        menu_sidebar = st.radio("MAIN MENU", menu_items, label_visibility="collapsed")
+        # Keyed radio so logout/login can reset to HOME_MENU (unstated radio sticks).
+        if st.session_state.get("desktop_main_menu") not in menu_items:
+            st.session_state["desktop_main_menu"] = (
+                st.session_state["_menu_choice"]
+                if st.session_state.get("_menu_choice") in menu_items
+                else HOME_MENU
+            )
+        menu_sidebar = st.radio(
+            "MAIN MENU",
+            menu_items,
+            key="desktop_main_menu",
+            label_visibility="collapsed",
+        )
         st.session_state["_menu_choice"] = menu_sidebar
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("登出", use_container_width=True, type="secondary"):
         st.session_state["logged_in"] = False
+        _reset_nav_to_home()
         st.rerun()
 
 if MOBILE:
@@ -5631,11 +5665,11 @@ def _safe_page(label: str, fn):
         # Do not set mobile_top_nav here — selectbox already exists this run.
         # _force_home_once + _menu_choice sync on the next script start.
         st.session_state["_force_home_once"] = True
-        st.session_state["_menu_choice"] = "🏠 我的主頁"
+        st.session_state["_menu_choice"] = HOME_MENU
         st.error(f"{label} 暫時無法開啟：{e}")
         st.caption("可以撳側欄其他功能，或登出再入。若持續出現請 Reboot app。")
         if st.button("返回主頁", type="primary", key=f"safe_home_{label}"):
-            go_menu("🏠 我的主頁")
+            go_menu(HOME_MENU)
 
 if "我的主頁" in menu:
     _safe_page("我的主頁", page_home)

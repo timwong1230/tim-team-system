@@ -89,7 +89,25 @@ def test_nav_pending_roundtrip_simulation():
 def test_force_home_once_sets_nav_pending():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "_force_home_once" in src
-    assert 'st.session_state["_nav_pending"] = "🏠 我的主頁"' in src
+    assert "def _reset_nav_to_home" in src
+    assert "_reset_nav_to_home()" in src
+    assert 'HOME_MENU = "🏠 我的主頁"' in src
+
+
+def test_login_and_logout_reset_nav_to_home():
+    """Fresh login must clear sticky menu keys so user lands on 我的主頁."""
+    src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    login_fn = src[src.index("def _do_login") : src.index("if MOBILE:", src.index("def _do_login"))]
+    assert "_reset_nav_to_home()" in login_fn
+    assert 'st.button("登出"' in src
+    # Logout path calls reset before rerun
+    logout_block = src[src.index('st.button("登出"') : src.index("if MOBILE:", src.index('st.button("登出"'))]
+    assert "_reset_nav_to_home()" in logout_block
+    assert 'key="desktop_main_menu"' in src
+    reset_fn = src[src.index("def _reset_nav_to_home") : src.index("if \"logged_in\" not in")]
+    assert "mobile_top_nav" in reset_fn
+    assert "desktop_main_menu" in reset_fn
+    assert "_nav_pending" in reset_fn
 
 
 def test_app_uses_go_menu_on_home_buttons():
