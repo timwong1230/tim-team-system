@@ -1064,6 +1064,29 @@ def openai_chat(
         raise RuntimeError(f"OpenAI HTTP {e.code}: {body}") from e
 
 
+def _gemini_contents(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Build Gemini contents with strictly alternating user/model roles."""
+    contents: list[dict[str, Any]] = []
+    for m in messages:
+        role = "user" if m.get("role") == "user" else "model"
+        text = str(m.get("content") or "").strip()
+        if not text:
+            continue
+        if contents and contents[-1]["role"] == role:
+            # Merge consecutive same-role turns (Gemini rejects duplicates)
+            prev = contents[-1]["parts"][0].get("text") or ""
+            contents[-1]["parts"][0]["text"] = f"{prev}\n\n{text}"
+        else:
+            contents.append({"role": role, "parts": [{"text": text}]})
+    if contents and contents[0]["role"] == "model":
+        contents.insert(0, {"role": "user", "parts": [{"text": "開始。"}]})
+    if not contents:
+        contents = [{"role": "user", "parts": [{"text": "你好"}]}]
+    if contents[-1]["role"] != "user":
+        contents.append({"role": "user", "parts": [{"text": "請繼續。"}]})
+    return contents
+
+
 def gemini_chat(
     messages: list[dict[str, str]],
     *,
@@ -1073,58 +1096,117 @@ def gemini_chat(
     timeout: int = 60,
 ) -> str:
     """Google AI Studio free-tier generateContent (no OpenAI billing)."""
-    contents: list[dict[str, Any]] = []
-    for m in messages:
-        role = "user" if m.get("role") == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": str(m.get("content") or "")}]})
-    # Gemini needs alternating roles; ensure we end on user
-    if contents and contents[0]["role"] == "model":
-        contents.insert(0, {"role": "user", "parts": [{"text": "（開始）"}]})
+    key = str(api_key or "").strip()
+    if not key:
+        raise RuntimeError("未設定 AI key")
 
+    contents = _gemini_contents(messages)
     model_id = (model or DEFAULT_GEMINI_MODEL).strip()
-    # Prefer requested model; fall back if free tier renamed a model id
     model_candidates = [model_id]
-    for alt in ("gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"):
+    for alt in (
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-flash-latest",
+    ):
         if alt not in model_candidates:
             model_candidates.append(alt)
 
-    payload = {
-        "systemInstruction": {"parts": [{"text": system}]},
-        "contents": contents,
-        "generationConfig": {"temperature": 0.6},
+    # Try with systemInstruction first; some keys/models reject it → prepend to user msg
+    payload_variants: list[dict[str, Any]] = [
+        {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "generationConfig": {"temperature": 0.6},
+        },
+    ]
+    merged = [dict(c) for c in contents]
+    first = merged[0]
+    first_text = first["parts"][0]["text"]
+    merged[0] = {
+        "role": "user",
+        "parts": [{"text": f"{system}\n\n---\n\n{first_text}"}],
     }
+    payload_variants.append(
+        {"contents": merged, "generationConfig": {"temperature": 0.6}}
+    )
+
     last_err = ""
     for mid in model_candidates:
-        qs = urllib.parse.urlencode({"key": api_key})
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{urllib.parse.quote(mid, safe='')}:generateContent?{qs}"
-        )
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            parts = (
-                data.get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [])
+        for payload in payload_variants:
+            qs = urllib.parse.urlencode({"key": key})
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{urllib.parse.quote(mid, safe='')}:generateContent?{qs}"
             )
-            text = "".join(str(p.get("text") or "") for p in parts).strip()
-            if not text:
-                raise RuntimeError("Gemini 回覆空白")
-            return text
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")[:400]
-            last_err = f"Gemini HTTP {e.code} ({mid}): {body}"
-            if e.code not in (404, 400):
-                raise RuntimeError(last_err) from e
-            continue
-    raise RuntimeError(last_err or "Gemini 失敗")
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                # Blocked / safety
+                cands = data.get("candidates") or []
+                if not cands:
+                    pf = data.get("promptFeedback") or {}
+                    last_err = f"Gemini 無回覆（{mid}）：{pf or data}"[:300]
+                    continue
+                parts = cands[0].get("content", {}).get("parts", [])
+                text = "".join(str(p.get("text") or "") for p in parts).strip()
+                if not text:
+                    last_err = f"Gemini 回覆空白（{mid}）"
+                    continue
+                return text
+            except urllib.error.HTTPError as e:
+                body = e.read().decode("utf-8", errors="replace")[:400]
+                last_err = f"HTTP {e.code}（{mid}）：{body}"
+                # Invalid key / permission — no point trying more models with same key shape
+                if e.code in (401, 403):
+                    raise RuntimeError(
+                        "AI key 無效或未開權限。請去 aistudio.google.com/apikey "
+                        "開新 key（通常以 AIza 開頭），再貼上儲存。"
+                    ) from e
+                # 404 model missing → next model; 400 bad request → try other payload
+                continue
+            except Exception as e:
+                last_err = str(e)[:300]
+                continue
+    raise RuntimeError(last_err or "AI 連線失敗")
+
+
+def test_ai_connection() -> tuple[bool, str]:
+    """Leader smoke-test: one short round-trip. Returns (ok, message)."""
+    gemini_key = _secret_gemini_key()
+    if gemini_key:
+        try:
+            text = gemini_chat(
+                [{"role": "user", "content": "用一句粵語講：已接通。"}],
+                system="你係 Coach Tim。只回一句短確認。",
+                api_key=gemini_key,
+                model=_secret_gemini_model(),
+                timeout=45,
+            )
+            return True, f"連線成功：{text[:120]}"
+        except Exception as e:
+            return False, str(e)[:400]
+    openai_key = _secret_openai_key()
+    if openai_key:
+        try:
+            text = openai_chat(
+                [{"role": "user", "content": "用一句粵語講：已接通。"}],
+                system="你係 Coach Tim。只回一句短確認。",
+                api_key=openai_key,
+                model=_secret_model(),
+                timeout=45,
+            )
+            return True, f"連線成功：{text[:120]}"
+        except Exception as e:
+            return False, str(e)[:400]
+    return False, "未設定 AI key"
 
 
 def reply(
@@ -1149,6 +1231,15 @@ def reply(
     if len(messages) > 16:
         messages = messages[-16:]
 
+    def _remember_err(msg: str) -> None:
+        meta["ai_error"] = msg
+        try:
+            import streamlit as st
+
+            st.session_state["_coach_tim_last_error"] = msg
+        except Exception:
+            pass
+
     gemini_key = _secret_gemini_key()
     gemini_err = ""
     if gemini_key:
@@ -1160,10 +1251,16 @@ def reply(
                 model=_secret_gemini_model(),
             )
             meta["provider"] = "gemini"
+            try:
+                import streamlit as st
+
+                st.session_state.pop("_coach_tim_last_error", None)
+            except Exception:
+                pass
             return text, "gemini", meta
         except Exception as e:
-            # Fall through to OpenAI / offline
-            gemini_err = str(e)[:180]
+            gemini_err = str(e)[:400]
+            _remember_err(gemini_err)
 
     openai_key = _secret_openai_key()
     if openai_key:
@@ -1172,11 +1269,18 @@ def reply(
                 messages, system=system, api_key=openai_key, model=_secret_model()
             )
             meta["provider"] = "openai"
+            try:
+                import streamlit as st
+
+                st.session_state.pop("_coach_tim_last_error", None)
+            except Exception:
+                pass
             return text, "openai", meta
         except Exception as e:
+            _remember_err(str(e)[:400])
             fallback = offline_reply(user_text, live_ctx)
             return (
-                f"（AI 暫時連線唔到）\n\n改用本地建議：\n\n{fallback}",
+                f"（AI 暫時連線唔到）\n\n{fallback}",
                 "offline",
                 meta,
             )
@@ -1184,7 +1288,7 @@ def reply(
     if gemini_err:
         fallback = offline_reply(user_text, live_ctx)
         return (
-            f"（AI 暫時連線唔到）\n\n改用本地建議：\n\n{fallback}",
+            f"（AI 暫時連線唔到）\n\n{fallback}",
             "offline",
             meta,
         )

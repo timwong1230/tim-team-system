@@ -1285,22 +1285,35 @@ def page_coach_tim():
 
     # Leader-only setup (provider details not shown to Members)
     if role == "Leader":
-        with st.expander("Leader：接通 AI 教練", expanded=not ai_on):
+        # Expand if AI off OR last call failed (key saved but broken)
+        last_err = st.session_state.get("_coach_tim_last_error") or ""
+        with st.expander(
+            "Leader：接通 AI 教練",
+            expanded=(not ai_on) or bool(last_err),
+        ):
             st.markdown(
                 "全隊共用一把 AI key；同事只見「Coach Tim AI」，唔會見到供應商名稱。\n\n"
-                "推薦：[aistudio.google.com/apikey](https://aistudio.google.com/apikey) 開 key → 貼下面儲存。"
+                "去 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) "
+                "**Create API key** → 複製（多數以 `AIza` 開頭）→ 貼下面儲存 → 撳「測試連線」。"
             )
             g_existing = ct._secret_gemini_key()
             if g_existing:
-                st.caption(f"已接通：`{ct.mask_api_key(g_existing)}`")
+                st.caption(f"已儲存：`{ct.mask_api_key(g_existing)}`")
+                if not g_existing.startswith("AIza"):
+                    st.warning(
+                        "呢把 key 唔似 AI Studio 標準格式（通常 `AIza…`）。"
+                        "請重新開一把 Generative Language / Gemini API key，唔好貼錯其他 Google key。"
+                    )
+            if last_err:
+                st.error(f"上次 AI 連線失敗原因：{last_err}")
             gem_key = st.text_input(
                 "AI API key",
                 value="",
                 type="password",
-                placeholder="貼上 API key",
+                placeholder="AIza…（貼新 key）",
                 key="ct_gemini_key_input",
             )
-            g1, g2 = st.columns(2)
+            g1, g2, g3 = st.columns(3)
             with g1:
                 if st.button(
                     "儲存並接通 AI",
@@ -1312,16 +1325,28 @@ def page_coach_tim():
                     if len(raw) >= 20:
                         if ct.save_gemini_api_key(raw):
                             st.session_state.pop("coach_tim_messages", None)
-                            st.toast("AI 教練已接通——全隊可用", icon="✅")
+                            st.session_state.pop("_coach_tim_last_error", None)
+                            st.toast("已儲存——請再撳「測試連線」", icon="✅")
                             st.rerun()
                         else:
                             st.error("儲存失敗，請再試。")
                     else:
                         st.warning("請貼完整 API key。")
             with g2:
+                if st.button("測試連線", use_container_width=True, key="ct_test_ai"):
+                    with st.spinner("測試 AI 連線…"):
+                        ok, msg = ct.test_ai_connection()
+                    if ok:
+                        st.session_state.pop("_coach_tim_last_error", None)
+                        st.success(msg)
+                    else:
+                        st.session_state["_coach_tim_last_error"] = msg
+                        st.error(msg)
+            with g3:
                 if st.button("清除 AI key", use_container_width=True, key="ct_clear_gemini"):
                     ct.clear_gemini_api_key()
                     st.session_state.pop("coach_tim_messages", None)
+                    st.session_state.pop("_coach_tim_last_error", None)
                     st.toast("已清除 AI key", icon="ℹ️")
                     st.rerun()
 

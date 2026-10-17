@@ -262,6 +262,24 @@ def test_reply_uses_gemini_when_configured():
     assert meta.get("provider") == "gemini"
 
 
+def test_gemini_contents_alternates_roles():
+    from tt_core.coach_tim import _gemini_contents
+
+    contents = _gemini_contents(
+        [
+            {"role": "assistant", "content": "你好"},
+            {"role": "assistant", "content": "第二句"},
+            {"role": "user", "content": "今日點做"},
+        ]
+    )
+    roles = [c["role"] for c in contents]
+    assert roles[0] == "user"
+    assert roles[-1] == "user"
+    # no consecutive duplicates
+    for a, b in zip(roles, roles[1:]):
+        assert a != b
+
+
 def test_app_wired():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "🧠 Coach Tim" in src
