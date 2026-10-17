@@ -16,6 +16,9 @@ _ICON_PUBLIC_180 = f"{_REPO_CDN}/app_icon_180.png"
 _ICON_PUBLIC_192 = f"{_REPO_CDN}/app_icon_192.png"
 _ICON_PUBLIC_512 = f"{_REPO_CDN}/app_icon_512.png"
 _ICON_PUBLIC_32 = f"{_REPO_CDN}/app_icon_32.png"
+# Public HTML shell — Streamlit Cloud cannot customize home-screen icons
+_LAUNCH_URL = f"{_REPO_CDN}/launch.html"
+_APP_URL = "https://tim-team-system.streamlit.app/"
 
 # Same-origin paths when server.enableStaticServing=true
 _ICON_LOCAL_180 = "/app/static/apple-touch-icon.png"
@@ -332,26 +335,41 @@ def inject_pwa_head() -> None:
         pass
 
 
+def launch_home_url() -> str:
+    """Public page to Add to Home Screen (ACE TEAM icon). Not the Streamlit URL."""
+    return _LAUNCH_URL
+
+
 def render_install_guide(*, compact: bool = False) -> None:
-    """Safari Add to Home Screen instructions."""
+    """Safari Add to Home Screen instructions.
+
+    Streamlit Community Cloud always serves the Streamlit crown for same-origin
+    ``/apple-touch-icon.png`` (and private apps auth-redirect icon fetches).
+    Bookmark the public ``launch.html`` shell instead — it has a real
+    apple-touch-icon and opens the app when launched from the home screen.
+    """
     brand_name, _, _, _, _, _, _, _ = _brand_bits()
+    launch = _LAUNCH_URL
     body_zh = (
-        "1. 如果主畫面已有舊圖示（Streamlit 皇冠）：**先長按刪除**\n"
-        "2. 用 **Safari** 打開本網站（唔好用 Chrome）\n"
-        "3. 撳底部分享按鈕 → **加到主畫面 / Add to Home Screen**\n"
-        f"4. 名稱改成 **{brand_name}**（如果顯示 Streamlit）→ 新增\n"
-        "5. 正確圖示係金 **ACE TEAM** 牌面（唔係皇冠）\n"
-        "6. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）\n"
+        f"1. 用 **Safari** 打開呢個連結（唔好用 Streamlit 網址加主畫面）：\n"
+        f"   {launch}\n"
+        "2. 如果主畫面已有 Streamlit **皇冠**：先長按刪除\n"
+        "3. 喺上面嗰頁撳分享 → **加到主畫面**\n"
+        f"4. 名稱改成 **{brand_name}** → 新增\n"
+        "5. 圖示應係金 **ACE TEAM** 牌面\n"
+        "6. 之後撳主畫面圖示會入 App（私人 app 仍要登入）\n"
         "\n"
-        "註：iPhone **唔會自動更新**舊 bookmark 圖示，一定要刪舊再加新。\n"
+        "點解唔得直接加 Streamlit？Cloud 平台鎖死皇冠 icon，code 改唔到。\n"
     )
     if compact:
-        with st.expander("加到 iPhone 主畫面（變 App）", expanded=False):
+        with st.expander("加到 iPhone 主畫面（ACE TEAM 圖示）", expanded=False):
             st.markdown(body_zh)
-            st.caption("iPad 同樣步驟。Android：Chrome 選單 → 安裝應用程式。")
+            st.link_button("打開啟動頁（加主畫面用）", launch, use_container_width=True)
+            st.caption("iPad 同樣步驟。Android：用同一啟動頁 → Chrome 安裝應用程式。")
     else:
-        st.markdown("### 加到 iPhone 主畫面（變 App）")
+        st.markdown("### 加到 iPhone 主畫面（ACE TEAM 圖示）")
         st.markdown(body_zh)
+        st.link_button("打開啟動頁（加主畫面用）", launch, use_container_width=True)
         st.info(f"一次加好，成隊同事主畫面都有 {brand_name}，打卡會快好多。")
 
 
