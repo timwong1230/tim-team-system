@@ -65,60 +65,27 @@ h3 { font-size: 1.45rem !important; }
   font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--muted); font-weight: 650; margin: 14px 4px 8px;
 }
-.tt-side-spacer { height: 12px; }
+.tt-side-spacer { height: 18px; }
 
-/* Sidebar nav — flat rail (not a stack of bordered cards / radio dots) */
-[data-testid="stSidebar"] div[role="radiogroup"] {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 2px !important;
+/* Active nav row (HTML — never a radio) */
+.tt-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 12px; margin: 2px 0; border-radius: 10px;
+  background: transparent;
 }
-[data-testid="stSidebar"] div[role="radiogroup"] label {
-  background: transparent !important;
-  padding: 10px 12px !important;
-  margin: 0 !important;
-  border-radius: 10px !important;
-  border: none !important;
-  border-left: 3px solid transparent !important;
-  box-shadow: none !important;
-  transition: background 0.15s ease, border-color 0.15s ease !important;
-  width: 100% !important;
-  align-items: center !important;
+.tt-nav-item-active {
+  background: linear-gradient(90deg, rgba(197,160,40,0.18) 0%, rgba(197,160,40,0.06) 100%);
+  box-shadow: inset 0 0 0 1px rgba(197,160,40,0.22);
 }
-[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-  background: rgba(197, 160, 40, 0.10) !important;
-  border-left-color: rgba(197, 160, 40, 0.35) !important;
-  transform: none !important;
+.tt-nav-bar {
+  width: 3px; align-self: stretch; min-height: 18px; border-radius: 2px;
+  background: var(--gold); flex-shrink: 0;
 }
-/* Hide Streamlit radio control (circle) completely */
-[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child,
-[data-testid="stSidebar"] div[role="radiogroup"] label [data-testid="stMarkdownContainer"] + div,
-[data-testid="stSidebar"] div[role="radiogroup"] label input {
-  display: none !important;
-  width: 0 !important; height: 0 !important; opacity: 0 !important;
-  position: absolute !important; pointer-events: none !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label p,
-[data-testid="stSidebar"] div[role="radiogroup"] label span {
-  font-size: 0.92rem !important;
-  font-weight: 500 !important;
-  color: var(--ink) !important;
-  line-height: 1.35 !important;
-}
-/* Selected item */
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-  background: var(--gold-soft) !important;
-  border-left: 3px solid var(--gold) !important;
-}
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p,
-[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) span {
-  font-weight: 650 !important;
-  color: #5C4A12 !important;
+.tt-nav-item-active .tt-nav-text {
+  font-weight: 650; color: #5C4A12; font-size: 0.94rem; line-height: 1.35;
 }
 
-/* Fallback for non-sidebar radios (rare) */
-div[role="radiogroup"] > label > div:first-child { display: none !important; }
-
+/* Main content primary buttons */
 div.stButton > button {
   background: linear-gradient(135deg, #D4AF37 0%, #B38F21 100%) !important;
   color: #FFFFFF !important;
@@ -133,6 +100,34 @@ div.stButton > button[kind="secondary"] {
   color: var(--ink) !important;
   border: 1px solid var(--line) !important;
   box-shadow: none;
+}
+
+/* Sidebar: quiet professional nav buttons (no dots, no card stack) */
+[data-testid="stSidebar"] div.stButton > button,
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"],
+[data-testid="stSidebar"] div.stButton > button[kind="primary"] {
+  background: transparent !important;
+  color: var(--ink) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  font-weight: 500 !important;
+  font-size: 0.92rem !important;
+  letter-spacing: 0.01em !important;
+  padding: 11px 12px 11px 15px !important;
+  min-height: 44px !important;
+  margin: 2px 0 !important;
+}
+[data-testid="stSidebar"] div.stButton > button:hover {
+  background: rgba(197, 160, 40, 0.10) !important;
+  color: #5C4A12 !important;
+  border: none !important;
+}
+[data-testid="stSidebar"] div.stButton > button:focus {
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .tt-hero {
@@ -678,9 +673,8 @@ div.stButton > button[kind="secondary"] {
     font-size: 1.02rem !important;
     border-radius: 12px !important;
   }
-  [data-testid="stSidebar"] div[role="radiogroup"] label {
-    padding: 12px 12px !important;
-    min-height: 44px;
+  [data-testid="stSidebar"] div.stButton > button {
+    min-height: 46px !important;
   }
   .stTextInput > div > div > input,
   .stTextArea > div > div > textarea,
@@ -816,23 +810,21 @@ html[data-tt-standalone="1"] .block-container {
     color: var(--ink) !important;
   }
 
-  /* Sidebar nav — dark mode */
-  [data-testid="stSidebar"] div[role="radiogroup"] label {
+  /* Sidebar button nav — dark mode */
+  [data-testid="stSidebar"] div.stButton > button,
+  [data-testid="stSidebar"] div.stButton > button[kind="secondary"] {
     background: transparent !important;
-    border-color: transparent !important;
     color: var(--ink) !important;
+    border: none !important;
   }
-  [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-    background: rgba(197, 160, 40, 0.12) !important;
+  [data-testid="stSidebar"] div.stButton > button:hover {
+    background: rgba(197, 160, 40, 0.14) !important;
   }
-  [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-    background: rgba(197, 160, 40, 0.18) !important;
-    border-left-color: var(--gold) !important;
+  .tt-nav-item-active {
+    background: rgba(197, 160, 40, 0.16) !important;
+    box-shadow: inset 0 0 0 1px rgba(197, 160, 40, 0.28) !important;
   }
-  [data-testid="stSidebar"] div[role="radiogroup"] label p,
-  [data-testid="stSidebar"] div[role="radiogroup"] label span {
-    color: var(--ink) !important;
-  }
+  .tt-nav-item-active .tt-nav-text { color: #F5E6B8 !important; }
   .tt-side-kicker { color: var(--gold) !important; }
   .tt-side-user, .tt-side-nav-label { color: var(--ink) !important; }
   .tt-side-role { color: var(--muted) !important; }
@@ -855,6 +847,14 @@ html[data-tt-standalone="1"] .block-container {
     background: var(--surface) !important;
     color: var(--ink) !important;
     border: 1px solid var(--line) !important;
+  }
+  /* Keep sidebar nav flat in dark mode (override secondary chrome above) */
+  [data-testid="stSidebar"] div.stButton > button,
+  [data-testid="stSidebar"] div.stButton > button[kind="secondary"] {
+    background: transparent !important;
+    border: none !important;
+    color: var(--ink) !important;
+    box-shadow: none !important;
   }
 
   /* Expanders / tabs / metrics */

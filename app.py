@@ -895,6 +895,45 @@ def _reset_nav_to_home() -> None:
         st.session_state.pop(k, None)
 
 
+def _esc_html(s: str) -> str:
+    return (
+        str(s or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _render_sidebar_nav(menu_items: list[str]) -> str:
+    """Professional sidebar menu — buttons, never Streamlit radio (no dots)."""
+    current = st.session_state.get("_menu_choice") or HOME_MENU
+    if current not in menu_items:
+        current = HOME_MENU if HOME_MENU in menu_items else (menu_items[0] if menu_items else HOME_MENU)
+        st.session_state["_menu_choice"] = current
+
+    for idx, label in enumerate(menu_items):
+        if label == current:
+            st.markdown(
+                f'<div class="tt-nav-item tt-nav-item-active">'
+                f'<span class="tt-nav-bar"></span>'
+                f'<span class="tt-nav-text">{_esc_html(label)}</span>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            continue
+        if st.button(
+            label,
+            key=f"tt_side_nav_{idx}",
+            use_container_width=True,
+        ):
+            st.session_state["_menu_choice"] = label
+            st.session_state["desktop_main_menu"] = label
+            st.session_state["_nav_pending"] = label
+            st.rerun()
+    return current
+
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
@@ -1082,8 +1121,27 @@ with st.sidebar:
     else:
         st.caption(conn["label"])
 
+    sync = last_iris_sync()
+    if sync:
+        st.caption(f"同步 {str(sync.get('synced_at', ''))[:16]}")
+    else:
+        st.caption("尚未同步業績")
+
+    st.markdown('<div class="tt-side-nav-label">導航</div>', unsafe_allow_html=True)
+    # Desktop + iPad: button nav (no radio dots). Phone: top selectbox.
+    menu = st.session_state.get("_menu_choice", menu_items[0])
+    if SIDEBAR_NAV:
+        menu = _render_sidebar_nav(menu_items)
+        st.session_state["_menu_choice"] = menu
+        st.session_state["desktop_main_menu"] = menu
+    else:
+        st.caption("用上方選單切換功能；側欄放設定同登出。")
+        render_install_guide(compact=True)
+
+    st.markdown('<div class="tt-side-spacer"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="tt-side-nav-label">帳戶</div>', unsafe_allow_html=True)
     if st.button(
-        "重新整理數據",
+        "↻ 重新整理數據",
         use_container_width=True,
         type="secondary",
         help="強制向 Google Sheets 拉最新數據",
@@ -1093,34 +1151,6 @@ with st.sidebar:
             warm_cache(force=True)
         st.toast("數據已更新", icon="✅")
         st.rerun()
-
-    sync = last_iris_sync()
-    if sync:
-        st.caption(f"同步 {str(sync.get('synced_at', ''))[:16]}")
-    else:
-        st.caption("尚未同步業績")
-
-    st.markdown('<div class="tt-side-nav-label">功能選單</div>', unsafe_allow_html=True)
-    # Desktop + iPad: radio nav in sidebar. Phone: top selectbox instead.
-    if SIDEBAR_NAV:
-        if st.session_state.get("desktop_main_menu") not in menu_items:
-            st.session_state["desktop_main_menu"] = (
-                st.session_state["_menu_choice"]
-                if st.session_state.get("_menu_choice") in menu_items
-                else HOME_MENU
-            )
-        menu_sidebar = st.radio(
-            "MAIN MENU",
-            menu_items,
-            key="desktop_main_menu",
-            label_visibility="collapsed",
-        )
-        st.session_state["_menu_choice"] = menu_sidebar
-    else:
-        st.caption("用上方選單切換功能；側欄放設定同登出。")
-        render_install_guide(compact=True)
-
-    st.markdown('<div class="tt-side-spacer"></div>', unsafe_allow_html=True)
     if st.button("登出", use_container_width=True, type="secondary", key="sidebar_logout"):
         st.session_state["logged_in"] = False
         _reset_nav_to_home()
@@ -1131,8 +1161,6 @@ if PHONE:
     menu = mobile_top_nav(menu_items, st.session_state.get("_menu_choice"))
     st.session_state["_menu_choice"] = menu
     st.markdown("</div>", unsafe_allow_html=True)
-else:
-    menu = st.session_state.get("_menu_choice", menu_items[0])
 
 if conn["level"] == "degraded":
     st.warning(
