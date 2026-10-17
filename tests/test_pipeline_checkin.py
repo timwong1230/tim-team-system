@@ -124,3 +124,11 @@ def test_due_and_upcoming_followups(monkeypatch):
 
     upcoming = get_upcoming_followups("Tim", days=7, after=today)
     assert list(upcoming["person"]) == ["C"]
+
+    # Admin / Leader home: username=None → whole-team due + upcoming
+    team_due = get_due_followups(None, on_or_before=today)
+    assert set(team_due["person"]) == {"A", "B", "E"}
+    assert set(team_due["username"]) == {"Tim", "Oscar"}
+
+    team_upcoming = get_upcoming_followups(None, days=7, after=today)
+    assert list(team_upcoming["person"]) == ["C"]
