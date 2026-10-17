@@ -166,7 +166,8 @@ def inject_pwa_head() -> None:
         "dataIcon": data_icon,
         "brand": brand_name,
         "manifest": manifest,
-        "version": "ace-v5",
+        # Bump when icon wiring changes — forces re-inject over cached crown links
+        "version": "ace-v6",
     }
     payload_js = json.dumps(payload)
 
@@ -242,17 +243,19 @@ def inject_pwa_head() -> None:
       head.appendChild(el);
     }}
 
-    // Public HTTPS first — iOS can fetch without Streamlit session cookies
+    // apple-touch-icon MUST be public HTTPS only.
+    // iOS "Add to Home Screen" fetches WITHOUT Streamlit cookies;
+    // /app/static often 303→login and Safari falls back to the Streamlit crown.
     add('apple-touch-icon', P.icon, '180x180', 'image/png');
     add('apple-touch-icon-precomposed', P.icon, '180x180', 'image/png');
+    // Tab / Android favicons (session may use same-origin extras)
     add('icon', P.favicon, '32x32', 'image/png');
     add('shortcut icon', P.favicon, null, 'image/png');
     add('icon', P.icon, '180x180', 'image/png');
     add('icon', P.iconBig, '512x512', 'image/png');
-    // Same-origin static copies (when Cloud serves /app/static)
-    add('apple-touch-icon', P.iconLocal, '180x180', 'image/png');
-    add('icon', P.iconLocalBig, '512x512', 'image/png');
-    // data URI last for desktop tab when CDN blocked
+    if (P.iconLocal) add('icon', P.iconLocal, '180x180', 'image/png');
+    if (P.iconLocalBig) add('icon', P.iconLocalBig, '512x512', 'image/png');
+    // data URI last for desktop tab when CDN blocked (Safari ignores data: for home screen)
     add('icon', P.dataIcon, '180x180', 'image/png');
   }}
 
@@ -333,12 +336,14 @@ def render_install_guide(*, compact: bool = False) -> None:
     """Safari Add to Home Screen instructions."""
     brand_name, _, _, _, _, _, _, _ = _brand_bits()
     body_zh = (
-        "1. 用 **Safari** 打開本網站（唔好用 Chrome）\n"
-        "2. 撳底部分享按鈕\n"
-        "3. 揀 **加到主畫面 / Add to Home Screen**\n"
+        "1. 如果主畫面已有舊圖示（Streamlit 皇冠）：**先長按刪除**\n"
+        "2. 用 **Safari** 打開本網站（唔好用 Chrome）\n"
+        "3. 撳底部分享按鈕 → **加到主畫面 / Add to Home Screen**\n"
         f"4. 名稱改成 **{brand_name}**（如果顯示 Streamlit）→ 新增\n"
-        "5. 如果圖示仍係皇冠：刪除舊主畫面圖示 → 重新開頁 → 再加一次\n"
+        "5. 正確圖示係金 **ACE TEAM** 牌面（唔係皇冠）\n"
         "6. 之後喺主畫面撳圖示，就會好似 App 咁開（全螢幕）\n"
+        "\n"
+        "註：iPhone **唔會自動更新**舊 bookmark 圖示，一定要刪舊再加新。\n"
     )
     if compact:
         with st.expander("加到 iPhone 主畫面（變 App）", expanded=False):
