@@ -85,6 +85,14 @@ def test_welcome():
     w = welcome_message(_sample_ctx())
     assert "Coach Tim" in w
     assert "1" in w  # due count
+    assert "嵌喺" not in w
+    assert "嵌入" not in w
+    assert "Phase 1" not in w
+
+
+def test_system_prompt_no_phase_label():
+    sp = system_prompt(_sample_ctx())
+    assert "Phase 1" not in sp
 
 
 def test_app_wired():
@@ -93,6 +101,9 @@ def test_app_wired():
     assert "page_coach_tim" in src
     assert "coach_tim_pending" in src
     assert "問 Coach Tim" in src
+    assert "嵌喺 M+2" not in src
+    assert "嵌入 M+2" not in src
+    assert "Phase 1 只俾建議" not in src
 
 
 if __name__ == "__main__":

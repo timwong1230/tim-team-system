@@ -1228,7 +1228,7 @@ def page_home():
 
 
 def page_coach_tim():
-    """Phase 1: Coach Tim embedded chat with M+2 live context."""
+    """Coach Tim chat with live M+2 context."""
     try:
         from tt_core import coach_tim as ct
         import importlib
@@ -1242,10 +1242,7 @@ def page_coach_tim():
     role = st.session_state.get("role") or "Member"
 
     st.markdown("## 🧠 Coach Tim")
-    st.caption(
-        "嵌喺 M+2 嘅教練助手——已讀你嘅今日要跟、本週活動、MDRT／Extra 10。"
-        " Phase 1 只俾建議，唔會自動改系統資料。"
-    )
+    st.caption("已讀你嘅今日要跟、本週活動、MDRT／Extra 10——直接問跟進同優先次序。")
 
     try:
         ctx = ct.build_coach_context(user, role=role)
@@ -1274,13 +1271,15 @@ def page_coach_tim():
 
     with st.expander("而家注入嘅 M+2 數據", expanded=False):
         st.markdown(ct.format_context_markdown(ctx))
-        if ct.llm_configured():
-            st.success("已接 OpenAI（Streamlit secrets）——完整 AI 回覆")
-        else:
-            st.info(
-                "未設定 OpenAI key 時用本地教練（一樣跟數據）。"
-                "可喺 secrets 加 `openai.api_key` 或 `coach_tim.api_key`。"
-            )
+        # Secrets setup is admin-only — members just use Coach Tim.
+        if role == "Leader":
+            if ct.llm_configured():
+                st.success("已接 OpenAI（Streamlit secrets）")
+            else:
+                st.caption(
+                    "Admin：未設 OpenAI key 時用內建教練。"
+                    "可喺 secrets 加 `openai.api_key` 或 `coach_tim.api_key`。"
+                )
 
     if "coach_tim_messages" not in st.session_state:
         st.session_state["coach_tim_messages"] = [

@@ -196,7 +196,7 @@ def system_prompt(ctx: dict[str, Any]) -> str:
 3. 業績／Extra 10／MDRT 只引用上面數字；唔好發明 FYC。
 4. 回覆短：2–6 句＋最多 3 個 bullet action。
 5. 如果問工具（醫療融資、準客戶、打卡），引導佢去 M+2 對應功能，並講點用。
-6. 你而家係 Phase 1：只能讀數據、俾建議；唔好話自己已經改咗系統資料。
+6. 你只讀數據同俾建議；唔好話自己已經改咗系統資料。
 """
 
 
@@ -341,7 +341,7 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     name = ctx.get("username") or ""
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
     return (
-        f"你好 {name}，我係 **Coach Tim**（嵌喺 M+2）。"
+        f"你好 {name}，我係 **Coach Tim**。"
         f"我已經讀咗你嘅業績、本週活動同跟進清單。{bit}\n\n"
         "可以問我：而家先做邊單、點開下一句、點補本週活動、Extra 10／MDRT 進度。"
     )
