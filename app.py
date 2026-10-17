@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-16T12:50Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-17T03:15Z
 
 
 from __future__ import annotations
@@ -974,6 +974,7 @@ except Exception as e:
 
 menu_items = [
     "🏠 我的主頁",
+    "🧠 Coach Tim",
     "📊 團隊 Dashboard",
     "📋 準客戶名單",
     "📝 打卡 Check-in",
@@ -987,8 +988,12 @@ menu_items = [
     "🆚 保險公司新人 Package 對比",
 ]
 if is_leader:
-    # Right after Dashboard
-    menu_items.insert(2, "🔄 業績報告同步")
+    # After Dashboard (index shifts with Coach Tim at 1)
+    try:
+        dash_i = menu_items.index("📊 團隊 Dashboard")
+        menu_items.insert(dash_i + 1, "🔄 業績報告同步")
+    except ValueError:
+        menu_items.insert(3, "🔄 業績報告同步")
 menu_items.append("👤 設定")
 
 with st.sidebar:
@@ -1097,7 +1102,7 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
         f"日期：`{nd_str}`"
     )
     rid = row.get("id")
-    c1, c2 = st.columns([1, 1])
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("✓ 已跟進", key=f"{key_prefix}_done_{rid}", use_container_width=True):
             mark_followup_done(rid)
@@ -1108,6 +1113,15 @@ def _render_followup_item(row, *, key_prefix: str) -> None:
             st.session_state["_menu_choice"] = "📝 打卡 Check-in"
             st.session_state["ci_prefill_person"] = person
             st.session_state["ci_prefill_track"] = track
+            st.rerun()
+    with c3:
+        if st.button("問 Coach Tim", key=f"{key_prefix}_coach_{rid}", use_container_width=True):
+            st.session_state["_menu_choice"] = "🧠 Coach Tim"
+            st.session_state["coach_tim_pending"] = (
+                f"幫我跟進呢單：{person}（{track}｜{stage}）。"
+                f"Next action：{action or '未填'}；日期：{nd_str}。"
+                "請俾我今日具體講法同下一步。"
+            )
             st.rerun()
     st.divider()
 
@@ -1162,7 +1176,7 @@ def page_home():
         for _, row in upcoming.iterrows():
             _render_followup_item(row, key_prefix="home_up")
 
-    b1, b2 = st.columns(2)
+    b1, b2, b3 = st.columns(3)
     with b1:
         if st.button("＋ 去打卡（做數／招募）", type="primary", use_container_width=True, key="home_go_checkin"):
             st.session_state["_menu_choice"] = "📝 打卡 Check-in"
@@ -1170,6 +1184,17 @@ def page_home():
     with b2:
         if st.button("📋 準客戶名單", use_container_width=True, key="home_go_prospects"):
             st.session_state["_menu_choice"] = "📋 準客戶名單"
+            st.rerun()
+    with b3:
+        if st.button("🧠 問 Coach Tim", use_container_width=True, key="home_go_coach"):
+            st.session_state["_menu_choice"] = "🧠 Coach Tim"
+            if not due.empty:
+                row0 = due.iloc[0]
+                st.session_state["coach_tim_pending"] = (
+                    f"幫我排今日優先次序，先從 {row0.get('person')} 開始點跟？"
+                )
+            else:
+                st.session_state["coach_tim_pending"] = "根據我而家嘅 M+2 數據，今日最應該做咩？"
             st.rerun()
 
     with st.expander("團隊最新動態", expanded=False):
@@ -1186,6 +1211,113 @@ def page_home():
                     f"**{row['username']}** · {row['type']} · {act_date}  \n"
                     + "  \n".join(note_preview)
                 )
+
+
+def page_coach_tim():
+    """Phase 1: Coach Tim embedded chat with M+2 live context."""
+    try:
+        from tt_core import coach_tim as ct
+        import importlib
+
+        importlib.reload(ct)
+    except Exception as e:
+        st.error(f"Coach Tim 未能載入：{e}")
+        return
+
+    user = st.session_state["user"]
+    role = st.session_state.get("role") or "Member"
+
+    st.markdown("## 🧠 Coach Tim")
+    st.caption(
+        "嵌喺 M+2 嘅教練助手——已讀你嘅今日要跟、本週活動、MDRT／Extra 10。"
+        " Phase 1 只俾建議，唔會自動改系統資料。"
+    )
+
+    try:
+        ctx = ct.build_coach_context(user, role=role)
+    except Exception as e:
+        st.warning(f"讀取 M+2 數據時部分失敗：{e}")
+        ctx = {
+            "username": user,
+            "role": role,
+            "ytd_fyc": 0,
+            "extra10_open": False,
+            "extra10_threshold": 88000,
+            "extra10_remaining": 88000,
+            "mdrt_progress": 0,
+            "mdrt_pct": 0,
+            "mdrt_remaining": 0,
+            "mdrt_target": 512800,
+            "wk_count": 0,
+            "wk_score": 0,
+            "wk_min": 3,
+            "wk_need": 3,
+            "recruit": 0,
+            "due": [],
+            "upcoming": [],
+            "prospects": [],
+        }
+
+    with st.expander("而家注入嘅 M+2 數據", expanded=False):
+        st.markdown(ct.format_context_markdown(ctx))
+        if ct.llm_configured():
+            st.success("已接 OpenAI（Streamlit secrets）——完整 AI 回覆")
+        else:
+            st.info(
+                "未設定 OpenAI key 時用本地教練（一樣跟數據）。"
+                "可喺 secrets 加 `openai.api_key` 或 `coach_tim.api_key`。"
+            )
+
+    if "coach_tim_messages" not in st.session_state:
+        st.session_state["coach_tim_messages"] = [
+            {"role": "assistant", "content": ct.welcome_message(ctx)}
+        ]
+
+    # Quick prompts
+    q1, q2, q3 = st.columns(3)
+    quick = None
+    with q1:
+        if st.button("今日優先做咩？", use_container_width=True, key="ct_q_today"):
+            quick = "根據我而家嘅 M+2 數據，今日最應該做咩？請排優先次序。"
+    with q2:
+        if st.button("本週活動", use_container_width=True, key="ct_q_week"):
+            quick = "我本週活動仲欠唔欠？點補最快？"
+    with q3:
+        if st.button("MDRT / Extra 10", use_container_width=True, key="ct_q_mdrt"):
+            quick = "講下我 MDRT 同 Extra 10 進度，下一步點衝？"
+
+    c_clear, _ = st.columns([1, 3])
+    with c_clear:
+        if st.button("清空對話", use_container_width=True, key="ct_clear"):
+            st.session_state["coach_tim_messages"] = [
+                {"role": "assistant", "content": ct.welcome_message(ctx)}
+            ]
+            st.rerun()
+
+    for msg in st.session_state["coach_tim_messages"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    pending = st.session_state.pop("coach_tim_pending", None)
+    user_text = pending or quick
+    chat_in = st.chat_input("問 Coach Tim…（例如：幫我拆呢單點跟）")
+    if chat_in:
+        user_text = chat_in
+
+    if user_text:
+        st.session_state["coach_tim_messages"].append({"role": "user", "content": user_text})
+        history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in st.session_state["coach_tim_messages"][:-1]
+            if m["role"] in ("user", "assistant")
+        ]
+        # Drop welcome-only noise for API: keep as assistant turns is fine
+        with st.spinner("Coach Tim 諗緊…"):
+            answer, mode = ct.reply(user_text, history, ctx)
+        st.session_state["coach_tim_messages"].append({"role": "assistant", "content": answer})
+        if mode == "offline" and not ct.llm_configured():
+            pass  # already noted in expander
+        st.rerun()
 
 
 def page_checkin():
@@ -4901,6 +5033,8 @@ def _safe_page(label: str, fn):
 
 if "我的主頁" in menu:
     _safe_page("我的主頁", page_home)
+elif "Coach Tim" in menu:
+    _safe_page("Coach Tim", page_coach_tim)
 elif "打卡" in menu:
     _safe_page("打卡", page_checkin)
 elif "Dashboard" in menu:
@@ -4931,4 +5065,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-16T12:50Z
+# cloud_redeploy_stamp: 2026-10-17T03:15Z
