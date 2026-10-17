@@ -1259,64 +1259,106 @@ def _render_followup_item(row, *, key_prefix: str, show_owner: bool = False) -> 
 
 
 def _html_member_home_scorecard(m: dict) -> str:
-    """Compact card stack for member home performance."""
+    """Self-contained scorecard HTML (Streamlit markdown drops page CSS)."""
     pct = min(max(float(m.get("mdrt_pct") or 0), 0.0), 100.0)
     mtd = f"${float(m.get('mtd_fyc') or 0):,.0f}"
     ytd = f"${float(m.get('ytd_fyc') or 0):,.0f}"
-    mdrt_pct = f"{float(m.get('mdrt_pct') or 0):.0f}%"
+    mdrt_pct_txt = f"{float(m.get('mdrt_pct') or 0):.0f}%"
     progress = float(m.get("mdrt_progress") or 0)
     target = float(m.get("mdrt_target") or 0)
     remaining = float(m.get("mdrt_remaining") or 0)
     if m.get("mdrt_met"):
-        mdrt_hint = f"已有 ${progress:,.0f}／目標 ${target:,.0f} · 已達標"
+        mdrt_hint = f"已有 ${progress:,.0f}／目標 ${target:,.0f} · 已達標 ✓"
+        mdrt_hint_color = "#059669"
     else:
-        mdrt_hint = f"已有 ${progress:,.0f}／目標 ${target:,.0f} · 尚欠 ${remaining:,.0f}"
+        mdrt_hint = f"尚欠 ${remaining:,.0f} · 目標 ${target:,.0f}"
+        mdrt_hint_color = "#7A6420"
     recruit = int(m.get("recruit") or 0)
-    recruit_target = int(m.get("recruit_target") or 0)
+    recruit_target = max(int(m.get("recruit_target") or 0), 1)
     recruit_left = int(m.get("recruit_remaining") or 0)
+    recruit_pct = min(100.0, recruit / recruit_target * 100.0)
     if recruit_left > 0:
-        recruit_hint = f"仲要請 {recruit_left} 人 · 目標 {recruit_target} 人／年"
+        recruit_hint = f"仲要請 {recruit_left} 人先達標"
+        recruit_hint_color = "#B45309"
     else:
-        recruit_hint = f"已達標 · 目標 {recruit_target} 人／年"
+        recruit_hint = "招募目標已達標 ✓"
+        recruit_hint_color = "#059669"
     month = _esc(m.get("month") or "")
-    wk = f"{int(m.get('wk_count') or 0)}/{WEEKLY_MIN_ACTS} 次 · {int(m.get('wk_score') or 0)} 分"
+    wk_count = int(m.get("wk_count") or 0)
+    wk_score = int(m.get("wk_score") or 0)
+    wk_ok = wk_count >= WEEKLY_MIN_ACTS
+    wk_chip_bg = "#D1FAE5" if wk_ok else "#FEF3C7"
+    wk_chip_fg = "#065F46" if wk_ok else "#92400E"
+    wk_chip = f"本週活動 {wk_count}/{WEEKLY_MIN_ACTS} · {wk_score} 分"
     return f"""
-    <div class="tt-scorecard">
-      <div class="tt-score-card tt-score-card-accent">
-        <div class="tt-score-kicker">本月完成 · {month}</div>
-        <div class="tt-score-value">{mtd}</div>
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {{ margin:0; padding:0; background:transparent; overflow:visible;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:#1C2430; }}
+  .sc {{ display:flex; flex-direction:column; gap:12px; padding:2px 0 6px; }}
+  .card {{
+    background:#FFFFFF; border:1px solid #E6E8EC; border-radius:16px;
+    padding:16px 16px 14px; box-shadow:0 8px 22px rgba(28,36,48,.06);
+  }}
+  .card-gold {{ border-left:4px solid #C5A028; }}
+  .k {{ font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+       color:#6B7280; font-weight:650; margin:0 0 6px; }}
+  .v {{ font-family:Georgia,'Times New Roman',serif; font-size:34px;
+       color:#1C2430; line-height:1.15; font-variant-numeric:tabular-nums; }}
+  .v-sm {{ font-size:26px; }}
+  .split {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:2px; }}
+  .hint {{ font-size:13px; line-height:1.45; margin-top:10px; color:{mdrt_hint_color}; font-weight:600; }}
+  .hint-rec {{ color:{recruit_hint_color}; }}
+  .bar {{ background:#F1F3F5; border-radius:999px; height:10px; overflow:hidden; margin-top:10px; }}
+  .bar > i {{ display:block; height:100%; background:linear-gradient(90deg,#D4AF37,#C5A028);
+              border-radius:999px; }}
+  .bar-rec > i {{ background:linear-gradient(90deg,#34D399,#059669); }}
+  .meta {{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:2px; }}
+  .chip {{ display:inline-block; font-size:12px; font-weight:650; padding:5px 10px;
+           border-radius:999px; background:{wk_chip_bg}; color:{wk_chip_fg}; }}
+  .sub {{ font-size:12px; color:#6B7280; margin-top:4px; }}
+</style></head><body>
+<div class="sc">
+  <div class="card card-gold">
+    <div class="k">本月完成 · {month}</div>
+    <div class="v">{mtd}</div>
+    <div class="sub">Iris Daily Completion</div>
+  </div>
+  <div class="card">
+    <div class="k">全年 · MDRT</div>
+    <div class="split">
+      <div>
+        <div class="k">全年完成</div>
+        <div class="v v-sm">{ytd}</div>
       </div>
-      <div class="tt-score-card">
-        <div class="tt-score-kicker">全年 · MDRT</div>
-        <div class="tt-score-row-split">
-          <div>
-            <div class="tt-score-kicker">全年完成</div>
-            <div class="tt-score-value tt-score-value-sm">{ytd}</div>
-          </div>
-          <div>
-            <div class="tt-score-kicker">MDRT 進度</div>
-            <div class="tt-score-value tt-score-value-sm">{mdrt_pct}</div>
-          </div>
-        </div>
-        <div class="tt-score-hint">{mdrt_hint}</div>
-        <div class="tt-score-bar"><span style="width:{pct:.1f}%;"></span></div>
+      <div>
+        <div class="k">MDRT 進度</div>
+        <div class="v v-sm">{mdrt_pct_txt}</div>
       </div>
-      <div class="tt-score-card">
-        <div class="tt-score-row">
-          <div>
-            <div class="tt-score-kicker">今年招募</div>
-            <div class="tt-score-value tt-score-value-sm">{recruit} / {recruit_target}</div>
-          </div>
-        </div>
-        <div class="tt-score-hint">{recruit_hint}</div>
-      </div>
-      <div class="tt-score-foot">本週活動 {wk}</div>
     </div>
-    """
+    <div class="hint">{mdrt_hint}</div>
+    <div class="bar"><i style="width:{pct:.1f}%;"></i></div>
+    <div class="sub" style="margin-top:8px;">已有 ${progress:,.0f}／目標 ${target:,.0f}</div>
+  </div>
+  <div class="card">
+    <div class="meta">
+      <div>
+        <div class="k">今年招募</div>
+        <div class="v v-sm">{recruit} / {int(m.get('recruit_target') or 0)}</div>
+      </div>
+    </div>
+    <div class="hint hint-rec">{recruit_hint}</div>
+    <div class="bar bar-rec"><i style="width:{recruit_pct:.1f}%;"></i></div>
+  </div>
+  <div><span class="chip">{wk_chip}</span></div>
+</div>
+</body></html>
+"""
 
 
 def _render_member_home_scorecard(user: str) -> None:
-    """After follow-ups: 本月 → 全年/MDRT → 招募."""
+    """After follow-ups: 本月 → 全年/MDRT → 招募 (iframe so CSS survives)."""
     try:
         m = member_home_metrics(user)
     except Exception:
@@ -1326,7 +1368,12 @@ def _render_member_home_scorecard(user: str) -> None:
         return
 
     st.markdown("### 我的業績")
-    st.markdown(_html_member_home_scorecard(m), unsafe_allow_html=True)
+    # Same pattern as Dashboard KPIs — markdown strips custom CSS classes
+    components.html(
+        _html_member_home_scorecard(m),
+        height=470 if MOBILE else 420,
+        scrolling=False,
+    )
 
 
 def page_home():
