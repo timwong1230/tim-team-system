@@ -1483,7 +1483,7 @@ def page_home():
     try:
         from tt_core.daily_news import render_daily_news
 
-        render_daily_news(limit=8)
+        render_daily_news(limit=5)
     except Exception:
         st.caption("今日重點新聞暫時未能顯示。")
 
