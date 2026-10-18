@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-17T03:35Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-18T00:45Z
 
 
 from __future__ import annotations
@@ -797,7 +797,7 @@ BRAND_SYSTEM = "TIM TEAM SYSTEM"
 
 
 def page_icon_arg():
-    """Prefer a real image file path/PIL — Streamlit converts this to a media URL for the tab."""
+    """Prefer a repo path string (fast). Avoid PIL open on every boot — can stall Cloud."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parent
@@ -809,13 +809,7 @@ def page_icon_arg():
         "static/ace_team_logo.jpg",
     ):
         path = root / rel
-        if not path.exists():
-            continue
-        try:
-            from PIL import Image
-
-            return Image.open(path)
-        except Exception:
+        if path.exists():
             return str(path)
     # Public CDN fallback if static/ missing on a stale Cloud image
     return "https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/apple-touch-icon.png"
@@ -5768,4 +5762,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-17T03:35Z
+# cloud_redeploy_stamp: 2026-10-18T00:45Z
