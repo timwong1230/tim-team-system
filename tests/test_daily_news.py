@@ -212,11 +212,16 @@ def test_app_home_renders_daily_news():
     assert "limit=5" in home
     news = (_ROOT / "tt_core" / "daily_news.py").read_text(encoding="utf-8")
     assert "今日重點新聞" in news
-    assert "tt-news-row" in news
     assert "WhatsApp 開話題" in news
-    assert "components.html" in news
-    assert "_news_panel_html" in news
-    assert 'PILLAR_LABELS' in news
+    assert "link_button" in news
+    assert "開 WhatsApp" in news
+    assert "財經經濟" in news
+    assert "內地政策" in news
+    assert "PILLAR_LABELS" in news
+    # Native Streamlit render (not iframe-only) so phone can open wa.me
+    render_src = news[news.index("def render_daily_news") :]
+    assert "st.link_button" in render_src
+    assert "components.html" not in render_src
 
 
 def test_news_panel_html_includes_wa_and_escapes():

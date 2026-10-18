@@ -264,9 +264,12 @@ def _pick_balanced(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[
     return picked[:limit]
 
 
-@st.cache_data(ttl=30 * 60, show_spinner=False)
-def fetch_daily_headlines(limit: int = 5) -> dict[str, Any]:
-    """Return up to 5 headlines across 3 pillars. Cached 30 minutes."""
+@st.cache_data(ttl=20 * 60, show_spinner=False)
+def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 3) -> dict[str, Any]:
+    """Return up to 5 headlines across 3 pillars. Cached ~20 minutes.
+
+    `_cache_ver` busts stale Streamlit caches after deploy.
+    """
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
     for pillar, source, url in _FEEDS:
@@ -284,6 +287,11 @@ def fetch_daily_headlines(limit: int = 5) -> dict[str, Any]:
         "fetched_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M"),
         "errors": errors,
         "ok": bool(items),
+        "pillars": {
+            "society": sum(1 for x in items if x.get("pillar") == "society"),
+            "finance": sum(1 for x in items if x.get("pillar") == "finance"),
+            "china": sum(1 for x in items if x.get("pillar") == "china"),
+        },
     }
 
 
@@ -422,8 +430,22 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
 
 
 def render_daily_news(*, limit: int = 5) -> None:
-    """Homepage block: 今日重點新聞 (3 pillars + WhatsApp openers)."""
-    import streamlit.components.v1 as components
+    """Homepage block: 今日重點新聞 (3 pillars + WhatsApp openers).
+
+    Uses native Streamlit widgets (not an iframe) so:
+    - all 5 stories are visible on phone scroll
+    - 「開 WhatsApp」uses st.link_button (works on iOS)
+    """
+    head_l, head_r = st.columns([4, 1])
+    with head_l:
+        st.markdown("### 今日重點新聞")
+    with head_r:
+        if st.button("更新", key="tt_news_refresh", help="重新撈今日新聞"):
+            try:
+                fetch_daily_headlines.clear()
+            except Exception:
+                pass
+            st.rerun()
 
     try:
         data = fetch_daily_headlines(limit=limit)
@@ -438,7 +460,27 @@ def render_daily_news(*, limit: int = 5) -> None:
             st.caption("（網絡／RSS 暫時唔穩定）")
         return
 
-    panel = _news_panel_html(items, fetched_at=str(data.get("fetched_at") or ""))
-    # header ~90 + ~150 per item with WhatsApp opener block
-    height = 100 + (150 * len(items))
-    components.html(panel, height=min(height, 900), scrolling=True)
+    when = data.get("fetched_at") or ""
+    st.caption(f"{when} · 社會關注 · 財經經濟 · 內地政策 · 每日 {len(items)} 則")
+
+    for i, row in enumerate(items, start=1):
+        title = str(row.get("title") or "").strip()
+        url = str(row.get("url") or "").strip()
+        pillar_label = str(row.get("pillar_label") or PILLAR_LABELS.get(row.get("pillar") or "society", "社會關注"))
+        wa_text = str(row.get("wa_text") or whatsapp_opener(title, row.get("pillar") or "society"))
+        wa_url = str(row.get("wa_url") or wa_opener_url(title, row.get("pillar") or "society"))
+
+        with st.container(border=True):
+            st.markdown(f"**{i:02d} · {pillar_label}**")
+            if url:
+                st.markdown(f"[{title}]({url})")
+            else:
+                st.markdown(title)
+            st.caption("WhatsApp 開話題（傾偈用，唔使硬銷保險）")
+            st.code(wa_text, language=None)
+            b1, b2 = st.columns(2)
+            with b1:
+                st.link_button("開 WhatsApp", wa_url, use_container_width=True)
+            with b2:
+                if url:
+                    st.link_button("睇原文", url, use_container_width=True)
