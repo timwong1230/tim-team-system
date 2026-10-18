@@ -1479,6 +1479,14 @@ def page_home():
         unsafe_allow_html=True,
     )
 
+    # World / HK headlines so the team sees today's big picture on login
+    try:
+        from tt_core.daily_news import render_daily_news
+
+        render_daily_news(limit=8)
+    except Exception:
+        st.caption("今日重點新聞暫時未能顯示。")
+
     # Leader / Admin: whole-team follow-ups; Members: own only
     due = get_due_followups(None if is_admin_home else user)
     upcoming = get_upcoming_followups(None if is_admin_home else user, days=7)
