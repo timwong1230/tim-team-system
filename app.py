@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-18T00:45Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-18T00:55Z
 
 
 from __future__ import annotations
@@ -852,18 +852,11 @@ except Exception:
     except Exception:
         pass
 try:
-    inject_pwa_head()
-except Exception:
-    pass
-try:
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 except Exception:
     pass
-try:
-    init_db_gs()  # cached once per server process — no longer hits Sheets every rerun
-except Exception:
-    # Don't take down the whole app if Sheets/secrets are briefly unavailable
-    pass
+# NOTE: Do NOT call init_db_gs() / inject_pwa_head() before login.
+# Those hit Google + heavy JS and left Cloud stuck on a white spinner.
 
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
@@ -952,6 +945,11 @@ if not st.session_state["logged_in"]:
         )
 
     def _do_login(u: str, p: str) -> None:
+        # Schema bootstrap only when someone tries to log in (not on every page open)
+        try:
+            init_db_gs()
+        except Exception:
+            pass
         d = login(u, p)
         if d:
             st.session_state.update(
@@ -1006,6 +1004,16 @@ if not st.session_state.get("user"):
     _reset_nav_to_home()
     st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
+
+# After login only — PWA head inject + Sheets bootstrap (never block the login form)
+try:
+    inject_pwa_head()
+except Exception:
+    pass
+try:
+    init_db_gs()
+except Exception:
+    pass
 
 # Drop legacy DataFrame session payloads before any page work (Cloud crash risk)
 try:
@@ -5762,4 +5770,4 @@ elif "準客戶名單" in menu or "Prospect List" in menu:
 elif "設定" in menu:
     _safe_page("設定", page_profile)
 
-# cloud_redeploy_stamp: 2026-10-18T00:45Z
+# cloud_redeploy_stamp: 2026-10-18T00:55Z

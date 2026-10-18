@@ -227,7 +227,12 @@ def read_data(sheet_name: str, *, force: bool = False) -> pd.DataFrame:
 def warm_cache(force: bool = False) -> dict:
     """Prefetch core sheets into disk cache. Called once per session / on refresh."""
     results = {}
+    started = time.time()
+    budget = float(os.environ.get("TIM_TEAM_WARM_BUDGET_SEC", "45"))
     for name in CORE_SHEETS:
+        if time.time() - started > budget:
+            results[name] = {"ok": False, "error": "warm_budget_exceeded"}
+            continue
         try:
             df = read_data(name, force=force)
             results[name] = {"ok": True, "rows": len(df)}
