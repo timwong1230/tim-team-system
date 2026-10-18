@@ -172,24 +172,111 @@ def _fetch_feed(pillar: str, source: str, url: str, *, limit: int = 8) -> list[d
     return out
 
 
-def whatsapp_opener(title: str, pillar: str) -> str:
-    """Cantonese WhatsApp icebreaker — start a chat, not a hard sell."""
+def _short_title(title: str, *, n: int = 36) -> str:
     t = _strip_html(title).strip()
-    if len(t) > 42:
-        t = t[:40] + "…"
+    return (t[: n - 1] + "…") if len(t) > n else t
+
+
+def _opener_angle(title: str, pillar: str) -> tuple[str, str]:
+    """Return (viewpoint, soft_question) — a real take, not「睇過未」."""
+    t = title or ""
+
+    # --- theme detectors (order matters: more specific first) ---
+    if re.search(r"口岸|通關|邊境|過關|皇崗|羅湖|高鐵|大橋", t):
+        return (
+            "感覺通關愈來愈方便，香港同內地生活圈真係愈嚟愈近；"
+            "近排好多朋友都將「北上食飯／weekend」當日常。",
+            "你哋近排會唔會多咗過關計劃？定係反而更珍惜留喺香港嘅時間？",
+        )
+    if re.search(r"樓市|樓價|成交|按揭|租金|住宅|二手樓|新盤", t):
+        return (
+            "樓市呢排氣氛仲係好審慎，買同租都有人喺度等訊號；"
+            "我覺得關鍵唔係追頂或抄底，而係自己嘅現金流同持貨能力撐唔撐得住。",
+            "你身邊朋友而家偏觀望多，定係已經開始行動？",
+        )
+    if re.search(r"利率|加息|減息|聯儲|美聯儲|息口|按揭息|存款息", t):
+        return (
+            "息口一有風吹草動，存款、貸款同投資部署都會跟住郁；"
+            "我反而覺得呢段時間最值得檢視嘅，係閒置現金有冇「放錯位」。",
+            "你而家較多睇存款穩陣，定係開始諗點樣再配置？",
+        )
+    if re.search(r"股市|港股|美股|恒指|納指|IPO|證券|牛熊|回調|反彈", t):
+        return (
+            "市況一波動，最易係情緒先行；"
+            "我哋團隊近排同客戶傾得多係：分清短期噪音同中長線目標，先至唔會被標題牽着走。",
+            "你睇呢輪波動係入市機會，定係先觀望為上？",
+        )
+    if re.search(r"通脹|通縮|物價|消費|零售|就業|失業|人工|薪金", t):
+        return (
+            "生活成本同收入預期一齊變，家庭同公司都要重新計帳；"
+            "我覺得而家好多人其實唔係「冇錢」，而係現金流被切得太碎。",
+            "你近排感覺開支壓力大咗，定係收入端變化更明顯？",
+        )
+    if re.search(r"財赤|預算|稅|關稅|貿易戰|貿易|出口|進口|赤字", t):
+        return (
+            "財政同貿易消息一出，資金同企業都會重新評估成本；"
+            "對香港嚟講，我睇重點係我哋點樣喺不穩定外圍入面保住自己嘅彈性。",
+            "你哋行業近排有冇因為成本／訂單受影響？",
+        )
+    if re.search(r"銀行|保險|基金|理財|財富|資產|美元|港元|匯價|匯率", t):
+        return (
+            "金融消息一多，最緊要係分清「市場噪音」同「同自己有關嘅決策」；"
+            "我哋近排提醒朋友：先睇流動性同目標年期，再決定動唔動。",
+            "你而家較多關注保值，定係增長？",
+        )
+    if re.search(r"大灣區|粵港澳|內地政策|國務院|人行|人民幣|兩會|發改委|部委|白皮書", t) or (
+        pillar == "china"
+    ):
+        return (
+            "內地政策一有新風向，跨境業務同家庭安排往往會跟住調整；"
+            "我覺得值得留意嘅唔係標題本身，而係佢對你哋往來內地嘅節奏有冇實質影響。",
+            "你哋近排業務／家人計劃有冇因為政策消息而改過部署？",
+        )
+    if re.search(r"醫療|醫院|健康|疫情|流感|疫苗", t):
+        return (
+            "健康議題一上新聞，好多家庭先驚覺「備用方案」其實未齊；"
+            "我覺得提前傾清楚照顧同開支安排，往往比事到臨頭先驚有用。",
+            "你哋屋企近排有冇特別關注健康／照顧方面嘅安排？",
+        )
+    if re.search(r"教育|學校|大學|學費|子女", t):
+        return (
+            "教育同子女安排愈早傾愈主動，等新聞催谷先部署往往會趕。",
+            "你哋屋企而家最關心升學，定係生活節奏同開支平衡？",
+        )
+    if re.search(r"晤|外訪|外長|雙邊|建交|峰會|外交", t):
+        return (
+            "外交動態好多時係氣氛指標多過即時影響生活；"
+            "不過外圍關係一變，貿易同投資情緒有時會跟住郁，值得輕輕記一筆。",
+            "你平時會追呢類國際消息，定係多數睇完就算？",
+        )
+    if re.search(r"戰爭|衝突|制裁|地緣|導彈|停火", t):
+        return (
+            "外圍一不穩定，市場同情緒都會放大；"
+            "我反而覺得平時備好現金流同應急安排，先至唔會被突發消息追住走。",
+            "你近排對呢類國際消息敏感，定係多數當背景音？",
+        )
     if pillar == "finance":
         return (
-            f"嗨！早晨🙂 今日睇到「{t}」，"
-            f"想聽下你點睇？呢類消息對你哋最近有冇影響？"
+            "財經新聞一密，最易令人覺得一定要即刻做決定；"
+            "我嘅角度係：先問呢則消息有冇改到你原本嘅時間表同風險承受，冇就唔使被帶節奏。",
+            "你睇完會調整部署，定係暫時只係記低觀察？",
         )
-    if pillar == "china":
-        return (
-            f"嗨！🙂 睇到一則關於內地「{t}」，"
-            f"你點睇？會唔會同你哋業務／家人計劃有關？"
-        )
+    # society default — still give a view
     return (
-        f"嗨！早晨🙂 今日好多人傾緊「{t}」，"
-        f"想聽下你點睇？有冇特別感覺？"
+        "呢類本地／國際消息一出，通常反映社會氣氛同生活節奏正在變；"
+        "我覺得值得一問嘅係：佢對你日常安排有冇實質影響，定係純粹大家都喺度傾。",
+        "你身邊朋友討論得多，定係大家其實都幾平淡睇？",
+    )
+
+
+def whatsapp_opener(title: str, pillar: str) -> str:
+    """Cantonese WhatsApp icebreaker with a clear viewpoint + soft question."""
+    short = _short_title(title)
+    view, ask = _opener_angle(title, pillar)
+    return (
+        f"嗨！早晨🙂 今日睇到「{short}」。\n\n"
+        f"{view}\n\n"
+        f"想聽下你點睇—{ask}"
     )
 
 
@@ -265,7 +352,7 @@ def _pick_balanced(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[
 
 
 @st.cache_data(ttl=20 * 60, show_spinner=False)
-def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 3) -> dict[str, Any]:
+def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 4) -> dict[str, Any]:
     """Return up to 5 headlines across 3 pillars. Cached ~20 minutes.
 
     `_cache_ver` busts stale Streamlit caches after deploy.
@@ -390,7 +477,8 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
     color: #9A7B1A; font-weight: 700; margin-bottom: 4px;
   }}
   .tt-news-wa-text {{
-    font-size: 0.86rem; line-height: 1.45; color: #374151; margin-bottom: 8px;
+    font-size: 0.84rem; line-height: 1.5; color: #374151; margin-bottom: 8px;
+    white-space: pre-wrap; word-break: break-word;
   }}
   .tt-news-wa-btn {{
     display: inline-block; font-size: 0.82rem; font-weight: 650;
@@ -430,22 +518,8 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
 
 
 def render_daily_news(*, limit: int = 5) -> None:
-    """Homepage block: 今日重點新聞 (3 pillars + WhatsApp openers).
-
-    Uses native Streamlit widgets (not an iframe) so:
-    - all 5 stories are visible on phone scroll
-    - 「開 WhatsApp」uses st.link_button (works on iOS)
-    """
-    head_l, head_r = st.columns([4, 1])
-    with head_l:
-        st.markdown("### 今日重點新聞")
-    with head_r:
-        if st.button("更新", key="tt_news_refresh", help="重新撈今日新聞"):
-            try:
-                fetch_daily_headlines.clear()
-            except Exception:
-                pass
-            st.rerun()
+    """Homepage block: 今日重點新聞 — branded briefing panel + WhatsApp angles."""
+    import streamlit.components.v1 as components
 
     try:
         data = fetch_daily_headlines(limit=limit)
@@ -460,27 +534,7 @@ def render_daily_news(*, limit: int = 5) -> None:
             st.caption("（網絡／RSS 暫時唔穩定）")
         return
 
-    when = data.get("fetched_at") or ""
-    st.caption(f"{when} · 社會關注 · 財經經濟 · 內地政策 · 每日 {len(items)} 則")
-
-    for i, row in enumerate(items, start=1):
-        title = str(row.get("title") or "").strip()
-        url = str(row.get("url") or "").strip()
-        pillar_label = str(row.get("pillar_label") or PILLAR_LABELS.get(row.get("pillar") or "society", "社會關注"))
-        wa_text = str(row.get("wa_text") or whatsapp_opener(title, row.get("pillar") or "society"))
-        wa_url = str(row.get("wa_url") or wa_opener_url(title, row.get("pillar") or "society"))
-
-        with st.container(border=True):
-            st.markdown(f"**{i:02d} · {pillar_label}**")
-            if url:
-                st.markdown(f"[{title}]({url})")
-            else:
-                st.markdown(title)
-            st.caption("WhatsApp 開話題（傾偈用，唔使硬銷保險）")
-            st.code(wa_text, language=None)
-            b1, b2 = st.columns(2)
-            with b1:
-                st.link_button("開 WhatsApp", wa_url, use_container_width=True)
-            with b2:
-                if url:
-                    st.link_button("睇原文", url, use_container_width=True)
+    panel = _news_panel_html(items, fetched_at=str(data.get("fetched_at") or ""))
+    # Longer openers (viewpoint + question) need more vertical room
+    height = 110 + (210 * len(items))
+    components.html(panel, height=min(height, 1200), scrolling=True)
