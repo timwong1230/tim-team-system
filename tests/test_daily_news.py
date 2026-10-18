@@ -161,6 +161,9 @@ def test_app_home_renders_daily_news():
     assert "_news_panel_html" in news
     assert "PILLAR_LABELS" in news
     assert "_opener_angle" in news
+    assert "<details" in news
+    assert "tt-news-detail" in news
+    assert "睇原文" in news
     render_src = news[news.index("def render_daily_news") :]
     assert "components.html" in render_src
     assert "st.link_button" not in render_src
@@ -233,7 +236,7 @@ def test_fetch_daily_headlines_dedupes_and_limits():
     assert data["ok"] is True
 
 
-def test_news_panel_html_includes_wa_and_escapes():
+def test_news_panel_html_collapsed_accordion_and_escapes():
     from tt_core.daily_news import _news_panel_html
 
     html = _news_panel_html(
@@ -244,19 +247,33 @@ def test_news_panel_html_includes_wa_and_escapes():
                 "pillar_label": "社會關注",
                 "wa_text": "嗨！想聽下你點睇？",
                 "wa_url": "https://wa.me/?text=hi",
-            }
+            },
+            {
+                "title": "財經第二則",
+                "url": "https://example.com/y",
+                "pillar_label": "財經經濟",
+                "wa_text": "角度測試",
+                "wa_url": "https://wa.me/?text=y",
+            },
         ],
         fetched_at="2026-10-18 07:34",
     )
     assert "tt-news" in html
+    assert html.count("<details") == 2
+    assert "<summary" in html
+    assert "tt-news-detail" in html
+    assert "睇原文" in html
     assert "<b>XSS</b>" not in html
     assert "&lt;b&gt;XSS&lt;/b&gt;" in html
     assert "社會關注" in html
+    assert "財經經濟" in html
     assert "WhatsApp 開話題" in html
     assert "嗨！想聽下你點睇？" in html
     assert "wa.me" in html
     assert "01" in html
-    assert "每日 5 則" in html
+    assert "撳標題展開" in html
+    # Collapsed by default — no open attribute on details
+    assert "<details open" not in html
 
 
 def test_live_rss_optional_smoke():
