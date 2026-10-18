@@ -125,17 +125,45 @@ def test_pick_balanced_prefers_cjk():
     assert "港府" in society[0]["title"]
 
 
-def test_whatsapp_opener_by_pillar():
-    from tt_core.daily_news import whatsapp_opener, wa_opener_url
+def test_whatsapp_opener_has_viewpoint_not_just_seen():
+    from tt_core.daily_news import whatsapp_opener, wa_opener_url, _opener_angle
 
-    soc = whatsapp_opener("港鐵訊號故障", "society")
-    fin = whatsapp_opener("聯儲局議息", "finance")
-    chi = whatsapp_opener("國務院新措施", "china")
-    assert "港鐵訊號故障" in soc
-    assert "聯儲局議息" in fin
-    assert "國務院新措施" in chi
-    assert "保險" not in soc and "投保" not in soc
-    assert "wa.me" in wa_opener_url("港鐵訊號故障", "society")
+    border = whatsapp_opener("皇崗口岸通關人流上升", "society")
+    rates = whatsapp_opener("聯儲局議息市場觀望", "finance")
+    china = whatsapp_opener("國務院發布大灣區新措施", "china")
+
+    # Must name the story…
+    assert "皇崗" in border or "口岸" in border
+    assert "聯儲" in rates or "議息" in rates
+    # …and carry a real angle (not bare「睇過未／想聽下你點睇」only)
+    assert "方便" in border or "生活圈" in border
+    assert "閒置現金" in rates or "放錯位" in rates or "存款" in rates
+    assert "跨境" in china or "政策" in china
+    assert "想聽下你點睇" in border
+    # Soft chat — not hard-sell insurance
+    assert "投保" not in border and "保單" not in rates
+    assert "wa.me" in wa_opener_url("皇崗口岸通關人流上升", "society")
+
+    view, ask = _opener_angle("港股急跌", "finance")
+    assert view and ask
+    assert "？" in ask
+
+
+def test_app_home_renders_daily_news():
+    src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    home = src[src.index("def page_home") : src.index("def page_coach_tim")]
+    assert "render_daily_news" in home
+    assert "limit=5" in home
+    news = (_ROOT / "tt_core" / "daily_news.py").read_text(encoding="utf-8")
+    assert "今日重點新聞" in news
+    assert "tt-news-row" in news
+    assert "WhatsApp 開話題" in news
+    assert "_news_panel_html" in news
+    assert "PILLAR_LABELS" in news
+    assert "_opener_angle" in news
+    render_src = news[news.index("def render_daily_news") :]
+    assert "components.html" in render_src
+    assert "st.link_button" not in render_src
 
 
 def test_fetch_daily_headlines_dedupes_and_limits():
@@ -203,25 +231,6 @@ def test_fetch_daily_headlines_dedupes_and_limits():
     assert titles.count("同一標題") == 1
     assert len(data["items"]) <= 5
     assert data["ok"] is True
-
-
-def test_app_home_renders_daily_news():
-    src = (_ROOT / "app.py").read_text(encoding="utf-8")
-    home = src[src.index("def page_home") : src.index("def page_coach_tim")]
-    assert "render_daily_news" in home
-    assert "limit=5" in home
-    news = (_ROOT / "tt_core" / "daily_news.py").read_text(encoding="utf-8")
-    assert "今日重點新聞" in news
-    assert "WhatsApp 開話題" in news
-    assert "link_button" in news
-    assert "開 WhatsApp" in news
-    assert "財經經濟" in news
-    assert "內地政策" in news
-    assert "PILLAR_LABELS" in news
-    # Native Streamlit render (not iframe-only) so phone can open wa.me
-    render_src = news[news.index("def render_daily_news") :]
-    assert "st.link_button" in render_src
-    assert "components.html" not in render_src
 
 
 def test_news_panel_html_includes_wa_and_escapes():
