@@ -75,7 +75,31 @@ def test_app_home_renders_daily_news():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     home = src[src.index("def page_home") : src.index("def page_coach_tim")]
     assert "render_daily_news" in home
-    assert "今日重點新聞" in (_ROOT / "tt_core" / "daily_news.py").read_text(encoding="utf-8")
+    news = (_ROOT / "tt_core" / "daily_news.py").read_text(encoding="utf-8")
+    assert "今日重點新聞" in news
+    assert "tt-news-row" in news
+    assert "components.html" in news
+    assert "_news_panel_html" in news
+
+
+def test_news_panel_html_escapes_and_styles():
+    from tt_core.daily_news import _news_panel_html
+
+    html = _news_panel_html(
+        [
+            {
+                "title": '測試 <b>XSS</b> & "quote"',
+                "url": "https://example.com/x?a=1&b=2",
+                "source": "港聞",
+            }
+        ],
+        fetched_at="2026-10-18 07:34",
+    )
+    assert "tt-news" in html
+    assert "<b>XSS</b>" not in html
+    assert "&lt;b&gt;XSS&lt;/b&gt;" in html
+    assert "港聞" in html
+    assert "01" in html
 
 
 def test_live_rss_optional_smoke():
