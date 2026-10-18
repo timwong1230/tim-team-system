@@ -58,6 +58,12 @@ def _credentials_dict() -> dict | None:
     return None
 
 
+# Connect / read timeouts (seconds). Without these, a hung Google API call
+# freezes Streamlit on a white spinner forever after reboot.
+_GS_CONNECT_TIMEOUT = float(os.environ.get("TIM_TEAM_GS_CONNECT_TIMEOUT", "8"))
+_GS_READ_TIMEOUT = float(os.environ.get("TIM_TEAM_GS_READ_TIMEOUT", "25"))
+
+
 @st.cache_resource(show_spinner=False)
 def get_gs_client():
     key_dict = _credentials_dict()
@@ -65,7 +71,12 @@ def get_gs_client():
         return None
     try:
         creds = Credentials.from_service_account_info(key_dict, scopes=SCOPES)
-        return gspread.authorize(creds)
+        client = gspread.authorize(creds)
+        try:
+            client.http_client.set_timeout((_GS_CONNECT_TIMEOUT, _GS_READ_TIMEOUT))
+        except Exception:
+            pass
+        return client
     except Exception:
         return None
 
@@ -353,7 +364,14 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
 
 @st.cache_resource(show_spinner=False)
 def init_db_gs():
-    """Run schema bootstrap only once per server process (not every page load)."""
+    """Light schema bootstrap once per process — do NOT block boot on full sheet pulls.
+
+    Full cache priming happens in ``warm_cache`` after login (with spinner).
+    Pulling every CORE_SHEET here used to freeze Cloud on a white spinner when
+    Google API stalled after reboot.
+    """
+    started = time.time()
+    budget = float(os.environ.get("TIM_TEAM_INIT_BUDGET_SEC", "35"))
     try:
         ws = get_sheet("users")
         if ws:
@@ -370,6 +388,8 @@ def init_db_gs():
                 ("Oscar", "1234", "Member"),
             ]
             for u in defaults:
+                if time.time() - started > budget:
+                    break
                 if u[0] not in existing:
                     url = (
                         f"https://ui-avatars.com/api/?name={u[0]}"
@@ -381,6 +401,8 @@ def init_db_gs():
                     )
 
         for sn in CORE_SHEETS:
+            if time.time() - started > budget:
+                break
             if sn == "users":
                 continue
             ws_tmp = get_sheet(sn)
@@ -398,14 +420,7 @@ def init_db_gs():
             except Exception:
                 pass
 
-        # Prime disk cache on boot
-        for sn in CORE_SHEETS:
-            try:
-                df = _fetch_sheet_from_gs(sn)
-                if df is not None:
-                    cache_store.save_sheet(sn, df, source="boot")
-            except Exception:
-                pass
+        # Ensure headers only — warm_cache after login fills disk cache
         cache_store.touch_status(True, "init_ok")
         return True
     except Exception as e:
