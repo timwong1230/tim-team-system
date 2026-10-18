@@ -5,21 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <title>TIM TEAM</title>
   <!--
-    Public launch page for iPhone Add to Home Screen.
-    Streamlit Cloud cannot serve /apple-touch-icon.png (auth + platform shell),
-    so bookmark THIS page — not the .streamlit.app URL — to get the ACE TEAM icon.
+    Launch page for iPhone Add to Home Screen.
+    Icons MUST be absolute public HTTPS (CDN) — iOS fetches them without cookies.
+    Do not host this file on jsDelivr (serves HTML as text/plain).
+    Prefer GitHub Pages or Streamlit /app/static/launch.html (app must be link-public).
   -->
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png" />
-  <link rel="icon" type="image/png" sizes="32x32" href="app_icon_32.png" />
-  <link rel="icon" type="image/png" sizes="192x192" href="app_icon_192.png" />
+  <link rel="apple-touch-icon" sizes="180x180"
+        href="https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/apple-touch-icon.png" />
+  <link rel="apple-touch-icon-precomposed" sizes="180x180"
+        href="https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32"
+        href="https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/app_icon_32.png" />
+  <link rel="icon" type="image/png" sizes="192x192"
+        href="https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/app_icon_192.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="TIM TEAM" />
   <meta name="application-name" content="TIM TEAM" />
   <meta name="theme-color" content="#0A0D14" />
-  <link rel="manifest" href="site.webmanifest" />
+  <link rel="manifest"
+        href="https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/site.webmanifest" />
   <style>
     :root {
       --bg: #0A0D14;
@@ -75,18 +81,19 @@
 </head>
 <body>
   <main>
-    <img class="icon" src="apple-touch-icon.png" width="180" height="180" alt="ACE TEAM" />
+    <img class="icon"
+         src="https://cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/apple-touch-icon.png"
+         width="180" height="180" alt="ACE TEAM" />
     <h1>TIM TEAM</h1>
-    <p>保險團隊工作台。加到主畫面請用本頁（先見 ACE TEAM 圖示），唔好直接 bookmark Streamlit 連結。</p>
+    <p>保險團隊工作台。加到主畫面請用本頁（先見 ACE TEAM 圖示），唔好直接 bookmark Streamlit 首頁。</p>
     <a class="cta" id="open" href="https://tim-team-system.streamlit.app/">進入 App</a>
-    <p class="hint">加主畫面：Safari 分享 → <strong>加到主畫面</strong>。之後撳圖示會開啟本頁，再撳「進入 App」。</p>
+    <p class="hint">加主畫面：Safari 分享 → <strong>加到主畫面</strong>。之後撳圖示會開啟本頁，再自動／撳「進入 App」。</p>
   </main>
   <script>
     (function () {
       var APP = "https://tim-team-system.streamlit.app/";
       var standalone = (window.navigator.standalone === true)
         || window.matchMedia("(display-mode: standalone)").matches;
-      // From home-screen icon: go straight into the app
       if (standalone) {
         window.location.replace(APP);
       }
