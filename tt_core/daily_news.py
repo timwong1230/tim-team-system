@@ -352,7 +352,7 @@ def _pick_balanced(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[
 
 
 @st.cache_data(ttl=20 * 60, show_spinner=False)
-def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 4) -> dict[str, Any]:
+def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 5) -> dict[str, Any]:
     """Return up to 5 headlines across 3 pillars. Cached ~20 minutes.
 
     `_cache_ver` busts stale Streamlit caches after deploy.
@@ -383,7 +383,7 @@ def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 4) -> dict[str, Any]
 
 
 def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
-    """Self-contained briefing panel with WhatsApp openers."""
+    """Briefing panel: collapsed headlines; expand for link + WhatsApp angle."""
     rows = []
     for i, row in enumerate(items, start=1):
         title = html.escape(str(row.get("title") or ""))
@@ -393,18 +393,25 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
         wa_url = html.escape(str(row.get("wa_url") or ""), quote=True)
         idx = f"{i:02d}"
         rows.append(
-            f'<div class="tt-news-row">'
+            f'<details class="tt-news-row">'
+            f'<summary class="tt-news-sum">'
             f'<span class="tt-news-idx">{idx}</span>'
             f'<div class="tt-news-body">'
             f'<span class="tt-news-src">{pillar}</span>'
-            f'<a class="tt-news-title" href="{url}" target="_blank" rel="noopener noreferrer">{title}</a>'
+            f'<span class="tt-news-title">{title}</span>'
+            f'<span class="tt-news-hint">撳開 · 原文連結 + WhatsApp 開話題</span>'
+            f"</div>"
+            f'<span class="tt-news-chev" aria-hidden="true"></span>'
+            f"</summary>"
+            f'<div class="tt-news-detail">'
+            f'<a class="tt-news-link" href="{url}" target="_blank" rel="noopener noreferrer">睇原文 ↗</a>'
             f'<div class="tt-news-wa">'
             f'<div class="tt-news-wa-label">WhatsApp 開話題</div>'
             f'<div class="tt-news-wa-text">{wa_text}</div>'
             f'<a class="tt-news-wa-btn" href="{wa_url}" target="_blank" rel="noopener noreferrer">開 WhatsApp</a>'
             f"</div>"
             f"</div>"
-            f"</div>"
+            f"</details>"
         )
     body = "".join(rows)
     when = html.escape(fetched_at or "")
@@ -443,18 +450,29 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
   }}
   .tt-news-list {{ display: flex; flex-direction: column; gap: 8px; }}
   .tt-news-row {{
-    display: grid; grid-template-columns: 36px 1fr;
-    gap: 10px; align-items: start;
-    padding: 10px 8px 12px; border-radius: 12px;
+    border-radius: 12px;
     background: rgba(255,255,255,0.55);
     border: 1px solid #EEE9DF;
+    overflow: hidden;
   }}
+  .tt-news-row[open] {{
+    background: rgba(255,255,255,0.92);
+    border-color: #E2D4A8;
+    box-shadow: 0 6px 18px rgba(28, 36, 48, 0.06);
+  }}
+  .tt-news-sum {{
+    display: grid; grid-template-columns: 36px 1fr 18px;
+    gap: 10px; align-items: start;
+    padding: 12px 10px; cursor: pointer; list-style: none;
+  }}
+  .tt-news-sum::-webkit-details-marker {{ display: none; }}
+  .tt-news-sum::marker {{ content: ""; }}
   .tt-news-idx {{
     font-family: 'Instrument Serif', Georgia, serif;
     font-size: 1.15rem; color: #C5A028; line-height: 1.2;
     padding-top: 2px;
   }}
-  .tt-news-body {{ display: flex; flex-direction: column; gap: 6px; min-width: 0; }}
+  .tt-news-body {{ display: flex; flex-direction: column; gap: 5px; min-width: 0; }}
   .tt-news-src {{
     display: inline-block; align-self: flex-start;
     font-size: 0.66rem; letter-spacing: 0.08em; font-weight: 650;
@@ -464,11 +482,33 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
   }}
   .tt-news-title {{
     font-size: 0.98rem; font-weight: 650; line-height: 1.4;
-    color: #1C2430; text-decoration: none;
+    color: #1C2430;
   }}
-  .tt-news-title:hover {{ color: #9A7B1A; }}
+  .tt-news-hint {{
+    font-size: 0.7rem; color: #9CA3AF; line-height: 1.3;
+  }}
+  .tt-news-row[open] .tt-news-hint {{ display: none; }}
+  .tt-news-chev {{
+    width: 8px; height: 8px; margin-top: 10px;
+    border-right: 2px solid #C5A028; border-bottom: 2px solid #C5A028;
+    transform: rotate(45deg); transition: transform 0.15s ease;
+    justify-self: end;
+  }}
+  .tt-news-row[open] .tt-news-chev {{
+    transform: rotate(225deg); margin-top: 14px;
+  }}
+  .tt-news-detail {{
+    padding: 0 12px 12px 46px;
+    display: flex; flex-direction: column; gap: 10px;
+  }}
+  .tt-news-link {{
+    display: inline-block; align-self: flex-start;
+    font-size: 0.84rem; font-weight: 650; color: #9A7B1A;
+    text-decoration: none; padding: 4px 0;
+  }}
+  .tt-news-link:hover {{ color: #7A6420; text-decoration: underline; }}
   .tt-news-wa {{
-    margin-top: 2px; padding: 10px 12px;
+    padding: 10px 12px;
     background: #F3F1EB; border-radius: 10px;
     border-left: 3px solid #C5A028;
   }}
@@ -493,15 +533,17 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
     }}
     .tt-news-head {{ border-bottom-color: #2F3A48; }}
     .tt-news-title-main, .tt-news-title {{ color: #E8EAED; }}
-    .tt-news-meta {{ color: #9CA3AF; }}
+    .tt-news-meta, .tt-news-hint {{ color: #9CA3AF; }}
     .tt-news-row {{ background: #121820; border-color: #2F3A48; }}
+    .tt-news-row[open] {{ background: #161E28; border-color: #5C4A12; }}
     .tt-news-src {{
       color: #F5E6B8; background: #3A3420; border-color: #5C4A12;
     }}
-    .tt-news-idx {{ color: #E0C15A; }}
+    .tt-news-idx, .tt-news-link {{ color: #E0C15A; }}
     .tt-news-wa {{ background: #0F1419; border-left-color: #E0C15A; }}
     .tt-news-wa-label {{ color: #E0C15A; }}
     .tt-news-wa-text {{ color: #C5CAD3; }}
+    .tt-news-chev {{ border-color: #E0C15A; }}
   }}
 </style></head><body>
 <div class="tt-news">
@@ -510,15 +552,28 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
       <div class="tt-news-kicker">Morning briefing</div>
       <h2 class="tt-news-title-main">今日重點新聞</h2>
     </div>
-    <div class="tt-news-meta">{when}<br/>社會 · 財經 · 內地<br/>每日 5 則</div>
+    <div class="tt-news-meta">{when}<br/>社會 · 財經 · 內地<br/>撳標題展開</div>
   </div>
   <div class="tt-news-list">{body}</div>
 </div>
+<script>
+(function() {{
+  var list = document.querySelector('.tt-news-list');
+  if (!list) return;
+  list.addEventListener('toggle', function(e) {{
+    var t = e.target;
+    if (!t || t.tagName !== 'DETAILS' || !t.open) return;
+    list.querySelectorAll('details.tt-news-row').forEach(function(d) {{
+      if (d !== t) d.open = false;
+    }});
+  }}, true);
+}})();
+</script>
 </body></html>"""
 
 
 def render_daily_news(*, limit: int = 5) -> None:
-    """Homepage block: 今日重點新聞 — branded briefing panel + WhatsApp angles."""
+    """Homepage block: collapsed headlines; expand for link + WhatsApp angle."""
     import streamlit.components.v1 as components
 
     try:
@@ -535,6 +590,6 @@ def render_daily_news(*, limit: int = 5) -> None:
         return
 
     panel = _news_panel_html(items, fetched_at=str(data.get("fetched_at") or ""))
-    # Longer openers (viewpoint + question) need more vertical room
-    height = 110 + (210 * len(items))
-    components.html(panel, height=min(height, 1200), scrolling=True)
+    # Collapsed list is compact; leave room so one expanded row + WA fits
+    height = 100 + (78 * len(items)) + 220
+    components.html(panel, height=min(height, 900), scrolling=True)
