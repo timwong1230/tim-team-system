@@ -16,9 +16,13 @@ _ICON_PUBLIC_180 = f"{_REPO_CDN}/app_icon_180.png"
 _ICON_PUBLIC_192 = f"{_REPO_CDN}/app_icon_192.png"
 _ICON_PUBLIC_512 = f"{_REPO_CDN}/app_icon_512.png"
 _ICON_PUBLIC_32 = f"{_REPO_CDN}/app_icon_32.png"
-# Public HTML shell — Streamlit Cloud cannot customize home-screen icons
-_LAUNCH_URL = f"{_REPO_CDN}/launch.html"
+# Launch HTML must be served as text/html (jsDelivr serves .html as text/plain → Safari shows source).
+# Prefer GitHub Pages; fallback is Streamlit static (requires Cloud Sharing = Anyone with the link).
 _APP_URL = "https://tim-team-system.streamlit.app/"
+_LAUNCH_URL_PAGES = "https://timwong1230.github.io/tim-team-system/launch.html"
+_LAUNCH_URL_APP_STATIC = f"{_APP_URL.rstrip('/')}/app/static/launch.html"
+# App static works as soon as Cloud Sharing is public; Pages needs one-time enable.
+_LAUNCH_URL = _LAUNCH_URL_APP_STATIC
 
 # Same-origin paths when server.enableStaticServing=true
 _ICON_LOCAL_180 = "/app/static/apple-touch-icon.png"
@@ -336,36 +340,37 @@ def inject_pwa_head() -> None:
 
 
 def launch_home_url() -> str:
-    """Public page to Add to Home Screen (ACE TEAM icon). Not the Streamlit URL."""
+    """Page to Add to Home Screen (ACE TEAM icon). Not the Streamlit app root."""
     return _LAUNCH_URL
 
 
 def render_install_guide(*, compact: bool = False) -> None:
     """Safari Add to Home Screen instructions.
 
-    Streamlit Community Cloud always serves the Streamlit crown for same-origin
-    ``/apple-touch-icon.png`` (and private apps auth-redirect icon fetches).
-    Bookmark the public ``launch.html`` shell instead — it has a real
-    apple-touch-icon and opens the app when launched from the home screen.
+    Streamlit Cloud paints the crown for the app root. Bookmark ``launch.html``
+    hosted as real HTML (GitHub Pages, or ``/app/static`` if Sharing is public).
+    Never use the jsDelivr ``.html`` URL — Safari shows raw source (text/plain).
     """
     brand_name, _, _, _, _, _, _, _ = _brand_bits()
-    launch = _LAUNCH_URL
+    launch = _LAUNCH_URL_APP_STATIC
+    launch_pages = _LAUNCH_URL_PAGES
     body_zh = (
-        f"1. 用 **Safari** 打開呢個連結（唔好用 Streamlit 網址加主畫面）：\n"
+        "1. **必須**：Streamlit Cloud → 右下 Manage app → Settings → Sharing → "
+        "**Anyone with the link can view**"
+        "（只開到登入頁；入面仍要帳密。私人模式啟動頁會跳登入／空白）。\n"
+        "2. 用 **Safari** 打開：\n"
         f"   {launch}\n"
-        "2. 如果主畫面已有 Streamlit **皇冠**：先長按刪除\n"
-        "3. 喺上面嗰頁撳分享 → **加到主畫面**\n"
-        f"4. 名稱改成 **{brand_name}** → 新增\n"
+        "   （**唔好**開 jsDelivr 嘅 .html —— 會顯示原始碼）\n"
+        "3. 主畫面若仍有 **皇冠**：長按刪除\n"
+        f"4. 喺啟動頁撳分享 → **加到主畫面** → 名稱 **{brand_name}**\n"
         "5. 圖示應係金 **ACE TEAM** 牌面\n"
-        "6. 之後撳主畫面圖示會入 App（私人 app 仍要登入）\n"
-        "\n"
-        "點解唔得直接加 Streamlit？Cloud 平台鎖死皇冠 icon，code 改唔到。\n"
+        f"6. 後備（啟用 GitHub Pages 後）：{launch_pages}\n"
     )
     if compact:
         with st.expander("加到 iPhone 主畫面（ACE TEAM 圖示）", expanded=False):
             st.markdown(body_zh)
             st.link_button("打開啟動頁（加主畫面用）", launch, use_container_width=True)
-            st.caption("iPad 同樣步驟。Android：用同一啟動頁 → Chrome 安裝應用程式。")
+            st.caption("唔好用 cdn.jsdelivr.net 嘅 .html（會顯示文字原始碼）。")
     else:
         st.markdown("### 加到 iPhone 主畫面（ACE TEAM 圖示）")
         st.markdown(body_zh)

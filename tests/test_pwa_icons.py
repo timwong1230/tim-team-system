@@ -1,4 +1,4 @@
-"""iPhone home-screen icon: Streamlit Cloud cannot customize; use public launch.html."""
+"""iPhone home-screen icon: launch.html must be real HTML, not jsDelivr text/plain."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ def test_pwa_inject_uses_public_apple_touch_icon():
     src = (_ROOT / "tt_core" / "mobile.py").read_text(encoding="utf-8")
     assert "cdn.jsdelivr.net/gh/timwong1230/tim-team-system" in src
     assert "apple-touch-icon" in src
-    assert "ace-v6" in src
     apply = src[src.index("function applyFavicon") : src.index("upsertMeta('name', 'viewport'")]
     assert "add('apple-touch-icon', P.icon" in apply
     assert "add('apple-touch-icon', P.iconLocal" not in apply
@@ -23,26 +22,26 @@ def test_pwa_inject_uses_public_apple_touch_icon():
 def test_static_ace_icons_exist():
     static = _ROOT / "static"
     assert (static / "apple-touch-icon.png").is_file()
-    assert (static / "app_icon_180.png").is_file()
-    assert (static / "app_icon_512.png").is_file()
     assert (static / "launch.html").is_file()
-    assert (static / "site.webmanifest").is_file()
+    assert (_ROOT / ".github" / "workflows" / "pages.yml").is_file()
 
 
-def test_launch_html_has_apple_touch_icon_not_streamlit():
+def test_launch_html_uses_cdn_icons_and_not_jsdelivr_as_page_host():
     html = (_ROOT / "static" / "launch.html").read_text(encoding="utf-8")
     assert 'rel="apple-touch-icon"' in html
-    assert "apple-touch-icon.png" in html
-    assert "TIM TEAM" in html
+    assert "cdn.jsdelivr.net/gh/timwong1230/tim-team-system@main/static/apple-touch-icon.png" in html
     assert "tim-team-system.streamlit.app" in html
-    assert "streamlit/static" not in html.lower()
+    assert "jsDelivr serves HTML as text/plain" in html or "text/plain" in html
 
 
-def test_install_guide_points_to_public_launch_page():
+def test_install_guide_avoids_jsdelivr_html_url():
     src = (_ROOT / "tt_core" / "mobile.py").read_text(encoding="utf-8")
-    assert "_LAUNCH_URL" in src
-    assert "launch.html" in src
+    assert "_LAUNCH_URL_PAGES" in src
+    assert "github.io/tim-team-system/launch.html" in src
+    assert "/app/static/launch.html" in src
+    # Must not point users at jsDelivr .html (Safari shows source)
+    assert '_LAUNCH_URL = f"{_REPO_CDN}/launch.html"' not in src
+    assert "_LAUNCH_URL = _LAUNCH_URL_APP_STATIC" in src
     guide = src[src.index("def render_install_guide") : src.index("def _bump_phone_nav_popover")]
-    assert "launch.html" in guide
-    assert "link_button" in guide
-    assert "皇冠" in guide
+    assert "jsDelivr" in guide or "jsdelivr" in guide
+    assert "Anyone with the link" in guide
