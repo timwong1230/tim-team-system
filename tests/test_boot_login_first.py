@@ -27,7 +27,8 @@ def test_app_defers_sheets_and_pwa_until_after_login():
     assert "d = login(u, p)" in login_fn
     assert "init_db_gs()" in login_fn  # fallback only after failed first try
     assert login_fn.index("d = login(u, p)") < login_fn.index("init_db_gs()")
-    assert "persist_browser_session" in login_fn
+    assert "persist_browser_session" not in login_fn
+    assert "touch_activity" in login_fn
 
     # Logged-in shell injects PWA + ensures schema
     logged = src[src.index("# ─── Logged-in shell") : src.index("# Drop legacy DataFrame")]
