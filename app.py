@@ -930,16 +930,13 @@ try:
 except Exception:
     pass
 
-# Restore login after websocket drop / phone tab sleep (localStorage + cookie)
-if not st.session_state.get("logged_in") or not st.session_state.get("user"):
-    try:
-        from tt_core.auth_persist import try_restore_session
+# Drop legacy 14-day browser tokens (they blocked logout) — once per browser tab
+try:
+    from tt_core.auth_persist import clear_legacy_browser_session
 
-        if try_restore_session():
-            _reset_nav_to_home()
-            st.rerun()
-    except Exception:
-        pass
+    clear_legacy_browser_session()
+except Exception:
+    pass
 
 if not st.session_state["logged_in"]:
     def _render_login_brand() -> None:
@@ -977,13 +974,9 @@ if not st.session_state["logged_in"]:
             st.session_state.pop("_notif_checked_this_login", None)
             st.session_state.pop("_notif_pending_payload", None)
             try:
-                from tt_core.auth_persist import persist_browser_session
+                from tt_core.auth_persist import touch_activity
 
-                persist_browser_session(
-                    user=str(d[0][0]),
-                    role=str(d[0][2]),
-                    avatar=str(d[0][5] or ""),
-                )
+                touch_activity()
             except Exception:
                 pass
             _reset_nav_to_home()
@@ -1024,18 +1017,23 @@ if not st.session_state["logged_in"]:
 # ─── Logged-in shell ─────────────────────────────────────────────────────────
 # Recover broken session (e.g. after a mid-upload crash) instead of Oh-no screen
 if not st.session_state.get("user"):
-    restored = False
-    try:
-        from tt_core.auth_persist import try_restore_session
-
-        restored = bool(try_restore_session())
-    except Exception:
-        restored = False
-    if not restored:
-        st.session_state["logged_in"] = False
-        _reset_nav_to_home()
-        st.warning("登入狀態已失效，請重新登入。")
+    st.session_state["logged_in"] = False
+    _reset_nav_to_home()
+    st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
+
+# Idle timeout: no interaction for 1 hour → auto logout
+try:
+    from tt_core.auth_persist import force_logout_idle, idle_expired, touch_activity
+
+    if idle_expired():
+        force_logout_idle()
+        _reset_nav_to_home()
+        st.toast("已超過 1 小時無操作，已自動登出", icon="⏰")
+        st.rerun()
+    touch_activity()
+except Exception:
+    pass
 
 # After login only — PWA head inject + Sheets bootstrap (never block the login form)
 try:
@@ -1188,10 +1186,15 @@ with st.sidebar:
     if st.button("登出", use_container_width=True, type="secondary", key="sidebar_logout"):
         st.session_state["logged_in"] = False
         st.session_state.pop("user", None)
+        st.session_state.pop("role", None)
+        st.session_state.pop("avatar", None)
+        st.session_state.pop("_tt_last_active", None)
         try:
-            from tt_core.auth_persist import clear_browser_session
+            from tt_core.auth_persist import clear_legacy_browser_session
 
-            clear_browser_session()
+            # Force-clear again on logout (in case legacy token lingered)
+            st.session_state.pop("_tt_cleared_legacy_sess", None)
+            clear_legacy_browser_session()
         except Exception:
             pass
         _reset_nav_to_home()

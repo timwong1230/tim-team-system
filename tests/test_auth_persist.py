@@ -1,60 +1,67 @@
-"""Signed browser session tokens for reconnect / tab-sleep restore."""
+"""Idle-timeout session (no browser auto-restore)."""
 
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
-def test_session_token_roundtrip():
-    from tt_core.auth_persist import make_session_token, parse_session_token
-
-    token = make_session_token(user="Tim", role="Member", avatar="http://x", ttl_days=14)
-    data = parse_session_token(token)
-    assert data is not None
-    assert data["user"] == "Tim"
-    assert data["role"] == "Member"
-    assert data["avatar"] == "http://x"
-
-
-def test_session_token_rejects_tamper_and_expiry():
+def test_idle_expired_after_one_hour():
     from tt_core import auth_persist as ap
 
-    token = ap.make_session_token(user="Tim", role="Leader", ttl_days=14)
-    bad = token[:-2] + ("aa" if not token.endswith("aa") else "bb")
-    assert ap.parse_session_token(bad) is None
-    assert ap.parse_session_token("") is None
-    assert ap.parse_session_token(None) is None
+    fake = {"_tt_last_active": time.time() - 3700}
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = fake
+        assert ap.idle_expired(idle_seconds=3600) is True
 
-    expired = ap.make_session_token(user="Tim", role="Member", ttl_days=14)
-    # Force-expire by rewriting payload with e in the past
-    body, _sig = expired.split(".", 1)
-    import base64
-    import hashlib
-    import hmac
-    import json
-
-    raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
-    payload = json.loads(raw.decode("utf-8"))
-    payload["e"] = int(time.time()) - 10
-    new_body = base64.urlsafe_b64encode(
-        json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    ).decode("ascii").rstrip("=")
-    sig = base64.urlsafe_b64encode(
-        hmac.new(ap._secret().encode("utf-8"), new_body.encode("ascii"), hashlib.sha256).digest()
-    ).decode("ascii").rstrip("=")
-    assert ap.parse_session_token(f"{new_body}.{sig}") is None
+    fake2 = {"_tt_last_active": time.time() - 60}
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = fake2
+        assert ap.idle_expired(idle_seconds=3600) is False
 
 
-def test_app_wires_persist_and_restore():
+def test_touch_and_force_logout():
+    from tt_core import auth_persist as ap
+
+    state = {
+        "logged_in": True,
+        "user": "Tim",
+        "role": "Member",
+        "avatar": "x",
+        "_tt_last_active": 1,
+    }
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = state
+        ap.touch_activity()
+        assert state["_tt_last_active"] > 1
+        ap.force_logout_idle()
+        assert state["logged_in"] is False
+        assert "user" not in state
+        assert "_tt_last_active" not in state
+
+
+def test_app_no_longer_auto_restores_browser_session():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert "try_restore_session" in src
-    assert "persist_browser_session" in src
-    assert "clear_browser_session" in src
-    logout = src[src.index('key="sidebar_logout"') : src.index("if PHONE:")]
-    assert "clear_browser_session" in logout
+    assert "try_restore_session" not in src
+    assert "persist_browser_session" not in src
+    assert "clear_legacy_browser_session" in src
+    assert "idle_expired" in src
+    assert "touch_activity" in src
+    assert "force_logout_idle" in src
+
+    auth = (_ROOT / "tt_core" / "auth_persist.py").read_text(encoding="utf-8")
+    assert "IDLE_SECONDS" in auth
+    assert "localStorage.setItem" not in auth  # no more persist-on-login
+    assert "tt_sess_v1" in auth  # still clears legacy key
+
+
+def test_default_idle_is_one_hour():
+    from tt_core.auth_persist import IDLE_SECONDS
+
+    assert IDLE_SECONDS == 3600
