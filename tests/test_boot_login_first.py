@@ -22,9 +22,12 @@ def test_app_defers_sheets_and_pwa_until_after_login():
     assert "inject_pwa_head()" not in boot_code
     assert "CUSTOM_CSS" in boot
 
-    # Login click may bootstrap schema
+    # Login authenticates first; schema init only as cold-boot fallback
     login_fn = src[src.index("def _do_login") : src.index("if MOBILE:")]
-    assert "init_db_gs()" in login_fn
+    assert "d = login(u, p)" in login_fn
+    assert "init_db_gs()" in login_fn  # fallback only after failed first try
+    assert login_fn.index("d = login(u, p)") < login_fn.index("init_db_gs()")
+    assert "persist_browser_session" in login_fn
 
     # Logged-in shell injects PWA + ensures schema
     logged = src[src.index("# ─── Logged-in shell") : src.index("# Drop legacy DataFrame")]

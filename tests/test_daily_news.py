@@ -276,6 +276,19 @@ def test_news_panel_html_collapsed_accordion_and_escapes():
     assert "<details open" not in html
 
 
+def test_fetch_daily_headlines_uses_parallel_short_timeout():
+    """Home must not chain slow RSS feeds after login."""
+    import inspect
+
+    from tt_core import daily_news as dn
+
+    src = inspect.getsource(dn.fetch_daily_headlines)
+    assert "ThreadPoolExecutor" in src
+    assert "as_completed" in src
+    assert dn._FEED_TIMEOUT_SEC <= 5
+    assert dn._FETCH_BUDGET_SEC <= 8
+
+
 def test_live_rss_optional_smoke():
     """Network smoke — skip soft-fail if offline."""
     from tt_core.daily_news import _fetch_feed
