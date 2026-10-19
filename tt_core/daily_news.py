@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -13,6 +15,10 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 import streamlit as st
+
+# Keep home snappy after login — never wait long on slow RSS hosts
+_FEED_TIMEOUT_SEC = float(os.environ.get("TIM_TEAM_NEWS_FEED_TIMEOUT", "3"))
+_FETCH_BUDGET_SEC = float(os.environ.get("TIM_TEAM_NEWS_BUDGET_SEC", "4.5"))
 
 # pillar → display label
 PILLAR_LABELS = {
@@ -139,7 +145,7 @@ def _fetch_feed(pillar: str, source: str, url: str, *, limit: int = 8) -> list[d
             "Accept": "application/rss+xml, application/xml, text/xml, */*",
         },
     )
-    with urlopen(req, timeout=10) as resp:
+    with urlopen(req, timeout=_FEED_TIMEOUT_SEC) as resp:
         raw = resp.read()
     root = ET.fromstring(raw)
     channel = root.find("channel")
@@ -351,22 +357,50 @@ def _pick_balanced(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[
     return picked[:limit]
 
 
-@st.cache_data(ttl=20 * 60, show_spinner=False)
-def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 5) -> dict[str, Any]:
-    """Return up to 5 headlines across 3 pillars. Cached ~20 minutes.
+def _fetch_feed_safe(pillar: str, source: str, url: str) -> tuple[list[dict[str, Any]], str | None]:
+    try:
+        return _fetch_feed(pillar, source, url, limit=8), None
+    except (HTTPError, URLError, ET.ParseError, TimeoutError, OSError) as e:
+        return [], f"{source}:{type(e).__name__}"
+    except Exception as e:
+        return [], f"{source}:{type(e).__name__}"
 
-    `_cache_ver` busts stale Streamlit caches after deploy.
+
+@st.cache_data(ttl=30 * 60, show_spinner=False)
+def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 6) -> dict[str, Any]:
+    """Return up to 5 headlines across 3 pillars. Cached ~30 minutes.
+
+    Feeds are fetched **in parallel** with a short per-feed timeout and an
+    overall budget so a cold home page after login stays under ~5s.
     """
+    import time
+
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
-    for pillar, source, url in _FEEDS:
+    started = time.monotonic()
+    budget = max(1.5, _FETCH_BUDGET_SEC)
+
+    # Parallel RSS — sequential 7×10s used to stall login→home
+    with ThreadPoolExecutor(max_workers=min(8, len(_FEEDS))) as pool:
+        futures = {
+            pool.submit(_fetch_feed_safe, pillar, source, url): source
+            for pillar, source, url in _FEEDS
+        }
         try:
-            # Pull a bit deeper so CJK china/finance signals aren't cut off
-            collected.extend(_fetch_feed(pillar, source, url, limit=10))
-        except (HTTPError, URLError, ET.ParseError, TimeoutError, OSError) as e:
-            errors.append(f"{source}:{type(e).__name__}")
-        except Exception as e:
-            errors.append(f"{source}:{type(e).__name__}")
+            for fut in as_completed(futures, timeout=budget):
+                rows, err = fut.result()
+                if err:
+                    errors.append(err)
+                elif rows:
+                    collected.extend(rows)
+                if time.monotonic() - started >= budget:
+                    break
+        except TimeoutError:
+            errors.append("budget:TimeoutError")
+        # Cancel stragglers so the home page can paint
+        for fut in futures:
+            if not fut.done():
+                fut.cancel()
 
     items = _pick_balanced(collected, limit=limit)
     return {

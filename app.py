@@ -930,6 +930,17 @@ try:
 except Exception:
     pass
 
+# Restore login after websocket drop / phone tab sleep (localStorage + cookie)
+if not st.session_state.get("logged_in") or not st.session_state.get("user"):
+    try:
+        from tt_core.auth_persist import try_restore_session
+
+        if try_restore_session():
+            _reset_nav_to_home()
+            st.rerun()
+    except Exception:
+        pass
+
 if not st.session_state["logged_in"]:
     def _render_login_brand() -> None:
         # Text-only brand hero — brand color via CSS class (inline color gets stripped on Cloud)
@@ -945,12 +956,15 @@ if not st.session_state["logged_in"]:
         )
 
     def _do_login(u: str, p: str) -> None:
-        # Schema bootstrap only when someone tries to log in (not on every page open)
-        try:
-            init_db_gs()
-        except Exception:
-            pass
+        # Fast path: authenticate against cache/Sheets first — do NOT block on
+        # full schema init (that made 「登入」feel stuck before home news).
         d = login(u, p)
+        if not d:
+            try:
+                init_db_gs()
+            except Exception:
+                pass
+            d = login(u, p)
         if d:
             st.session_state.update(
                 {
@@ -962,6 +976,16 @@ if not st.session_state["logged_in"]:
             )
             st.session_state.pop("_notif_checked_this_login", None)
             st.session_state.pop("_notif_pending_payload", None)
+            try:
+                from tt_core.auth_persist import persist_browser_session
+
+                persist_browser_session(
+                    user=str(d[0][0]),
+                    role=str(d[0][2]),
+                    avatar=str(d[0][5] or ""),
+                )
+            except Exception:
+                pass
             _reset_nav_to_home()
             st.toast(f"Welcome back, {d[0][0]}!", icon="🦁")
             st.rerun()
@@ -1000,9 +1024,17 @@ if not st.session_state["logged_in"]:
 # ─── Logged-in shell ─────────────────────────────────────────────────────────
 # Recover broken session (e.g. after a mid-upload crash) instead of Oh-no screen
 if not st.session_state.get("user"):
-    st.session_state["logged_in"] = False
-    _reset_nav_to_home()
-    st.warning("登入狀態已失效，請重新登入。")
+    restored = False
+    try:
+        from tt_core.auth_persist import try_restore_session
+
+        restored = bool(try_restore_session())
+    except Exception:
+        restored = False
+    if not restored:
+        st.session_state["logged_in"] = False
+        _reset_nav_to_home()
+        st.warning("登入狀態已失效，請重新登入。")
     st.rerun()
 
 # After login only — PWA head inject + Sheets bootstrap (never block the login form)
@@ -1155,6 +1187,13 @@ with st.sidebar:
         st.rerun()
     if st.button("登出", use_container_width=True, type="secondary", key="sidebar_logout"):
         st.session_state["logged_in"] = False
+        st.session_state.pop("user", None)
+        try:
+            from tt_core.auth_persist import clear_browser_session
+
+            clear_browser_session()
+        except Exception:
+            pass
         _reset_nav_to_home()
         st.rerun()
 
