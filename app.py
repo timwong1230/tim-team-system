@@ -1741,11 +1741,16 @@ def page_coach_tim():
             if last_err:
                 st.error(f"上次 AI 連線失敗原因：{last_err}")
                 err_l = last_err.lower()
-                if "503" in last_err or "high demand" in err_l or "timed out" in err_l:
+                if (
+                    "503" in last_err
+                    or "404" in last_err
+                    or "high demand" in err_l
+                    or "timed out" in err_l
+                    or "no longer available" in err_l
+                ):
                     st.info(
-                        "提示：Google 繁忙／逾時唔代表 key 壞咗。"
-                        "等 1–2 分鐘再撳「測試連線」；系統會自動轉用穩定模型 "
-                        "（唔再用成日 503 嘅 flash-latest）。"
+                        "提示：Google 繁忙／舊模型停用唔代表 key 壞咗。"
+                        "App 已改用 **gemini-3.8-flash**——再撳「測試連線」即可。"
                     )
             gem_key = st.text_input(
                 "AI API key",

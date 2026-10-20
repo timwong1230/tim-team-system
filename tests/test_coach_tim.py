@@ -280,20 +280,28 @@ def test_gemini_contents_alternates_roles():
         assert a != b
 
 
-def test_gemini_skips_latest_alias_and_explains_503():
+def test_gemini_rewrites_retired_models_and_errors():
     from tt_core.coach_tim import (
+        DEFAULT_GEMINI_MODEL,
         _friendly_gemini_error,
         _gemini_model_candidates,
     )
 
-    cands = _gemini_model_candidates("gemini-flash-latest")
-    assert "gemini-flash-latest" not in cands
-    assert "gemini-2.0-flash" in cands
+    assert DEFAULT_GEMINI_MODEL == "gemini-3.8-flash"
+    cands = _gemini_model_candidates("gemini-2.5-flash")
+    assert "gemini-2.5-flash" not in cands
+    assert "gemini-3.8-flash" in cands
+    cands2 = _gemini_model_candidates("gemini-flash-latest")
+    assert "gemini-flash-latest" not in cands2
+    assert "gemini-3.8-flash" in cands2
     msg = _friendly_gemini_error(
-        'HTTP 503（gemini-flash-latest/query）：{"error":{"message":"high demand"}}'
+        'HTTP 404（gemini-2.5-flash/header）：{"error":{"message":"no longer available"}}'
     )
-    assert "503" in msg or "忙" in msg
-    assert "flash-latest" in msg or "技術詳情" in msg
+    assert "3.8" in msg or "停用" in msg
+    busy = _friendly_gemini_error(
+        'HTTP 503（gemini-3.8-flash/query）：{"error":{"message":"high demand"}}'
+    )
+    assert "503" in busy or "忙" in busy
 
 
 def test_app_wired():

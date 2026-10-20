@@ -18,15 +18,25 @@ from tt_core.constants import MDRT_TARGET, Q1_TARGET, WEEKLY_MIN_ACTS
 
 COACH_MENU = "🧠 AI Tim"
 DEFAULT_MODEL = "gpt-4o-mini"
-# Prefer stable numbered flash models — avoid ``gemini-flash-latest`` (often HTTP 503)
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+# Google retired 2.x / 2.5 flash for many new keys — use current Flash GA
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 # Ordered fallbacks when the preferred model is busy / missing
 GEMINI_MODEL_FALLBACKS = (
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
 )
+# Map retired ids (saved settings / old defaults) onto current models
+_GEMINI_MODEL_REWRITE = {
+    "gemini-2.5-flash": "gemini-3.8-flash",
+    "gemini-2.0-flash": "gemini-3.8-flash",
+    "gemini-2.0-flash-001": "gemini-3.8-flash",
+    "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+    "gemini-1.5-flash": "gemini-3.6-flash",
+    "gemini-1.5-flash-latest": "gemini-3.6-flash",
+    "gemini-flash-latest": "gemini-3.8-flash",
+}
 MAX_TOOLS_PER_TURN = 3
 SETTING_API_KEY = "coach_tim_openai_api_key"
 SETTING_MODEL = "coach_tim_openai_model"
@@ -1155,13 +1165,14 @@ def _gemini_contents(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
 
 
 def _gemini_model_candidates(preferred: str) -> list[str]:
-    """Stable models only — skip flaky ``*-latest`` aliases that often 503."""
+    """Current GA Flash models — rewrite retired 2.x / 2.5 ids."""
     out: list[str] = []
     pref = (preferred or DEFAULT_GEMINI_MODEL).strip()
-    # Drop known-noisy aliases even if Leader saved them
+    pref = _GEMINI_MODEL_REWRITE.get(pref, pref)
     if pref and "latest" not in pref.lower():
         out.append(pref)
     for mid in GEMINI_MODEL_FALLBACKS:
+        mid = _GEMINI_MODEL_REWRITE.get(mid, mid)
         if mid and mid not in out:
             out.append(mid)
     return out[:4]
@@ -1193,6 +1204,12 @@ def _friendly_gemini_error(raw: str) -> str:
             "（AQ… 或 AIza…），再儲存後測試。\n\n"
             f"技術詳情：{t[:220]}"
         )
+    if "404" in t or "no longer available" in low or "not_found" in low:
+        return (
+            "Google 已停用舊模型名稱（例如 gemini-2.5-flash）。"
+            "App 已改用 gemini-3.8-flash——請再撳「測試連線」。\n\n"
+            f"技術詳情：{t[:220]}"
+        )
     return t[:400] or "AI 連線失敗"
 
 
@@ -1219,12 +1236,12 @@ def gemini_chat(
     contents = _gemini_contents(messages)
     model_candidates = _gemini_model_candidates(model)
 
-    # Prefer systemInstruction; one fallback merges system into first user turn
+    # Prefer systemInstruction; one fallback merges system into first user turn.
+    # Gemini 3.x deprecates sampling knobs (temperature/top_p) — omit them.
     payload_variants: list[dict[str, Any]] = [
         {
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.6},
         },
     ]
     merged = [dict(c) for c in contents]
@@ -1233,9 +1250,7 @@ def gemini_chat(
         "role": "user",
         "parts": [{"text": f"{system}\n\n---\n\n{first_text}"}],
     }
-    payload_variants.append(
-        {"contents": merged, "generationConfig": {"temperature": 0.6}}
-    )
+    payload_variants.append({"contents": merged})
 
     # AQ… auth keys → header first; legacy AIza… → query first
     if key.startswith("AQ"):
