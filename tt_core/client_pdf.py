@@ -34,7 +34,6 @@ _GOLD_SOFT = (247, 241, 222)
 _CREAM = (250, 248, 243)
 _MUTED = (107, 114, 128)
 _LINE = (230, 226, 216)
-_HIGHLIGHT_BG = (252, 248, 236)
 
 _MD_BOLD = re.compile(r"\*(.+?)\*")
 _MD_EMPH = re.compile(r"_(.+?)_")
