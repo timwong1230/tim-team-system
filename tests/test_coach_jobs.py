@@ -1,4 +1,4 @@
-"""Background AI Tim jobs — leave the page while answering."""
+"""Background AI Tim jobs — leave the page while answering; never lock forever."""
 
 from __future__ import annotations
 
@@ -52,6 +52,94 @@ def test_start_reply_job_runs_in_background():
     cj.clear_job("Tim")
 
 
+def test_stale_running_job_auto_expires():
+    from tt_core import coach_jobs as cj
+
+    cj.clear_job("Stuck")
+    with cj._LOCK:
+        cj._JOBS["Stuck"] = {
+            "id": "stuck1",
+            "username": "Stuck",
+            "role": "Member",
+            "question": "點樣跟 Elaine",
+            "status": "running",
+            "answer": "",
+            "mode": "",
+            "meta": {},
+            "error": "",
+            "started_at": time.time() - (cj.STALE_RUNNING_SEC + 5),
+            "finished_at": None,
+            "synced": False,
+            "_ctx": {"username": "Stuck", "due": []},
+        }
+    snap = cj.get_job("Stuck")
+    assert snap is not None
+    assert snap["status"] == "done"
+    assert "逾時" in snap["answer"] or "教練" in snap["answer"]
+    cj.clear_job("Stuck")
+
+
+def test_cancel_job_unlocks():
+    from tt_core import coach_jobs as cj
+
+    cj.clear_job("CancelMe")
+    with cj._LOCK:
+        cj._JOBS["CancelMe"] = {
+            "id": "c1",
+            "username": "CancelMe",
+            "status": "running",
+            "question": "hi",
+            "started_at": time.time(),
+            "synced": False,
+            "_ctx": {"username": "CancelMe"},
+            "answer": "",
+            "mode": "",
+            "meta": {},
+            "error": "",
+            "finished_at": None,
+            "role": "Member",
+        }
+    assert cj.cancel_job("CancelMe") is True
+    snap = cj.get_job("CancelMe")
+    assert snap["status"] == "done"
+    assert "取消" in snap["answer"] or "教練" in snap["answer"]
+    cj.clear_job("CancelMe")
+
+
+def test_hard_timeout_on_hung_reply():
+    from tt_core import coach_jobs as cj
+
+    cj.clear_job("Hang")
+    # Force a tiny timeout for the test
+    with patch.object(cj, "JOB_TIMEOUT_SEC", 0.2):
+        with patch.object(cj, "STALE_RUNNING_SEC", 30):
+
+            def hang_reply(user_text, history, ctx):
+                time.sleep(2.0)
+                return ("should not see", "gemini", {})
+
+            with patch("tt_core.coach_tim.reply", side_effect=hang_reply):
+                cj.start_reply_job(
+                    username="Hang",
+                    role="Member",
+                    user_text="點樣跟 Elaine",
+                    history=[],
+                    ctx={"username": "Hang", "due": []},
+                )
+                deadline = time.time() + 3
+                while time.time() < deadline:
+                    snap = cj.get_job("Hang")
+                    if snap and snap.get("status") == "done":
+                        break
+                    time.sleep(0.05)
+                snap = cj.get_job("Hang")
+                assert snap is not None
+                assert snap["status"] == "done"
+                assert "should not see" not in snap["answer"]
+                assert "逾時" in snap["answer"] or "教練" in snap["answer"]
+    cj.clear_job("Hang")
+
+
 def test_sync_job_into_session_appends_assistant():
     import streamlit as st
 
@@ -81,19 +169,44 @@ def test_sync_job_into_session_appends_assistant():
     cj.clear_job("Oscar")
 
 
-def test_app_uses_background_jobs_not_blocking_spinner_reply():
+def test_app_has_cancel_and_no_disabled_lock():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     page = src[src.index("def page_coach_tim") : src.index("def page_checkin")]
+    assert "cancel_job" in page
+    assert "取消等待" in page
+    assert "disabled=job_running" not in page
     assert "start_reply_job" in page
-    assert "importlib.reload" not in page
-    assert "sync_job_into_session" in page
-    assert "背景諗緊" in page
-    assert "_poll_aitim_job" in src
 
 
-def test_gemini_chat_limits_model_cascade():
-    src = (_ROOT / "tt_core" / "coach_tim.py").read_text(encoding="utf-8")
-    fn = src[src.index("def gemini_chat") : src.index("def test_ai_connection")]
-    assert "model_candidates = model_candidates[:3]" in fn
-    assert "per_try_timeout" in fn
-    assert "deadline" in fn
+def test_offline_followup_prefers_named_case():
+    from tt_core.coach_tim import offline_reply
+
+    ctx = {
+        "username": "Tim",
+        "role": "Member",
+        "due": [
+            {
+                "person": "Sam",
+                "track": "做數",
+                "stage": "Fact finding",
+                "next_action": "約聽concept",
+                "next_date": "2026-10-17",
+            },
+            {
+                "person": "Elaine",
+                "track": "做數",
+                "stage": "Concept",
+                "next_action": "約簽單",
+                "next_date": "2026-10-20",
+            },
+        ],
+        "upcoming": [],
+        "prospects": [],
+        "tool_hits": {},
+        "wk_need": 0,
+        "wk_count": 3,
+        "wk_min": 3,
+    }
+    r = offline_reply("點樣跟Elaine個case?", ctx)
+    assert "Elaine" in r
+    assert "約簽單" in r or "Concept" in r

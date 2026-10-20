@@ -938,6 +938,26 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
         return "\n".join(lines)
 
     if intent == "followup":
+        # Prefer the named person in the question (e.g. Elaine) over the first due row
+        hints = [h.lower() for h in _name_hints(text)]
+        pool = list(fu_hits) + list(due) + list(ctx.get("upcoming") or [])
+        named = None
+        for h in hints:
+            for row in pool:
+                person = str(row.get("person") or row.get("name") or "")
+                if h and h in person.lower():
+                    named = row
+                    break
+            if named:
+                break
+        if named:
+            d = named
+            return (
+                f"{name}，關於 **{d.get('person') or d.get('name')}**：\n\n"
+                f"- Track：{d.get('track') or '—'}｜階段：{d.get('stage') or '—'}\n"
+                f"- Next：{d.get('next_action') or '（未填）'} · 日期 {d.get('next_date') or '—'}\n"
+                f"- 建議：今日聯絡確認 next appointment；打卡時更新 Fact find 同階段。\n"
+            )
         if due:
             d = due[0]
             return (
@@ -953,6 +973,11 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             return (
                 f"{name}，今日冇逾期案。最近一單係 **{u['person']}**"
                 f"（{u['next_date']}）：{u['next_action'] or '未填 Next action'}。"
+            )
+        if hints:
+            return (
+                f"{name}，名單入面暫時搵唔到 **{hints[0]}**。"
+                "可以核對打卡個名，或者喺準客戶名單睇下有冇呢位。"
             )
         return (
             f"{name}，今日冇逾期／到期跟進。可以去準客戶名單推下一單，"
@@ -1333,7 +1358,7 @@ def reply(
             _remember_err(str(e)[:400])
             fallback = offline_reply(user_text, live_ctx)
             return _finalize_reply(
-                f"（AI 暫時連線唔到）\n\n{fallback}",
+                f"（AI 暫時連線唔到，已改用即時教練資料）\n\n{fallback}",
                 "offline",
                 meta,
                 live_ctx,
@@ -1342,7 +1367,7 @@ def reply(
     if gemini_err:
         fallback = offline_reply(user_text, live_ctx)
         return _finalize_reply(
-            f"（AI 暫時連線唔到）\n\n{fallback}",
+            f"（AI 暫時連線唔到，已改用即時教練資料）\n\n{fallback}",
             "offline",
             meta,
             live_ctx,
