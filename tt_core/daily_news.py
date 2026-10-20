@@ -684,6 +684,7 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
     display: flex; align-items: flex-end; justify-content: space-between;
     gap: 12px; margin-bottom: 10px; padding: 0 2px 10px;
     border-bottom: 1px solid #E8E4D9;
+    flex-wrap: wrap;
   }}
   .tt-news-kicker {{
     font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase;
@@ -691,11 +692,16 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
   }}
   .tt-news-title-main {{
     font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 1.45rem; line-height: 1.15; margin: 0; color: #1C2430;
+    font-size: clamp(1.15rem, 5.2vw, 1.45rem); line-height: 1.2; margin: 0;
+    color: #1C2430; white-space: nowrap;
   }}
   .tt-news-meta {{
     font-size: 0.72rem; color: #6B7280; text-align: right;
-    line-height: 1.35; padding-bottom: 2px;
+    line-height: 1.35; padding-bottom: 2px; flex: 1 1 auto;
+  }}
+  @media (max-width: 420px) {{
+    .tt-news-head {{ flex-direction: column; align-items: flex-start; gap: 8px; }}
+    .tt-news-meta {{ text-align: left; }}
   }}
   .tt-news-list {{ display: flex; flex-direction: column; gap: 8px; }}
   .tt-news-row {{
@@ -801,7 +807,7 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
       <div class="tt-news-kicker">Morning briefing</div>
       <h2 class="tt-news-title-main">今日重點新聞</h2>
     </div>
-    <div class="tt-news-meta">{when}<br/>今日五則重中之重 · 全日不變<br/>社會問題 · 金融經濟 · 內地政經<br/>撳標題展開</div>
+    <div class="tt-news-meta">{when}<br/>社會問題 · 金融經濟 · 內地政經<br/>撳標題展開</div>
   </div>
   <div class="tt-news-list">{body}</div>
 </div>

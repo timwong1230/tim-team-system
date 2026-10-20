@@ -185,6 +185,9 @@ def test_app_home_renders_daily_news():
     assert "<details" in news
     assert "tt-news-detail" in news
     assert "睇原文" in news
+    assert "white-space: nowrap" in news
+    assert "今日五則重中之重" not in news
+    assert "全日不變" not in news
     render_src = news[news.index("def render_daily_news") :]
     assert "components.html" in render_src
     assert "st.link_button" not in render_src
