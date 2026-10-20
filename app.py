@@ -1035,6 +1035,30 @@ try:
 except Exception:
     pass
 
+# AI Tim background job: apply finished answers on ANY page (leave Coach while waiting)
+try:
+    from tt_core.coach_jobs import get_job, is_running, sync_job_into_session
+
+    _coach_user = str(st.session_state.get("user") or "")
+    if _coach_user and sync_job_into_session(_coach_user):
+        st.toast("🧠 AI Tim 已答完——返「AI Tim」睇答案", icon="✅")
+    elif _coach_user and is_running(_coach_user):
+        _j = get_job(_coach_user) or {}
+        st.caption(
+            f"🧠 AI Tim 背景諗緊：「{str(_j.get('question') or '')[:36]}…」"
+            "——你可以繼續用其他版面，完成後會自動出答案。"
+        )
+
+        @st.fragment(run_every=3)
+        def _poll_aitim_job() -> None:
+            if sync_job_into_session(_coach_user):
+                st.toast("🧠 AI Tim 已答完——返「AI Tim」睇答案", icon="✅")
+                st.rerun()
+
+        _poll_aitim_job()
+except Exception:
+    pass
+
 # After login only — PWA head inject + Sheets bootstrap (never block the login form)
 try:
     inject_pwa_head()
@@ -1629,25 +1653,36 @@ def page_coach_tim():
     """AI Tim chat — personal M+2 context (Telegram-style team bot)."""
     try:
         from tt_core import coach_tim as ct
-        import importlib
-
-        importlib.reload(ct)
+        from tt_core import coach_jobs as cj
     except Exception as e:
         st.error(f"AI Tim 未能載入：{e}")
         return
 
     user = st.session_state["user"]
     role = st.session_state.get("role") or "Member"
+    # Apply any finished background answer as soon as we enter this page
+    try:
+        cj.sync_job_into_session(user)
+    except Exception:
+        pass
     ai_on = ct.llm_configured()
     provider = ct.llm_provider()
+    job = cj.get_job(user)
+    job_running = bool(job and job.get("status") == "running")
 
     st.markdown("## 🧠 AI Tim")
-    if ai_on:
+    if job_running:
+        st.info(
+            f"AI Tim 背景諗緊：「{str(job.get('question') or '')[:48]}」——"
+            "你可以去其他版面做嘢，返嚟就有答案。"
+        )
+    elif ai_on:
         st.success(
             "AI Tim 已接通——按你嘅業績、跟進同準客戶即時答。"
+            "問完可以離開呢頁，佢會喺背景繼續答。"
         )
     else:
-        st.info("AI Tim 就緒——問跟進、活動同下一步都得。")
+        st.info("AI Tim 就緒——問跟進、活動同下一步都得。（未接 AI key 時用教練模板）")
     st.caption(
         "每次對話會讀你嘅今日要跟、本週活動、MDRT／Extra 10 同準客戶——"
         "問下一步點做、拆邊單都得。"
@@ -1981,38 +2016,51 @@ def page_coach_tim():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+    if job_running:
+        with st.chat_message("assistant"):
+            st.markdown("_⋯ AI Tim 背景諗緊，完成後呢度會自動出現答案。_")
+
+        @st.fragment(run_every=2)
+        def _coach_page_poll() -> None:
+            if cj.sync_job_into_session(user):
+                st.rerun()
+
+        _coach_page_poll()
+
     chat_pending = st.session_state.pop("coach_tim_pending", None)
     user_text = chat_pending or quick
-    chat_in = st.chat_input("問 AI Tim…（例如：幫我打卡／拆呢單點跟）")
-    if chat_in:
+    chat_in = st.chat_input(
+        "AI Tim 諗緊上一條…稍等" if job_running else "問 AI Tim…（例如：幫我打卡／拆呢單點跟）",
+        disabled=job_running,
+    )
+    if chat_in and not job_running:
         user_text = chat_in
 
-    if user_text:
+    if user_text and not job_running:
         st.session_state["coach_tim_messages"].append({"role": "user", "content": user_text})
         history = [
             {"role": m["role"], "content": m["content"]}
             for m in st.session_state["coach_tim_messages"][:-1]
             if m["role"] in ("user", "assistant")
         ]
-        history = [m for m in history if not (
-            m["role"] == "assistant" and m["content"].startswith("你好")
-        )][-12:]
-        spinner = "AI Tim 諗緊…" if ai_on else "AI Tim 查緊最新數據…"
-        with st.spinner(spinner):
-            result = ct.reply(user_text, history, ctx)
-            if isinstance(result, tuple) and len(result) == 3:
-                answer, mode, meta = result
-            else:
-                answer, mode = result[0], result[1]
-                meta = {}
-            tools_used = (meta or {}).get("tools_used") or []
-            if tools_used and mode == "offline":
-                labels = [ct.TOOL_CATALOG.get(t, t) for t in tools_used]
-                answer = answer + "\n\n—\n_已查：" + "、".join(labels) + "_"
-            if (meta or {}).get("pending"):
-                st.session_state["coach_tim_write_pending"] = meta["pending"]
-        st.session_state["coach_tim_messages"].append({"role": "assistant", "content": answer})
+        history = [
+            m
+            for m in history
+            if not (m["role"] == "assistant" and str(m["content"]).startswith("你好"))
+        ][-12:]
+        # Background thread — user can leave AI Tim and keep working
+        cj.start_reply_job(
+            username=user,
+            role=role,
+            user_text=user_text,
+            history=history,
+            ctx=ctx,
+        )
+        st.session_state["coach_tim_job_running"] = True
+        st.toast("AI Tim 背景諗緊——你可以去其他版面", icon="🧠")
         st.rerun()
+    elif user_text and job_running:
+        st.warning("AI Tim 仲諗緊上一條，完成後先再問下一個。")
 
 
 def page_checkin():
