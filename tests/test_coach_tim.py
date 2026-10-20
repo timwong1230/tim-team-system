@@ -280,6 +280,22 @@ def test_gemini_contents_alternates_roles():
         assert a != b
 
 
+def test_gemini_skips_latest_alias_and_explains_503():
+    from tt_core.coach_tim import (
+        _friendly_gemini_error,
+        _gemini_model_candidates,
+    )
+
+    cands = _gemini_model_candidates("gemini-flash-latest")
+    assert "gemini-flash-latest" not in cands
+    assert "gemini-2.0-flash" in cands
+    msg = _friendly_gemini_error(
+        'HTTP 503（gemini-flash-latest/query）：{"error":{"message":"high demand"}}'
+    )
+    assert "503" in msg or "忙" in msg
+    assert "flash-latest" in msg or "技術詳情" in msg
+
+
 def test_app_wired():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "🧠 AI Tim" in src

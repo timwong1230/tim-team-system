@@ -1740,6 +1740,13 @@ def page_coach_tim():
                 st.caption(f"已儲存：`{ct.mask_api_key(g_existing)}`")
             if last_err:
                 st.error(f"上次 AI 連線失敗原因：{last_err}")
+                err_l = last_err.lower()
+                if "503" in last_err or "high demand" in err_l or "timed out" in err_l:
+                    st.info(
+                        "提示：Google 繁忙／逾時唔代表 key 壞咗。"
+                        "等 1–2 分鐘再撳「測試連線」；系統會自動轉用穩定模型 "
+                        "（唔再用成日 503 嘅 flash-latest）。"
+                    )
             gem_key = st.text_input(
                 "AI API key",
                 value="",
