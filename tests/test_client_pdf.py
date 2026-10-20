@@ -37,7 +37,6 @@ def test_parse_report_blocks_classifies_structure():
     blocks = parse_report_blocks(raw)
     kinds = [k for k, _ in blocks]
     texts = [t for _, t in blocks]
-    # WA opener title dropped (redundant with PDF title)
     assert not any("保障分析摘要" in t for t in texts)
     assert "bullet" in kinds
     assert "detail" in kinds
@@ -77,13 +76,72 @@ def test_build_client_pdf_contains_chinese_and_is_pdf():
     assert "TIM-" in name
 
 
+def test_build_protection_gap_pdf_card_layout():
+    from tt_core.client_pdf import build_protection_gap_pdf, format_hkd_report
+
+    assert format_hkd_report(300000).startswith("HK$")
+    pillars = [
+        {
+            "保單類型": "人壽保險",
+            "短名": "人壽",
+            "已有保額": 0,
+            "建議保額": 5_000_000,
+            "status": "missing",
+            "status_label": "未做／缺口",
+        },
+        {
+            "保單類型": "危疾保險",
+            "短名": "危疾",
+            "已有保額": 300_000,
+            "建議保額": 500_000,
+            "status": "short",
+            "status_label": "有買但不足",
+        },
+        {
+            "保單類型": "醫療保險",
+            "短名": "醫療",
+            "已有保額": 1_000_000,
+            "建議保額": 1_000_000,
+            "status": "ok",
+            "status_label": "已達標",
+        },
+        {
+            "保單類型": "意外保險",
+            "短名": "意外",
+            "已有保額": 500_000,
+            "建議保額": 500_000,
+            "status": "ok",
+            "status_label": "已達標",
+        },
+    ]
+    policies = [
+        {"保單類型": "危疾保險", "保險公司": "CTF Life", "保額": 300_000, "保費": 377},
+        {"保單類型": "醫療保險", "保險公司": "FWD", "保額": 1_000_000, "保費": 446},
+        {"保單類型": "意外保險", "保險公司": "AIA", "保額": 500_000, "保費": 90},
+    ]
+    data = build_protection_gap_pdf(
+        client="陳生",
+        agent="Tim",
+        pillars=pillars,
+        policies=policies,
+        summary={"ready": 2, "total": 4},
+        total_have=1_800_000,
+        total_gap=5_200_000,
+        total_prem=913,
+    )
+    assert data.startswith(b"%PDF")
+    assert len(data) > 2000
+
+
 def test_app_wires_pdf_download_on_client_tools():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert "下載 PDF 報告" in src
+    assert "預覽／下載 PDF" in src
+    assert "新分頁開啟" in src
+    assert "關閉預覽" in src
     assert "build_client_pdf" in src
     assert "pdf_title" in src
     assert "帶得走：WhatsApp／PDF" in src
-    # All four client tools + recruit compare pass pdf_title
+    assert 'kind": "protection_gap"' in src or "protection_gap" in src
     assert src.count("pdf_title=") >= 4
 
 

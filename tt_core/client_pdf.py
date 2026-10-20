@@ -1,4 +1,4 @@
-"""One-click client-facing PDF reports for 客戶工具 (alongside WhatsApp)."""
+"""One-click client-facing PDF reports — card layout matching TIM TEAM coverage UI."""
 
 from __future__ import annotations
 
@@ -7,17 +7,16 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from urllib.request import Request, urlopen
 
 # Prefer system CJK with Latin coverage (headers need "TIM TEAM" + digits).
-# DroidSansFallback often lacks ASCII; WenQuanYi / Noto are safer for mixed text.
 _FONT_CANDIDATES = [
     os.environ.get("TIM_TEAM_CJK_FONT") or "",
     str(Path(__file__).resolve().parents[1] / "static" / "fonts" / "NotoSansCJKtc-Regular.otf"),
     "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    # Last resort: Chinese-only fallback (Latin glyphs may be missing)
     str(Path(__file__).resolve().parents[1] / "static" / "fonts" / "DroidSansFallbackFull.ttf"),
     "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
 ]
@@ -26,14 +25,32 @@ _FALLBACK_FONT_URL = (
     "https://github.com/StellarCN/scp_zh/raw/master/fonts/SimHei.ttf"
 )
 
-# Brand palette (align with tt_core/styles.py)
-_INK = (28, 36, 48)
+# Reference palette (coverage summary cards)
+_INK = (26, 43, 76)  # #1A2B4C
+_TEXT = (33, 37, 41)
+_MUTED = (108, 117, 125)
+_LINE = (222, 226, 230)
+_SOFT = (248, 249, 250)
+_WHITE = (255, 255, 255)
 _GOLD = (197, 160, 40)
-_GOLD_DEEP = (154, 123, 26)
-_GOLD_SOFT = (247, 241, 222)
-_CREAM = (250, 248, 243)
-_MUTED = (107, 114, 128)
-_LINE = (230, 226, 216)
+_WARN = (211, 84, 78)  # #D3544E
+_WARN_SOFT = (255, 245, 245)  # #FFF5F5
+_OK = (72, 140, 100)  # medical green
+_CI = (192, 72, 72)  # critical illness red
+_ACC = (217, 126, 56)  # accident orange
+_LIFE = (192, 72, 72)
+_DISCLAIMER_BG = (255, 249, 196)
+
+_PILLAR_THEME = {
+    "人壽": (_LIFE, "♥"),
+    "人壽保險": (_LIFE, "♥"),
+    "危疾": (_CI, "+"),
+    "危疾保險": (_CI, "+"),
+    "醫療": (_OK, "+"),
+    "醫療保險": (_OK, "+"),
+    "意外": (_ACC, "!"),
+    "意外保險": (_ACC, "!"),
+}
 
 _MD_BOLD = re.compile(r"\*(.+?)\*")
 _MD_EMPH = re.compile(r"_(.+?)_")
@@ -42,27 +59,17 @@ _EMOJIish = re.compile(
     "\U0001F300-\U0001FAFF"
     "\U00002700-\U000027BF"
     "\U0001F1E0-\U0001F1FF"
-    "\U00002600-\U000026FF"  # misc symbols (⚠ etc.)
-    "\uFE0E\uFE0F"  # variation selectors left after emoji strip
-    "\u200D"  # ZWJ
+    "\U00002600-\U000026FF"
+    "\uFE0E\uFE0F"
+    "\u200D"
     "]+",
     flags=re.UNICODE,
 )
 _SECTION_ONLY = re.compile(r"^\*[^*]+\*$")
 _BULLET_START = re.compile(r"^[\u2022\u00b7\-\u2013\u2014]\s*")
 _KV_SPLIT = re.compile(r"[：:]")
-# Hero KPIs only — avoid boxing every total
-_HERO_RE = re.compile(
-    r"(保障缺口|每月\s*Cashflow\s*[：:]|^最少年供)",
-)
-_STRONG_KEYS = (
-    "總收入",
-    "總支出",
-    "已有保障總額",
-    "現有每月保費",
-    "期間最高",
-    "提款年度合計",
-)
+_HERO_RE = re.compile(r"(保障缺口|每月\s*Cashflow\s*[：:]|^最少年供)")
+_STRONG_KEYS = ("總收入", "總支出", "已有保障總額", "現有每月保費", "期間最高", "提款年度合計")
 
 
 def _cache_font_dir() -> Path:
@@ -72,7 +79,6 @@ def _cache_font_dir() -> Path:
 
 
 def resolve_cjk_font() -> str:
-    """Return a filesystem path to a CJK-capable TrueType/OpenType font."""
     for path in _FONT_CANDIDATES:
         if path and Path(path).is_file():
             return path
@@ -95,7 +101,6 @@ def resolve_cjk_font() -> str:
 
 
 def strip_whatsapp_markup(text: str) -> str:
-    """Turn WhatsApp markdown (*bold*, _italic_, emoji) into plain report text."""
     t = str(text or "")
     t = _MD_BOLD.sub(r"\1", t)
     t = _MD_EMPH.sub(r"\1", t)
@@ -112,16 +117,31 @@ def _plain_line(text: str) -> str:
     return t.strip()
 
 
-def _is_hero(plain: str) -> bool:
-    return bool(_HERO_RE.search(plain))
+def format_hkd_report(amount: Any) -> str:
+    try:
+        v = float(amount or 0)
+    except Exception:
+        return "HK$0.00"
+    sign = "-" if v < 0 else ""
+    return f"{sign}HK${abs(v):,.2f}"
 
 
-def _is_strong(plain: str) -> bool:
-    return any(k in plain for k in _STRONG_KEYS)
+def pdf_filename(*, title: str = "", client: str = "", tool: str = "") -> str:
+    stamp = datetime.now().strftime("%Y%m%d")
+    base = (client or tool or title or "client-report").strip()
+    base = re.sub(r"[\\/:*?\"<>|]+", "", base)
+    base = re.sub(r"\s+", "", base)[:24] or "report"
+    return f"TIM-{base}-{stamp}.pdf"
+
+
+def report_sha(data: bytes) -> str:
+    return hashlib.sha256(data or b"").hexdigest()[:12]
+
+
+# ─── block parsing (generic WA → structured) ─────────────────────────────────
 
 
 def _is_summary_title(plain: str) -> bool:
-    """WhatsApp first-line titles like「保障分析摘要 — 陳生」— redundant with PDF title."""
     if "摘要" in plain and len(plain) <= 28:
         return True
     if plain.endswith("試算") and len(plain) <= 24:
@@ -132,7 +152,6 @@ def _is_summary_title(plain: str) -> bool:
 
 
 def parse_report_blocks(body: str) -> list[tuple[str, str]]:
-    """Classify WhatsApp-style lines into typed blocks for layout."""
     blocks: list[tuple[str, str]] = []
     raw = str(body or "").replace("\r\n", "\n").replace("\r", "\n")
     for raw_line in raw.split("\n"):
@@ -141,60 +160,37 @@ def parse_report_blocks(body: str) -> list[tuple[str, str]]:
             if blocks and blocks[-1][0] != "blank":
                 blocks.append(("blank", ""))
             continue
-
-        # Whole-line bold → section heading (e.g. *收入*)
         if _SECTION_ONLY.match(stripped):
             blocks.append(("section", _plain_line(stripped)))
             continue
-
-        # Leading italic disclaimer
         if stripped.startswith("_") and stripped.endswith("_") and stripped.count("_") == 2:
             blocks.append(("note", _plain_line(stripped)))
             continue
-
         bullet_m = _BULLET_START.match(stripped)
         if bullet_m:
-            rest = stripped[bullet_m.end() :]
-            blocks.append(("bullet", _plain_line(rest)))
+            blocks.append(("bullet", _plain_line(stripped[bullet_m.end() :])))
             continue
-
-        # Indented detail under a bullet
         if raw_line.startswith("  ") or raw_line.startswith("\t"):
             blocks.append(("detail", _plain_line(stripped)))
             continue
-
         plain = _plain_line(stripped)
         if not plain:
             continue
-
-        # Drop WA opener titles — PDF already has a proper title
         if _is_summary_title(plain):
             continue
-
-        if _is_hero(plain):
+        if _HERO_RE.search(plain):
             blocks.append(("hero", plain))
             continue
-
-        if _is_strong(plain):
+        if any(k in plain for k in _STRONG_KEYS):
             blocks.append(("strong", plain))
             continue
-
-        if re.match(r"^四大保障達標", plain) or re.match(r"^達標\s*[：:]", plain):
-            blocks.append(("score", plain))
-            continue
-
         if "：" in plain or (":" in plain and not plain.startswith("http")):
             blocks.append(("kv", plain))
             continue
-
-        # Short label without colon → section
         if len(plain) <= 16 and not any(ch in plain for ch in "。！？$"):
             blocks.append(("section", plain))
             continue
-
         blocks.append(("body", plain))
-
-    # Drop leading/trailing blanks
     while blocks and blocks[0][0] == "blank":
         blocks.pop(0)
     while blocks and blocks[-1][0] == "blank":
@@ -202,438 +198,280 @@ def parse_report_blocks(body: str) -> list[tuple[str, str]]:
     return blocks
 
 
-def build_client_pdf(
-    *,
-    title: str,
-    body: str,
-    client: str = "",
-    tool_name: str = "",
-    agent: str = "",
-    footer: str = "",
-) -> bytes:
-    """Render a branded multi-page client PDF (Traditional Chinese OK)."""
-    from fpdf import FPDF
+# ─── drawing primitives (reference card UI) ───────────────────────────────────
 
-    font_path = resolve_cjk_font()
-    blocks = parse_report_blocks(body)
-    if not blocks:
-        blocks = [("body", "（未有內容）")]
 
-    disclaimer = footer or "本報告只供參考，並非正式報價／核保決定；詳情以保險公司條款為準。"
-    band_h = 18.0
+def _rrect(pdf, x, y, w, h, *, fill=None, draw=None, radius=2.5, style="F"):
+    if fill is not None:
+        pdf.set_fill_color(*fill)
+    if draw is not None:
+        pdf.set_draw_color(*draw)
+        pdf.set_line_width(0.35)
+        style = "FD" if fill is not None else "D"
+    elif fill is not None:
+        style = "F"
+    pdf.rect(x, y, w, h, style=style, round_corners=True, corner_radius=radius)
 
-    class _Report(FPDF):
-        def header(self) -> None:
-            # Soft cream wash for the whole page (drawn first)
-            self.set_fill_color(*_CREAM)
-            self.rect(0, 0, self.w, self.h, style="F")
-            # Full-bleed ink brand band
-            self.set_fill_color(*_INK)
-            self.rect(0, 0, self.w, band_h, style="F")
-            # Gold accent hairline under band
-            self.set_fill_color(*_GOLD)
-            self.rect(0, band_h, self.w, 0.7, style="F")
 
-            self.set_xy(self.l_margin, 5.5)
-            self.set_font("ttcjk", size=11)
-            self.set_text_color(*_GOLD)
-            self.cell(self.epw * 0.55, 7, "TIM TEAM", align="L")
-            self.set_font("ttcjk", size=9)
-            self.set_text_color(220, 210, 180)
-            self.cell(self.epw * 0.45, 7, "客戶報告", align="R")
-            self.set_y(band_h + 8)
-
-        def footer(self) -> None:
-            self.set_y(-20)
-            self.set_draw_color(*_LINE)
-            self.set_line_width(0.25)
-            self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-            self.ln(2.5)
-            self.set_x(self.l_margin)
-            self.set_font("ttcjk", size=7.5)
-            self.set_text_color(*_MUTED)
-            self.multi_cell(self.epw, 3.6, disclaimer, align="C")
-            self.set_y(-8)
-            self.set_x(self.l_margin)
-            self.set_text_color(*_GOLD_DEEP)
-            self.cell(self.epw, 4, f"{self.page_no()}", align="C")
-
-    pdf = _Report(format="A4")
-    pdf.set_margins(18, band_h + 10, 18)
-    pdf.set_auto_page_break(auto=True, margin=24)
-    pdf.add_font("ttcjk", fname=font_path)
-    pdf.add_page()
-
-    # Title
+def _section_title(pdf, text: str) -> None:
+    pdf.ln(2)
     pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*_INK)
-    pdf.set_font("ttcjk", size=20)
-    pdf.multi_cell(pdf.epw, 9, str(title or "客戶報告").strip())
-    # Hairline + short gold accent under title
-    ty = pdf.get_y() + 2
-    pdf.set_draw_color(*_LINE)
-    pdf.set_line_width(0.25)
-    pdf.line(pdf.l_margin, ty, pdf.w - pdf.r_margin, ty)
-    pdf.set_fill_color(*_GOLD)
-    pdf.rect(pdf.l_margin, ty - 0.35, 28, 1.2, style="F")
-    pdf.set_y(ty + 5)
-
-    # Meta cards row
-    _draw_meta_row(
-        pdf,
-        client=client,
-        tool_name=tool_name,
-        agent=agent,
-        when=datetime.now().strftime("%Y-%m-%d %H:%M"),
-    )
-    pdf.ln(1.5)
-
-    # Pull hero KPIs up into a compact strip (then skip them inline)
-    heroes = [(k, t) for k, t in blocks if k == "hero"]
-    hero_texts = {t for _, t in heroes}
-    if heroes:
-        _draw_hero_strip(pdf, [t for _, t in heroes[:3]])
-        pdf.ln(1.5)
-
-    # Coalesce bullet+detail pairs into table rows when clustered
-    render_blocks = _coalesce_for_layout(blocks)
-
-    for item in render_blocks:
-        kind = item[0]
-        if kind == "hero" and item[1] in hero_texts:
-            continue
-        if kind == "blank":
-            pdf.ln(1.8)
-            continue
-        if kind == "section":
-            _draw_section(pdf, item[1])
-            continue
-        if kind == "strong":
-            _draw_strong(pdf, item[1])
-            continue
-        if kind == "table":
-            _draw_pair_table(pdf, item[1])
-            continue
-        if kind == "bullet":
-            _draw_bullet(pdf, item[1])
-            continue
-        if kind == "detail":
-            _draw_detail(pdf, item[1])
-            continue
-        if kind == "note":
-            _draw_note(pdf, item[1])
-            continue
-        if kind == "kv":
-            _draw_kv(pdf, item[1])
-            continue
-        if kind == "score":
-            _draw_score(pdf, item[1])
-            continue
-        _draw_body(pdf, item[1])
-
-    out = pdf.output()
-    if isinstance(out, (bytes, bytearray)):
-        return bytes(out)
-    return str(out).encode("latin-1")
-
-
-def _coalesce_for_layout(blocks: list[tuple]) -> list[tuple]:
-    """Group consecutive bullet+detail pairs into one table block."""
-    out: list[tuple] = []
-    i = 0
-    n = len(blocks)
-    while i < n:
-        kind = blocks[i][0]
-        if kind == "bullet":
-            pairs: list[tuple[str, str]] = []
-            j = i
-            while j < n:
-                if blocks[j][0] == "blank":
-                    # allow blank inside cluster only if next is still bullet
-                    if j + 1 < n and blocks[j + 1][0] == "bullet":
-                        j += 1
-                        continue
-                    break
-                if blocks[j][0] != "bullet":
-                    break
-                title = blocks[j][1]
-                detail = ""
-                if j + 1 < n and blocks[j + 1][0] == "detail":
-                    detail = blocks[j + 1][1]
-                    j += 2
-                else:
-                    j += 1
-                pairs.append((title, detail))
-            # Only use comparison table when details look like 已有／建議 rows
-            detailed = sum(1 for _, d in pairs if d and ("已有" in d or "建議" in d or "$" in d))
-            if len(pairs) >= 2 and detailed >= max(2, len(pairs) // 2):
-                out.append(("table", pairs))
-                i = j
-                continue
-            # Otherwise keep as normal bullets (核保結果、問答等)
-            for title, detail in pairs:
-                out.append(("bullet", title))
-                if detail:
-                    out.append(("detail", detail))
-            i = j
-            continue
-        out.append(blocks[i])
-        i += 1
-    return out
-
-
-def _draw_meta_row(
-    pdf,
-    *,
-    client: str,
-    tool_name: str,
-    agent: str,
-    when: str,
-) -> None:
-    items: list[tuple[str, str]] = []
-    if client:
-        items.append(("客戶", client))
-    if tool_name:
-        items.append(("工具", tool_name))
-    if agent:
-        items.append(("顧問", agent))
-    items.append(("日期", when))
-
-    # Soft panel behind meta
-    y0 = pdf.get_y()
-    row_h = 14
-    pdf.set_fill_color(*_GOLD_SOFT)
-    pdf.set_draw_color(*_LINE)
-    pdf.set_line_width(0.2)
-    pdf.rect(pdf.l_margin, y0, pdf.epw, row_h, style="FD")
-
-    n = max(len(items), 1)
-    col_w = pdf.epw / n
-    x = pdf.l_margin
-    for label, value in items:
-        pdf.set_xy(x + 2.5, y0 + 2)
-        pdf.set_font("ttcjk", size=7)
-        pdf.set_text_color(*_GOLD_DEEP)
-        pdf.cell(col_w - 4, 4, label, align="L")
-        pdf.set_xy(x + 2.5, y0 + 6.5)
-        pdf.set_font("ttcjk", size=9.5)
-        pdf.set_text_color(*_INK)
-        # Truncate long values to fit column
-        shown = value
-        while pdf.get_string_width(shown) > col_w - 5 and len(shown) > 3:
-            shown = shown[:-2] + "…"
-        pdf.cell(col_w - 4, 5, shown, align="L")
-        x += col_w
-    pdf.set_y(y0 + row_h + 2)
-
-
-def _draw_section(pdf, text: str) -> None:
-    pdf.ln(1.5)
+    pdf.set_font("ttcjk", size=13)
+    pdf.set_text_color(*_TEXT)
+    pdf.cell(pdf.epw, 7, text, align="L")
+    pdf.ln(7.5)
     y = pdf.get_y()
-    # Gold left rail + soft fill
-    pdf.set_fill_color(*_GOLD_SOFT)
-    pdf.rect(pdf.l_margin, y, pdf.epw, 8.5, style="F")
-    pdf.set_fill_color(*_GOLD)
-    pdf.rect(pdf.l_margin, y, 1.4, 8.5, style="F")
-    pdf.set_xy(pdf.l_margin + 4, y + 1.5)
-    pdf.set_font("ttcjk", size=11)
-    pdf.set_text_color(*_INK)
-    pdf.cell(pdf.epw - 6, 5.5, text, align="L")
-    pdf.set_y(y + 10)
-
-
-def _split_label_value(text: str) -> tuple[str, str]:
-    parts = _KV_SPLIT.split(text, maxsplit=1)
-    if len(parts) == 2:
-        return parts[0].strip(), parts[1].strip()
-    return text.strip(), ""
-
-
-def _draw_hero_strip(pdf, items: list[str]) -> None:
-    """One ink band with 1–3 hero KPIs (label above, value below)."""
-    if not items:
-        return
-    n = len(items)
-    y = pdf.get_y()
-    h = 18
-    pdf.set_fill_color(*_INK)
-    pdf.rect(pdf.l_margin, y, pdf.epw, h, style="F")
-    # Gold top hairline
-    pdf.set_fill_color(*_GOLD)
-    pdf.rect(pdf.l_margin, y, pdf.epw, 0.6, style="F")
-
-    col_w = pdf.epw / n
-    for i, text in enumerate(items):
-        label, value = _split_label_value(text)
-        if not value:
-            label, value = "重點", label
-        x = pdf.l_margin + i * col_w
-        pdf.set_xy(x + 3, y + 3)
-        pdf.set_font("ttcjk", size=7.5)
-        pdf.set_text_color(*_GOLD)
-        pdf.cell(col_w - 6, 4, label, align="L")
-        pdf.set_xy(x + 3, y + 8.5)
-        pdf.set_font("ttcjk", size=12)
-        pdf.set_text_color(250, 248, 243)
-        shown = value
-        while pdf.get_string_width(shown) > col_w - 7 and len(shown) > 4:
-            shown = shown[:-2] + "…"
-        pdf.cell(col_w - 6, 6, shown, align="L")
-        # Divider between columns
-        if i < n - 1:
-            pdf.set_draw_color(60, 70, 85)
-            pdf.set_line_width(0.2)
-            dx = x + col_w
-            pdf.line(dx, y + 3.5, dx, y + h - 3.5)
-    pdf.set_y(y + h + 3)
-
-
-def _draw_strong(pdf, text: str) -> None:
-    """Secondary totals — clean row, gold value, no heavy box."""
-    label, value = _split_label_value(text)
-    y = pdf.get_y()
-    pdf.set_draw_color(*_LINE)
-    pdf.set_line_width(0.2)
+    pdf.set_draw_color(*_TEXT)
+    pdf.set_line_width(0.45)
     pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
-    pdf.set_xy(pdf.l_margin, y + 1.5)
-    pdf.set_font("ttcjk", size=10)
-    pdf.set_text_color(*_MUTED)
-    if value:
-        pdf.cell(pdf.epw * 0.45, 6, label, align="L")
-        pdf.set_font("ttcjk", size=11)
-        pdf.set_text_color(*_GOLD_DEEP)
-        pdf.cell(pdf.epw * 0.55, 6, value, align="R")
-        pdf.set_y(y + 8.5)
-    else:
-        pdf.set_text_color(*_INK)
-        pdf.multi_cell(pdf.epw, 6, text)
-        pdf.ln(0.5)
+    pdf.ln(4)
 
 
-def _draw_bullet(pdf, text: str) -> None:
-    pdf.set_x(pdf.l_margin)
-    y = pdf.get_y()
-    # Gold disc
-    pdf.set_fill_color(*_GOLD)
-    pdf.ellipse(pdf.l_margin + 1.2, y + 2.2, 2.0, 2.0, style="F")
-    pdf.set_xy(pdf.l_margin + 6, y)
-    pdf.set_font("ttcjk", size=10.5)
-    pdf.set_text_color(*_INK)
-    pdf.multi_cell(pdf.epw - 6, 5.8, text)
-    pdf.ln(0.6)
-
-
-def _draw_detail(pdf, text: str) -> None:
-    pdf.set_x(pdf.l_margin + 6)
-    pdf.set_font("ttcjk", size=9.5)
-    pdf.set_text_color(*_MUTED)
-    pdf.multi_cell(pdf.epw - 6, 5.2, text)
-    pdf.ln(0.4)
-
-
-def _draw_kv(pdf, text: str) -> None:
-    parts = _KV_SPLIT.split(text, maxsplit=1)
-    pdf.set_x(pdf.l_margin)
-    if len(parts) == 2:
-        label, value = parts[0].strip(), parts[1].strip()
-        y = pdf.get_y()
-        # Soft row for key facts (疾病 / 對應情況 etc.)
-        pdf.set_fill_color(255, 255, 255)
-        pdf.set_draw_color(*_LINE)
-        pdf.set_line_width(0.2)
-        pdf.rect(pdf.l_margin, y, pdf.epw, 9, style="FD")
-        pdf.set_xy(pdf.l_margin + 3, y + 2)
-        pdf.set_font("ttcjk", size=8)
-        pdf.set_text_color(*_GOLD_DEEP)
-        pdf.cell(28, 5, label, align="L")
-        pdf.set_font("ttcjk", size=10.5)
-        pdf.set_text_color(*_INK)
-        pdf.cell(pdf.epw - 34, 5, value, align="L")
-        pdf.set_y(y + 10.5)
-    else:
-        _draw_body(pdf, text)
-
-
-def _draw_score(pdf, text: str) -> None:
-    label, value = _split_label_value(text)
-    if not value:
-        label, value = "達標", text
-    y = pdf.get_y()
+def _draw_client_info_box(pdf, rows: list[tuple[str, str]]) -> None:
+    """客戶資料 box — white card, navy left rail, label/value rows."""
+    if not rows:
+        return
+    row_h = 7.2
+    pad_y = 4
+    h = pad_y * 2 + row_h * len(rows)
+    y0 = pdf.get_y()
+    # outer card
+    _rrect(pdf, pdf.l_margin, y0, pdf.epw, h, fill=_WHITE, draw=_LINE, radius=3)
+    # navy left accent
     pdf.set_fill_color(*_INK)
-    # Pill-like score chip
-    chip_w = min(72, pdf.epw)
-    pdf.rect(pdf.l_margin, y, chip_w, 9, style="F")
-    pdf.set_xy(pdf.l_margin + 3, y + 2)
-    pdf.set_font("ttcjk", size=9)
-    pdf.set_text_color(*_GOLD)
-    pdf.cell(chip_w * 0.55, 5, label, align="L")
-    pdf.set_text_color(250, 248, 243)
-    pdf.set_font("ttcjk", size=11)
-    pdf.cell(chip_w * 0.45 - 3, 5, value, align="R")
-    pdf.set_y(y + 11)
+    pdf.rect(pdf.l_margin, y0 + 1.5, 1.6, h - 3, style="F")
 
-
-def _draw_pair_table(pdf, pairs: list[tuple[str, str]]) -> None:
-    """Clean comparison table: 項目／狀態 | 明細."""
-    pdf.ln(0.5)
-    y = pdf.get_y()
-    # Header
-    pdf.set_fill_color(*_GOLD_SOFT)
-    pdf.rect(pdf.l_margin, y, pdf.epw, 7, style="F")
-    pdf.set_xy(pdf.l_margin + 3, y + 1.5)
-    pdf.set_font("ttcjk", size=8)
-    pdf.set_text_color(*_GOLD_DEEP)
-    pdf.cell(pdf.epw * 0.42, 4, "項目／狀態", align="L")
-    pdf.cell(pdf.epw * 0.58 - 3, 4, "已有／建議", align="L")
-    y += 7
-    row_h = 11
-    for i, (title, detail) in enumerate(pairs):
-        bg = (255, 255, 255) if i % 2 == 0 else (252, 250, 245)
-        pdf.set_fill_color(*bg)
-        pdf.rect(pdf.l_margin, y, pdf.epw, row_h, style="F")
-        # bottom hairline
-        pdf.set_draw_color(*_LINE)
-        pdf.set_line_width(0.15)
-        pdf.line(pdf.l_margin, y + row_h, pdf.w - pdf.r_margin, y + row_h)
-        # gold tick
-        pdf.set_fill_color(*_GOLD)
-        pdf.rect(pdf.l_margin, y + 3, 1.2, row_h - 6, style="F")
-        pdf.set_xy(pdf.l_margin + 4, y + 3)
-        pdf.set_font("ttcjk", size=10)
-        pdf.set_text_color(*_INK)
-        shown = title
-        while pdf.get_string_width(shown) > pdf.epw * 0.4 and len(shown) > 4:
-            shown = shown[:-2] + "…"
-        pdf.cell(pdf.epw * 0.42 - 2, 5, shown, align="L")
+    y = y0 + pad_y
+    for label, value in rows:
+        pdf.set_xy(pdf.l_margin + 6, y)
         pdf.set_font("ttcjk", size=9)
         pdf.set_text_color(*_MUTED)
-        det = detail or "—"
-        while pdf.get_string_width(det) > pdf.epw * 0.52 and len(det) > 4:
-            det = det[:-2] + "…"
-        pdf.cell(pdf.epw * 0.58 - 4, 5, det, align="L")
+        pdf.cell(42, row_h - 1, f"{label}", align="L")
+        pdf.set_font("ttcjk", size=10)
+        pdf.set_text_color(*_TEXT)
+        pdf.cell(pdf.epw - 52, row_h - 1, str(value), align="R")
         y += row_h
-    pdf.set_y(y + 2)
+    pdf.set_y(y0 + h + 4)
 
 
-def _draw_body(pdf, text: str) -> None:
-    pdf.set_x(pdf.l_margin)
-    pdf.set_font("ttcjk", size=10.5)
-    pdf.set_text_color(*_INK)
-    pdf.multi_cell(pdf.epw, 5.8, text)
-    pdf.ln(0.5)
+def _pillar_theme(name: str) -> tuple[tuple[int, int, int], str]:
+    key = str(name or "").strip()
+    if key in _PILLAR_THEME:
+        return _PILLAR_THEME[key]
+    for k, v in _PILLAR_THEME.items():
+        if k in key:
+            return v
+    return (_MUTED, "·")
 
 
-def _draw_note(pdf, text: str) -> None:
-    pdf.ln(1)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_font("ttcjk", size=8.5)
+def _ensure_space(pdf, need: float) -> None:
+    if pdf.get_y() + need > pdf.page_break_trigger:
+        pdf.add_page()
+
+
+def _draw_coverage_card(
+    pdf,
+    *,
+    title: str,
+    status: str,
+    have: float,
+    need: float,
+    premium: float = 0,
+    policies: list[dict[str, Any]] | None = None,
+) -> None:
+    """Color header card (已有) or dashed gap card (缺乏), per reference screenshots."""
+    color, icon = _pillar_theme(title)
+    display = title if title.endswith("保障") or title.endswith("保險") else f"{title}保障"
+    policies = policies or []
+
+    if status == "missing" or (have <= 0 and not policies):
+        _draw_gap_card(pdf, title=display, color=color, icon=icon)
+        return
+
+    # Covered / short — solid colored header + policy table
+    header_h = 12
+    table_header_h = 7
+    row_h = 8
+    n_rows = max(len(policies), 1)
+    body_h = table_header_h + row_h * n_rows + 2
+    total_h = header_h + body_h
+    _ensure_space(pdf, total_h + 4)
+    y0 = pdf.get_y()
+    x = pdf.l_margin
+    w = pdf.epw
+
+    # Header bar (rounded top — draw full card then overlay)
+    _rrect(pdf, x, y0, w, total_h, fill=_WHITE, draw=_LINE, radius=3)
+    pdf.set_fill_color(*color)
+    pdf.rect(x, y0, w, header_h, style="F", round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=3)
+
+    # Header text
+    pdf.set_xy(x + 4, y0 + 3)
+    pdf.set_font("ttcjk", size=10)
+    pdf.set_text_color(*_WHITE)
+    left = f"{icon}  {display}"
+    pdf.cell(w * 0.42, 6, left, align="L")
+    pdf.set_font("ttcjk", size=8)
+    right_bits = [f"總保額 {format_hkd_report(have)}"]
+    if need > 0:
+        right_bits.append(f"建議 {format_hkd_report(need)}")
+    if premium > 0:
+        right_bits.append(f"月保費 {format_hkd_report(premium)}")
+    pdf.cell(w * 0.58 - 6, 6, "   ".join(right_bits), align="R")
+
+    # Table header
+    y = y0 + header_h
+    pdf.set_fill_color(*_SOFT)
+    pdf.rect(x, y, w, table_header_h, style="F")
+    cols = [("保單／公司", 0.36), ("類型", 0.16), ("保額", 0.24), ("月保費", 0.24)]
+    pdf.set_font("ttcjk", size=7.5)
     pdf.set_text_color(*_MUTED)
-    pdf.multi_cell(pdf.epw, 4.5, text)
-    pdf.ln(0.5)
+    cx = x + 3
+    pdf.set_xy(cx, y + 1.5)
+    for lab, frac in cols:
+        pdf.cell(w * frac - 1, 4, lab, align="L")
+    y += table_header_h
+
+    # Rows
+    if not policies:
+        policies = [
+            {
+                "保險公司": "（合計）",
+                "類型": "主要計劃" if status == "ok" else "保障不足",
+                "保額": have,
+                "保費": premium,
+            }
+        ]
+    for i, pol in enumerate(policies):
+        if i % 2:
+            pdf.set_fill_color(252, 252, 253)
+            pdf.rect(x, y, w, row_h, style="F")
+        name = str(pol.get("保險公司") or pol.get("保單名稱") or "—")
+        ptype = str(pol.get("類型") or "主要計劃")
+        cover = format_hkd_report(pol.get("保額") or 0)
+        prem = format_hkd_report(pol.get("保費") or 0)
+        pdf.set_xy(x + 3, y + 1.5)
+        pdf.set_font("ttcjk", size=8.5)
+        pdf.set_text_color(*_TEXT)
+        pdf.cell(w * 0.36 - 1, 5, _fit(pdf, name, w * 0.34), align="L")
+        # type pill
+        pill_w = min(pdf.get_string_width(ptype) + 4, w * 0.15)
+        pdf.set_fill_color(238, 240, 243)
+        pdf.rect(x + w * 0.36, y + 1.8, pill_w, 4.5, style="F", round_corners=True, corner_radius=1.2)
+        pdf.set_xy(x + w * 0.36 + 1, y + 1.8)
+        pdf.set_font("ttcjk", size=7)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(pill_w - 2, 4.5, ptype, align="C")
+        pdf.set_xy(x + w * 0.52, y + 1.5)
+        pdf.set_font("ttcjk", size=8.5)
+        pdf.set_text_color(*color)
+        pdf.cell(w * 0.24 - 1, 5, cover, align="R")
+        pdf.set_text_color(*_TEXT)
+        pdf.cell(w * 0.24 - 4, 5, prem, align="R")
+        y += row_h
+
+    # Short warning strip
+    if status == "short":
+        gap = max(0.0, float(need) - float(have))
+        pdf.set_fill_color(255, 247, 237)
+        pdf.rect(x, y0 + total_h - 0.1, w, 7, style="F", round_corners=("BOTTOM_LEFT", "BOTTOM_RIGHT"), corner_radius=3)
+        pdf.set_xy(x + 4, y0 + total_h)
+        # Actually extend card — simpler: draw note below
+        pass
+
+    pdf.set_y(y0 + total_h + 1)
+    if status == "short":
+        gap = max(0.0, float(need) - float(have))
+        y = pdf.get_y()
+        _rrect(pdf, x, y, w, 8, fill=(255, 247, 237), draw=(253, 186, 116), radius=2)
+        pdf.set_xy(x + 4, y + 1.8)
+        pdf.set_font("ttcjk", size=8)
+        pdf.set_text_color(180, 83, 9)
+        pdf.cell(w - 8, 4.5, f"有買但不足 — 建議再加 {format_hkd_report(gap)}", align="L")
+        pdf.set_y(y + 10)
+    else:
+        pdf.ln(2)
 
 
-def _wrap(pdf, text: str, width: float) -> list[str]:
-    """Simple width wrap using fpdf string width (CJK-safe char by char)."""
+def _draw_gap_card(pdf, *, title: str, color=None, icon: str = "!") -> None:
+    """Dashed red「缺乏保障」card matching reference."""
+    color = color or _WARN
+    h = 28
+    _ensure_space(pdf, h + 4)
+    y0 = pdf.get_y()
+    x = pdf.l_margin
+    w = pdf.epw
+    header_h = 11
+
+    # Pale body
+    pdf.set_fill_color(*_WARN_SOFT)
+    pdf.rect(x, y0, w, h, style="F", round_corners=True, corner_radius=3)
+    # Header
+    pdf.set_fill_color(*color)
+    pdf.rect(x, y0, w, header_h, style="F", round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=3)
+
+    pdf.set_xy(x + 4, y0 + 2.5)
+    pdf.set_font("ttcjk", size=10)
+    pdf.set_text_color(*_WHITE)
+    pdf.cell(w * 0.55, 6, f"{icon}  {title}", align="L")
+    # Badge
+    badge = "缺乏保障"
+    bw = pdf.get_string_width(badge) + 6
+    pdf.set_fill_color(255, 255, 255)
+    pdf.set_text_color(*color)
+    pdf.rect(x + w - bw - 4, y0 + 2.5, bw, 6, style="F", round_corners=True, corner_radius=1.5)
+    pdf.set_xy(x + w - bw - 4, y0 + 2.5)
+    pdf.set_font("ttcjk", size=8)
+    pdf.cell(bw, 6, badge, align="C")
+
+    # Body message
+    pdf.set_xy(x + 4, y0 + header_h + 3)
+    pdf.set_font("ttcjk", size=9.5)
+    pdf.set_text_color(*color)
+    pdf.cell(w - 8, 5, "!  尚未投保此類保障", align="C")
+    pdf.set_xy(x + 4, y0 + header_h + 8.5)
+    pdf.set_font("ttcjk", size=8)
+    pdf.set_text_color(150, 70, 65)
+    pdf.cell(w - 8, 4.5, "建議考慮添加以獲得全面保障", align="C")
+
+    # Dashed border on top
+    pdf.set_draw_color(*color)
+    pdf.set_line_width(0.5)
+    pdf.set_dash_pattern(dash=1.2, gap=0.9)
+    pdf.rect(x, y0, w, h, style="D", round_corners=True, corner_radius=3)
+    pdf.set_dash_pattern(dash=0, gap=0)
+
+    pdf.set_y(y0 + h + 4)
+
+
+def _fit(pdf, text: str, width: float) -> str:
+    t = str(text or "")
+    if pdf.get_string_width(t) <= width:
+        return t
+    while len(t) > 1 and pdf.get_string_width(t + "…") > width:
+        t = t[:-1]
+    return t + "…" if t else ""
+
+
+def _draw_disclaimer_bar(pdf, text: str) -> None:
+    _ensure_space(pdf, 16)
+    y = pdf.get_y() + 2
+    lines = _wrap(pdf, f"重要聲明：{text}", pdf.epw - 10, size=7.5)
+    h = 5 + len(lines) * 3.8
+    pdf.set_fill_color(*_DISCLAIMER_BG)
+    pdf.rect(pdf.l_margin, y, pdf.epw, h, style="F", round_corners=True, corner_radius=2)
+    pdf.set_font("ttcjk", size=7.5)
+    pdf.set_text_color(*_TEXT)
+    yy = y + 2.5
+    for line in lines:
+        pdf.set_xy(pdf.l_margin + 4, yy)
+        pdf.cell(pdf.epw - 8, 3.6, line, align="L")
+        yy += 3.8
+    pdf.set_y(y + h + 2)
+
+
+def _wrap(pdf, text: str, width: float, *, size: float = 9) -> list[str]:
+    pdf.set_font("ttcjk", size=size)
     if not text:
         return [""]
     if pdf.get_string_width(text) <= width:
@@ -653,14 +491,317 @@ def _wrap(pdf, text: str, width: float) -> list[str]:
     return lines or [text]
 
 
-def pdf_filename(*, title: str = "", client: str = "", tool: str = "") -> str:
-    """Safe download filename."""
-    stamp = datetime.now().strftime("%Y%m%d")
-    base = (client or tool or title or "client-report").strip()
-    base = re.sub(r"[\\/:*?\"<>|]+", "", base)
-    base = re.sub(r"\s+", "", base)[:24] or "report"
-    return f"TIM-{base}-{stamp}.pdf"
+def _split_kv(text: str) -> tuple[str, str]:
+    parts = _KV_SPLIT.split(text, maxsplit=1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return text.strip(), ""
 
 
-def report_sha(data: bytes) -> str:
-    return hashlib.sha256(data or b"").hexdigest()[:12]
+# ─── PDF document shell ───────────────────────────────────────────────────────
+
+
+def _make_pdf(*, footer_note: str = ""):
+    from fpdf import FPDF
+
+    font_path = resolve_cjk_font()
+    note = footer_note or "本報告只供參考，並非正式報價／核保決定；詳情以保險公司條款為準。"
+
+    class _Report(FPDF):
+        def header(self) -> None:
+            self.set_fill_color(*_WHITE)
+            self.rect(0, 0, self.w, self.h, style="F")
+            # Slim brand strip
+            self.set_fill_color(*_INK)
+            self.rect(0, 0, self.w, 12, style="F")
+            self.set_xy(self.l_margin, 3)
+            self.set_font("ttcjk", size=9)
+            self.set_text_color(*_GOLD)
+            self.cell(self.epw * 0.5, 6, "TIM TEAM", align="L")
+            self.set_text_color(220, 220, 220)
+            self.cell(self.epw * 0.5, 6, "客戶報告", align="R")
+            self.set_y(16)
+
+        def footer(self) -> None:
+            self.set_y(-12)
+            self.set_font("ttcjk", size=8)
+            self.set_text_color(*_MUTED)
+            self.set_x(self.l_margin)
+            self.cell(self.epw, 5, f"{self.page_no()}", align="C")
+
+    pdf = _Report(format="A4")
+    pdf.set_margins(14, 18, 14)
+    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.add_font("ttcjk", fname=font_path)
+    pdf.add_page()
+    pdf._tt_footer_note = note  # noqa: SLF001
+    return pdf, note
+
+
+def _pdf_bytes(pdf) -> bytes:
+    out = pdf.output()
+    if isinstance(out, (bytes, bytearray)):
+        return bytes(out)
+    return str(out).encode("latin-1")
+
+
+def _draw_title(pdf, title: str) -> None:
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("ttcjk", size=18)
+    pdf.set_text_color(*_TEXT)
+    pdf.multi_cell(pdf.epw, 8, str(title or "客戶報告").strip())
+    pdf.ln(1)
+
+
+# ─── public builders ──────────────────────────────────────────────────────────
+
+
+def build_protection_gap_pdf(
+    *,
+    title: str = "保障缺口分析報告",
+    client: str = "",
+    agent: str = "",
+    pillars: list[dict[str, Any]] | None = None,
+    policies: list[dict[str, Any]] | None = None,
+    summary: dict[str, Any] | None = None,
+    total_have: float = 0,
+    total_gap: float = 0,
+    total_prem: float = 0,
+    footer: str = "",
+) -> bytes:
+    """Card-based coverage report matching the reference UI screenshots."""
+    pdf, note = _make_pdf(footer_note=footer)
+    pillars = list(pillars or [])
+    policies = list(policies or [])
+    summary = summary or {}
+
+    _draw_title(pdf, title)
+
+    # 客戶資料
+    _section_title(pdf, "客戶資料")
+    info_rows = []
+    if client:
+        info_rows.append(("客戶姓名", client))
+    if agent:
+        info_rows.append(("顧問", agent))
+    info_rows.append(("日期", datetime.now().strftime("%Y-%m-%d %H:%M")))
+    ready = summary.get("ready", 0)
+    total = summary.get("total", 4)
+    info_rows.append(("四大保障達標", f"{ready}/{total}"))
+    info_rows.append(("已有保障總額", format_hkd_report(total_have)))
+    info_rows.append(("保障缺口總額", format_hkd_report(total_gap)))
+    info_rows.append(("現有每月保費", format_hkd_report(total_prem)))
+    _draw_client_info_box(pdf, info_rows)
+
+    # Split existing vs lacking (reference section 2 / 3)
+    have_list = [p for p in pillars if p.get("status") != "missing"]
+    miss_list = [p for p in pillars if p.get("status") == "missing"]
+
+    # Policies by type
+    by_type: dict[str, list[dict]] = {}
+    for row in policies:
+        t = str(row.get("保單類型") or "")
+        by_type.setdefault(t, []).append(row)
+
+    if have_list:
+        _section_title(pdf, f"已有保障（{len(have_list)}項）")
+        for p in have_list:
+            ptype = str(p.get("保單類型") or "")
+            short = str(p.get("短名") or ptype.replace("保險", ""))
+            pols = by_type.get(ptype) or []
+            # normalize policy dicts for table
+            norm = []
+            for r in pols:
+                norm.append(
+                    {
+                        "保險公司": r.get("保險公司") or "—",
+                        "類型": "主要計劃",
+                        "保額": r.get("保額") or 0,
+                        "保費": r.get("保費") or 0,
+                    }
+                )
+            _draw_coverage_card(
+                pdf,
+                title=short,
+                status=str(p.get("status") or "ok"),
+                have=float(p.get("已有保額") or 0),
+                need=float(p.get("建議保額") or 0),
+                premium=sum(float(r.get("保費") or 0) for r in pols),
+                policies=norm,
+            )
+
+    if miss_list:
+        _section_title(pdf, f"缺乏保障（{len(miss_list)}項）")
+        for p in miss_list:
+            short = str(p.get("短名") or str(p.get("保單類型") or "").replace("保險", ""))
+            color, icon = _pillar_theme(short)
+            _draw_gap_card(pdf, title=f"{short}保障", color=color, icon=icon)
+
+    _draw_disclaimer_bar(
+        pdf,
+        footer
+        or "建議保額只供銷售參考，並非核保或財務建議；實際需要視乎家庭責任、負債、Lifestyle。",
+    )
+    return _pdf_bytes(pdf)
+
+
+def build_client_pdf(
+    *,
+    title: str,
+    body: str,
+    client: str = "",
+    tool_name: str = "",
+    agent: str = "",
+    footer: str = "",
+    pdf_data: dict[str, Any] | None = None,
+) -> bytes:
+    """
+    Render client PDF. If pdf_data kind == 'protection_gap', use card layout;
+    otherwise render WA body with the same professional chrome.
+    """
+    data = pdf_data or {}
+    if data.get("kind") == "protection_gap":
+        return build_protection_gap_pdf(
+            title=title or "保障缺口分析報告",
+            client=client,
+            agent=agent,
+            pillars=data.get("pillars") or [],
+            policies=data.get("policies") or [],
+            summary=data.get("summary") or {},
+            total_have=float(data.get("total_have") or 0),
+            total_gap=float(data.get("total_gap") or 0),
+            total_prem=float(data.get("total_prem") or 0),
+            footer=footer,
+        )
+
+    pdf, note = _make_pdf(footer_note=footer)
+    blocks = parse_report_blocks(body)
+    if not blocks:
+        blocks = [("body", "（未有內容）")]
+
+    _draw_title(pdf, title)
+    _section_title(pdf, "客戶資料")
+    info = []
+    if client:
+        info.append(("客戶姓名", client))
+    if tool_name:
+        info.append(("工具", tool_name))
+    if agent:
+        info.append(("顧問", agent))
+    info.append(("日期", datetime.now().strftime("%Y-%m-%d %H:%M")))
+    _draw_client_info_box(pdf, info)
+
+    _section_title(pdf, "報告內容")
+
+    # Hero metrics as compact ink strip
+    heroes = [t for k, t in blocks if k == "hero"]
+    if heroes:
+        _draw_hero_metrics(pdf, heroes[:3])
+
+    for kind, text in blocks:
+        if kind == "hero":
+            continue
+        if kind == "blank":
+            pdf.ln(2)
+            continue
+        if kind == "section":
+            # Sub-section as soft bar
+            y = pdf.get_y()
+            _ensure_space(pdf, 10)
+            pdf.set_fill_color(*_SOFT)
+            pdf.rect(pdf.l_margin, y, pdf.epw, 8, style="F", round_corners=True, corner_radius=1.5)
+            pdf.set_fill_color(*_INK)
+            pdf.rect(pdf.l_margin, y + 1.5, 1.4, 5, style="F")
+            pdf.set_xy(pdf.l_margin + 5, y + 1.5)
+            pdf.set_font("ttcjk", size=10)
+            pdf.set_text_color(*_TEXT)
+            pdf.cell(pdf.epw - 8, 5, text, align="L")
+            pdf.set_y(y + 10)
+            continue
+        if kind == "strong":
+            label, value = _split_kv(text)
+            y = pdf.get_y()
+            pdf.set_draw_color(*_LINE)
+            pdf.set_line_width(0.2)
+            pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+            pdf.set_xy(pdf.l_margin, y + 1.5)
+            pdf.set_font("ttcjk", size=9.5)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(pdf.epw * 0.45, 6, label or text, align="L")
+            pdf.set_font("ttcjk", size=10.5)
+            pdf.set_text_color(*_INK)
+            pdf.cell(pdf.epw * 0.55, 6, value, align="R")
+            pdf.set_y(y + 8.5)
+            continue
+        if kind == "bullet":
+            y = pdf.get_y()
+            pdf.set_fill_color(*_GOLD)
+            pdf.ellipse(pdf.l_margin + 1.5, y + 2.2, 1.8, 1.8, style="F")
+            pdf.set_xy(pdf.l_margin + 6, y)
+            pdf.set_font("ttcjk", size=10)
+            pdf.set_text_color(*_TEXT)
+            pdf.multi_cell(pdf.epw - 6, 5.5, text)
+            pdf.ln(0.5)
+            continue
+        if kind == "detail":
+            pdf.set_x(pdf.l_margin + 6)
+            pdf.set_font("ttcjk", size=9)
+            pdf.set_text_color(*_MUTED)
+            pdf.multi_cell(pdf.epw - 6, 5, text)
+            continue
+        if kind == "note":
+            pdf.set_x(pdf.l_margin)
+            pdf.set_font("ttcjk", size=8.5)
+            pdf.set_text_color(*_MUTED)
+            pdf.multi_cell(pdf.epw, 4.5, text)
+            pdf.ln(1)
+            continue
+        if kind == "kv":
+            label, value = _split_kv(text)
+            y = pdf.get_y()
+            _rrect(pdf, pdf.l_margin, y, pdf.epw, 8.5, fill=_WHITE, draw=_LINE, radius=1.5)
+            pdf.set_xy(pdf.l_margin + 3, y + 1.8)
+            pdf.set_font("ttcjk", size=8)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(32, 5, label, align="L")
+            pdf.set_font("ttcjk", size=10)
+            pdf.set_text_color(*_TEXT)
+            pdf.cell(pdf.epw - 40, 5, value, align="L")
+            pdf.set_y(y + 10)
+            continue
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("ttcjk", size=10)
+        pdf.set_text_color(*_TEXT)
+        pdf.multi_cell(pdf.epw, 5.5, text)
+        pdf.ln(0.5)
+
+    _draw_disclaimer_bar(pdf, footer or note)
+    return _pdf_bytes(pdf)
+
+
+def _draw_hero_metrics(pdf, items: list[str]) -> None:
+    n = len(items)
+    y = pdf.get_y()
+    h = 16
+    _ensure_space(pdf, h + 4)
+    pdf.set_fill_color(*_INK)
+    pdf.rect(pdf.l_margin, y, pdf.epw, h, style="F", round_corners=True, corner_radius=3)
+    col_w = pdf.epw / n
+    for i, text in enumerate(items):
+        label, value = _split_kv(text)
+        if not value:
+            label, value = "重點", label
+        x = pdf.l_margin + i * col_w
+        pdf.set_xy(x + 3, y + 2.5)
+        pdf.set_font("ttcjk", size=7.5)
+        pdf.set_text_color(*_GOLD)
+        pdf.cell(col_w - 6, 4, label, align="L")
+        pdf.set_xy(x + 3, y + 7.5)
+        pdf.set_font("ttcjk", size=11)
+        pdf.set_text_color(*_WHITE)
+        pdf.cell(col_w - 6, 5.5, _fit(pdf, value, col_w - 8), align="L")
+        if i < n - 1:
+            pdf.set_draw_color(55, 70, 100)
+            pdf.set_line_width(0.2)
+            pdf.line(x + col_w, y + 3, x + col_w, y + h - 3)
+    pdf.set_y(y + h + 4)
