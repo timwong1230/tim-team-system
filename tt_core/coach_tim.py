@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1140,20 +1141,19 @@ def gemini_chat(
 
     contents = _gemini_contents(messages)
     model_id = (model or DEFAULT_GEMINI_MODEL).strip()
-    model_candidates = [model_id]
-    for alt in (
+    # Keep the list short — a long cascade × auth styles used to hang Coach AI
+    model_candidates: list[str] = []
+    for mid in (
+        model_id,
         "gemini-2.0-flash",
-        "gemini-2.0-flash-001",
         "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
         "gemini-flash-latest",
-        "gemini-2.5-flash",
     ):
-        if alt not in model_candidates:
-            model_candidates.append(alt)
+        if mid and mid not in model_candidates:
+            model_candidates.append(mid)
+    model_candidates = model_candidates[:3]
 
-    # systemInstruction first; fallback prepends system into the first user turn
+    # Prefer systemInstruction; one fallback merges system into first user turn
     payload_variants: list[dict[str, Any]] = [
         {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -1171,13 +1171,21 @@ def gemini_chat(
         {"contents": merged, "generationConfig": {"temperature": 0.6}}
     )
 
-    # Auth styles: header (recommended for AQ auth keys) then query param
+    # Auth: header first (AQ… keys), then query param (legacy AIza…)
     auth_styles = ("header", "query")
+    per_try_timeout = max(8, min(int(timeout or 25), 25))
+    deadline = time.time() + max(per_try_timeout + 5, float(timeout or 25) + 5)
 
     last_err = ""
     for mid in model_candidates:
+        if time.time() > deadline:
+            break
         for payload in payload_variants:
+            if time.time() > deadline:
+                break
             for auth in auth_styles:
+                if time.time() > deadline:
+                    break
                 if auth == "header":
                     url = (
                         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -1201,7 +1209,7 @@ def gemini_chat(
                     method="POST",
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    with urllib.request.urlopen(req, timeout=per_try_timeout) as resp:
                         data = json.loads(resp.read().decode("utf-8"))
                     cands = data.get("candidates") or []
                     if not cands:
@@ -1223,6 +1231,9 @@ def gemini_chat(
                             "AI key 無效或未開權限。請確認係 AI Studio 嘅 Gemini API key "
                             "（而家可以係 AQ… 或 AIza…），再撳「測試連線」。"
                         ) from e
+                    # Unknown model → skip remaining auth/payload for this mid
+                    if e.code == 404:
+                        break
                     continue
                 except Exception as e:
                     last_err = str(e)[:300]
@@ -1284,13 +1295,8 @@ def reply(
         messages = messages[-16:]
 
     def _remember_err(msg: str) -> None:
+        # Only put errors on meta — safe for background threads (no session_state).
         meta["ai_error"] = msg
-        try:
-            import streamlit as st
-
-            st.session_state["_coach_tim_last_error"] = msg
-        except Exception:
-            pass
 
     gemini_key = _secret_gemini_key()
     gemini_err = ""
@@ -1301,14 +1307,10 @@ def reply(
                 system=system,
                 api_key=gemini_key,
                 model=_secret_gemini_model(),
+                timeout=25,
             )
             meta["provider"] = "gemini"
-            try:
-                import streamlit as st
-
-                st.session_state.pop("_coach_tim_last_error", None)
-            except Exception:
-                pass
+            meta.pop("ai_error", None)
             return _finalize_reply(text, "gemini", meta, live_ctx)
         except Exception as e:
             gemini_err = str(e)[:400]
@@ -1318,15 +1320,14 @@ def reply(
     if openai_key:
         try:
             text = openai_chat(
-                messages, system=system, api_key=openai_key, model=_secret_model()
+                messages,
+                system=system,
+                api_key=openai_key,
+                model=_secret_model(),
+                timeout=25,
             )
             meta["provider"] = "openai"
-            try:
-                import streamlit as st
-
-                st.session_state.pop("_coach_tim_last_error", None)
-            except Exception:
-                pass
+            meta.pop("ai_error", None)
             return _finalize_reply(text, "openai", meta, live_ctx)
         except Exception as e:
             _remember_err(str(e)[:400])
