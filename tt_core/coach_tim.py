@@ -18,8 +18,15 @@ from tt_core.constants import MDRT_TARGET, Q1_TARGET, WEEKLY_MIN_ACTS
 
 COACH_MENU = "🧠 AI Tim"
 DEFAULT_MODEL = "gpt-4o-mini"
-# AI Studio now issues AQ.* auth keys; prefer current flash models
+# Prefer stable numbered flash models — avoid ``gemini-flash-latest`` (often HTTP 503)
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+# Ordered fallbacks when the preferred model is busy / missing
+GEMINI_MODEL_FALLBACKS = (
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash",
+)
 MAX_TOOLS_PER_TURN = 3
 SETTING_API_KEY = "coach_tim_openai_api_key"
 SETTING_MODEL = "coach_tim_openai_model"
@@ -1147,6 +1154,48 @@ def _gemini_contents(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
     return contents
 
 
+def _gemini_model_candidates(preferred: str) -> list[str]:
+    """Stable models only — skip flaky ``*-latest`` aliases that often 503."""
+    out: list[str] = []
+    pref = (preferred or DEFAULT_GEMINI_MODEL).strip()
+    # Drop known-noisy aliases even if Leader saved them
+    if pref and "latest" not in pref.lower():
+        out.append(pref)
+    for mid in GEMINI_MODEL_FALLBACKS:
+        if mid and mid not in out:
+            out.append(mid)
+    return out[:4]
+
+
+def _friendly_gemini_error(raw: str) -> str:
+    t = (raw or "").strip()
+    low = t.lower()
+    if "503" in t or "high demand" in low or "unavailable" in low:
+        return (
+            "Google 模型而家好忙（503）。系統已自動試其他穩定模型仍失敗——"
+            "請隔一兩分鐘再撳「測試連線」。\n\n"
+            f"技術詳情：{t[:220]}"
+        )
+    if "429" in t or "resource_exhausted" in low or "quota" in low:
+        return (
+            "AI 配額／限流（429）。請稍後再試，或去 AI Studio 檢查免費額度。\n\n"
+            f"技術詳情：{t[:220]}"
+        )
+    if "timed out" in low or "timeout" in low:
+        return (
+            "連線逾時（網絡慢或 Google 回應慢）。請再試一次；"
+            "若多次失敗，稍後再測。\n\n"
+            f"技術詳情：{t[:220]}"
+        )
+    if "401" in t or "403" in t or "api key" in low:
+        return (
+            "AI key 無效或未開權限。請確認係 AI Studio 嘅 Gemini API key "
+            "（AQ… 或 AIza…），再儲存後測試。\n\n"
+            f"技術詳情：{t[:220]}"
+        )
+    return t[:400] or "AI 連線失敗"
+
+
 def gemini_chat(
     messages: list[dict[str, str]],
     *,
@@ -1159,24 +1208,16 @@ def gemini_chat(
 
     New AI Studio keys are auth keys (``AQ.…``). Prefer ``x-goog-api-key``
     header; also try ``?key=`` for older ``AIza…`` traffic keys.
+
+    On HTTP 503/429 (model busy), skip straight to the next stable model —
+    do not burn the whole timeout on ``gemini-flash-latest``.
     """
     key = str(api_key or "").strip()
     if not key:
         raise RuntimeError("未設定 AI key")
 
     contents = _gemini_contents(messages)
-    model_id = (model or DEFAULT_GEMINI_MODEL).strip()
-    # Keep the list short — a long cascade × auth styles used to hang Coach AI
-    model_candidates: list[str] = []
-    for mid in (
-        model_id,
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-flash-latest",
-    ):
-        if mid and mid not in model_candidates:
-            model_candidates.append(mid)
-    model_candidates = model_candidates[:3]
+    model_candidates = _gemini_model_candidates(model)
 
     # Prefer systemInstruction; one fallback merges system into first user turn
     payload_variants: list[dict[str, Any]] = [
@@ -1196,20 +1237,28 @@ def gemini_chat(
         {"contents": merged, "generationConfig": {"temperature": 0.6}}
     )
 
-    # Auth: header first (AQ… keys), then query param (legacy AIza…)
-    auth_styles = ("header", "query")
-    per_try_timeout = max(8, min(int(timeout or 25), 25))
-    deadline = time.time() + max(per_try_timeout + 5, float(timeout or 25) + 5)
+    # AQ… auth keys → header first; legacy AIza… → query first
+    if key.startswith("AQ"):
+        auth_styles: tuple[str, ...] = ("header", "query")
+    elif key.startswith("AIza"):
+        auth_styles = ("query", "header")
+    else:
+        auth_styles = ("header", "query")
+
+    per_try_timeout = max(8, min(int(timeout or 20), 20))
+    deadline = time.time() + max(28.0, float(timeout or 20) + 8)
 
     last_err = ""
     for mid in model_candidates:
         if time.time() > deadline:
             break
+        model_overloaded = False
+        model_missing = False
         for payload in payload_variants:
-            if time.time() > deadline:
+            if time.time() > deadline or model_overloaded or model_missing:
                 break
             for auth in auth_styles:
-                if time.time() > deadline:
+                if time.time() > deadline or model_overloaded or model_missing:
                     break
                 if auth == "header":
                     url = (
@@ -1250,20 +1299,32 @@ def gemini_chat(
                 except urllib.error.HTTPError as e:
                     body = e.read().decode("utf-8", errors="replace")[:400]
                     last_err = f"HTTP {e.code}（{mid}/{auth}）：{body}"
-                    # Hard auth failure on both styles → stop early after query try
-                    if e.code in (401, 403) and auth == "query":
-                        raise RuntimeError(
-                            "AI key 無效或未開權限。請確認係 AI Studio 嘅 Gemini API key "
-                            "（而家可以係 AQ… 或 AIza…），再撳「測試連線」。"
-                        ) from e
-                    # Unknown model → skip remaining auth/payload for this mid
+                    if e.code in (401, 403):
+                        # Try the other auth style once; if both fail, raise friendly
+                        if auth == auth_styles[-1]:
+                            raise RuntimeError(_friendly_gemini_error(last_err)) from e
+                        continue
+                    # Busy / rate-limited → next model immediately
+                    if e.code in (429, 503):
+                        model_overloaded = True
+                        break
+                    # Unknown model id → next model
                     if e.code == 404:
+                        model_missing = True
                         break
                     continue
                 except Exception as e:
+                    # Socket timeout / network — try next auth, then next model
                     last_err = str(e)[:300]
+                    if "timed out" in last_err.lower() or "timeout" in last_err.lower():
+                        # Don't burn remaining payload variants on a dead link
+                        model_overloaded = True
+                        break
                     continue
-    raise RuntimeError(last_err or "AI 連線失敗")
+        # brief pause before next model when Google is saturated
+        if model_overloaded and time.time() + 0.4 < deadline:
+            time.sleep(0.35)
+    raise RuntimeError(_friendly_gemini_error(last_err or "AI 連線失敗"))
 
 
 def test_ai_connection() -> tuple[bool, str]:
@@ -1275,12 +1336,12 @@ def test_ai_connection() -> tuple[bool, str]:
                 [{"role": "user", "content": "用一句粵語講：已接通。"}],
                 system="你係 AI Tim。只回一句短確認。",
                 api_key=gemini_key,
-                model=_secret_gemini_model(),
-                timeout=45,
+                model=_secret_gemini_model() or DEFAULT_GEMINI_MODEL,
+                timeout=25,
             )
             return True, f"連線成功：{text[:120]}"
         except Exception as e:
-            return False, str(e)[:400]
+            return False, _friendly_gemini_error(str(e))[:400]
     openai_key = _secret_openai_key()
     if openai_key:
         try:
@@ -1289,7 +1350,7 @@ def test_ai_connection() -> tuple[bool, str]:
                 system="你係 AI Tim。只回一句短確認。",
                 api_key=openai_key,
                 model=_secret_model(),
-                timeout=45,
+                timeout=25,
             )
             return True, f"連線成功：{text[:120]}"
         except Exception as e:
