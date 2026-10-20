@@ -2216,24 +2216,59 @@ def _esc(s) -> str:
     )
 
 
-def _render_whatsapp_share(report: str, *, key: str, caption: str = "") -> None:
-    """Show copyable summary + one-tap WhatsApp open (帶得走)."""
+def _render_whatsapp_share(
+    report: str,
+    *,
+    key: str,
+    caption: str = "",
+    pdf_title: str = "",
+    pdf_client: str = "",
+    pdf_tool: str = "",
+    pdf_footer: str = "",
+) -> None:
+    """Show copyable summary + WhatsApp + optional one-click PDF report."""
     try:
         from tt_core.whatsapp_share import wa_me_url
     except Exception:
         wa_me_url = lambda t: f"https://wa.me/?text={urllib.parse.quote(t or '')}"  # noqa: E731
 
-    st.markdown("##### 📤 一鍵傳 WhatsApp 俾客戶")
+    st.markdown("##### 📤 帶得走：WhatsApp／PDF")
     if caption:
         st.caption(caption)
     else:
-        st.caption("摘要已預填；撳掣開 WhatsApp 揀對話即可傳送（傳前可改字）。")
+        st.caption("可開 WhatsApp 傳摘要，或下載 PDF 用 report 形式同客戶講解。")
     st.code(report, language=None)
-    st.link_button(
-        "打開 WhatsApp 傳送",
-        wa_me_url(report),
-        use_container_width=True,
-    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.link_button(
+            "打開 WhatsApp 傳送",
+            wa_me_url(report),
+            use_container_width=True,
+        )
+    with c2:
+        try:
+            from tt_core.client_pdf import build_client_pdf, pdf_filename
+
+            pdf_bytes = build_client_pdf(
+                title=pdf_title or "客戶報告",
+                body=report,
+                client=pdf_client or "",
+                tool_name=pdf_tool or "",
+                agent=str(st.session_state.get("user") or ""),
+                footer=pdf_footer or "",
+            )
+            st.download_button(
+                "下載 PDF 報告",
+                data=pdf_bytes,
+                file_name=pdf_filename(
+                    title=pdf_title, client=pdf_client, tool=pdf_tool
+                ),
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"{key}_pdf",
+            )
+        except Exception as e:
+            st.caption(f"PDF 暫時未能產生：{e}")
 
 
 def _avatar_url(row) -> str:
@@ -4503,6 +4538,10 @@ def page_medical_uw():
             wa_text,
             key="mu_wa",
             caption="客戶版摘要會註明「只供參考、非最終核保」。",
+            pdf_title="健康狀況討論摘要",
+            pdf_client=str(st.session_state.get("mu_client_name") or ""),
+            pdf_tool="常見疾病核保",
+            pdf_footer="只供參考，並非正式核保決定；最終以保險公司核保為準。",
         )
     except Exception as e:
         st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
@@ -4662,7 +4701,13 @@ def page_cashflow_taccount():
                 format_hkd=cf.format_hkd,
                 budget_hint=hint,
             )
-            _render_whatsapp_share(wa_text, key="cf_wa")
+            _render_whatsapp_share(
+                wa_text,
+                key="cf_wa",
+                pdf_title="每月 Cashflow 報告",
+                pdf_client=client,
+                pdf_tool="收入／支出 T-Account",
+            )
         except Exception as e:
             st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
 
@@ -4968,7 +5013,14 @@ def page_protection_gap():
                 total_prem=total_prem,
                 format_hkd=pg.format_hkd,
             )
-            _render_whatsapp_share(wa_text, key="pg_wa")
+            _render_whatsapp_share(
+                wa_text,
+                key="pg_wa",
+                pdf_title="保障缺口分析報告",
+                pdf_client=client,
+                pdf_tool="保障缺口",
+                pdf_footer="建議保額只供銷售參考，並非核保或財務建議；實際需要視乎家庭責任、負債、Lifestyle。",
+            )
         except Exception as e:
             st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
 
@@ -5212,6 +5264,10 @@ def page_medical_finance():
             wa,
             key="mf_wa",
             caption="客戶版試算摘要（含非保證／非正式報價聲明）。",
+            pdf_title="醫療融資試算報告",
+            pdf_client=client,
+            pdf_tool="醫療融資計算機",
+            pdf_footer="試算含非保證假設，並非正式報價；實際紅利／退保價值可能較高或較低。",
         )
     except Exception as e:
         st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
@@ -5335,6 +5391,10 @@ def page_recruit_package_compare():
             wa,
             key="rpc_wa",
             caption="招募面談摘要；傳前可改字。記得聲明非正式報價／以公司條款為準。",
+            pdf_title="新人 Package 對比報告",
+            pdf_client=prospect,
+            pdf_tool="保險公司新人 Package 對比",
+            pdf_footer="非正式報價；實際以各公司最新條款及合約為準。",
         )
     except Exception as e:
         st.caption(f"WhatsApp 摘要暫時未能產生：{e}")

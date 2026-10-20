@@ -7,3 +7,4 @@ Pillow
 openpyxl
 pyarrow
 pypdf>=4.0,<7.0
+fpdf2>=2.7,<3.0
