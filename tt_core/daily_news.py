@@ -1,30 +1,36 @@
-"""今日重點新聞 — 3 pillars, 5 headlines, WhatsApp openers for prospects."""
+"""今日重點新聞 — 每日鎖定 5 則重中之重（社會／財經／內地），WhatsApp openers."""
 
 from __future__ import annotations
 
 import html
+import json
 import os
 import re
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 # Keep home snappy after login — never wait long on slow RSS hosts
 _FEED_TIMEOUT_SEC = float(os.environ.get("TIM_TEAM_NEWS_FEED_TIMEOUT", "3"))
 _FETCH_BUDGET_SEC = float(os.environ.get("TIM_TEAM_NEWS_BUDGET_SEC", "4.5"))
+_HK_TZ = ZoneInfo("Asia/Hong_Kong")
+_PIN_DIR = Path(os.environ.get("TIM_TEAM_CACHE_DIR", "/tmp/tim_team_cache"))
+_SETTINGS_KEY_PREFIX = "daily_news_pack_"
 
 # pillar → display label
 PILLAR_LABELS = {
-    "society": "社會關注",
-    "finance": "財經經濟",
-    "china": "內地政策",
+    "society": "社會問題",
+    "finance": "金融經濟",
+    "china": "內地政經",
 }
 
 # Feeds tagged by preferred pillar (verified public RSS)
@@ -56,9 +62,36 @@ _CHINA_KW = re.compile(
     r"china|beijing|xi jinping|pboc|yuan|cpc",
     re.I,
 )
-# Soft filter: drop obvious entertainment/sports noise from society picks
+# Drop entertainment / sports / lifestyle fluff — not「重中之重」
 _NOISE_KW = re.compile(
-    r"球賽|足球|籃球|演唱會|娛樂|明星|戀情|綜藝|電影票房|奧運金牌",
+    r"球賽|足球|籃球|網球|棒球|演唱會|娛樂|明星|戀情|戀愛|綜藝|電影票房|奧運|"
+    r"選美|八卦|寵物|食評|食通街|旅遊推介|穿搭|時裝周|劇集|綜藝節目|"
+    r"concert|celebrity|gossip|premier league|nba",
+    re.I,
+)
+# Must-have theme signals for「重中之重」scoring
+_PRIORITY_SOCIETY = re.compile(
+    r"房屋|公屋|居屋|樓價|租金|劏房|醫療|醫院|公營醫療|教育|學費|學校|"
+    r"就業|失業|最低工資|貧富|綜援|福利|民生|立法會|特首|特區政府|公務員|"
+    r"港鐵|交通|重大意外|火災|爆炸|災難|颱風|暴雨|停電|食水|治安|毒品|"
+    r"虐兒|性暴力|人口|移民|人才|通關|口岸|疫情|流感|疫苗|強制檢測|"
+    r"退休|生果金|強積金|安老|貧窮|基層|工潮|罷工|裁員|"
+    r"戰爭|衝突|制裁|地緣|停火|核|導彈",
+    re.I,
+)
+_PRIORITY_FINANCE = re.compile(
+    r"加息|減息|聯儲|美聯儲|利率|息口|恒指|港股|美股|樓市|成交|"
+    r"GDP|通脹|通縮|財赤|預算案|財政預算|稅制|關稅|貿易戰|貿易|"
+    r"銀行|保險業|匯控|中移動|騰訊|阿里|人行|人民幣|港元|聯繫匯率|"
+    r"就業數據|零售銷售|出口|進口|IPO|債市|違約|破產|裁員|盈利警告|"
+    r"金管局|證監|聯交所|股市|匯市|油價|金價",
+    re.I,
+)
+_PRIORITY_CHINA = re.compile(
+    r"國務院|中央|政治局|兩會|習近平|總理|李強|人行|人民幣|發改委|"
+    r"商務部|證監會|監管|刺激|穩增長|地方債|房地產調控|大灣區|粵港澳|"
+    r"國安|白皮書|條例|法規|部委|省委|市委|中央經濟工作|改革|"
+    r"內地政策|中美|台海|解放軍",
     re.I,
 )
 
@@ -137,7 +170,12 @@ def _classify_pillar(title: str, feed_pillar: str) -> str:
     return "society"
 
 
-def _fetch_feed(pillar: str, source: str, url: str, *, limit: int = 8) -> list[dict[str, Any]]:
+def _hk_today() -> str:
+    """Hong Kong calendar date — daily pack key (全日同一組新聞)."""
+    return datetime.now(_HK_TZ).strftime("%Y-%m-%d")
+
+
+def _fetch_feed(pillar: str, source: str, url: str, *, limit: int = 12) -> list[dict[str, Any]]:
     req = Request(
         url,
         headers={
@@ -156,7 +194,8 @@ def _fetch_feed(pillar: str, source: str, url: str, *, limit: int = 8) -> list[d
         link = _local_text(item, "link")
         if not title or not link:
             continue
-        if _NOISE_KW.search(title) and pillar == "society":
+        # Entertainment/sports never make the daily 5
+        if _NOISE_KW.search(title):
             continue
         pub = _parse_date(_local_text(item, "pubDate", "published", "updated"))
         final_pillar = _classify_pillar(title, pillar)
@@ -290,71 +329,218 @@ def wa_opener_url(title: str, pillar: str) -> str:
     return f"https://wa.me/?text={quote(whatsapp_opener(title, pillar))}"
 
 
-def _pick_balanced(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
-    """Prefer 2 society + 2 finance + 1 china; backfill if a pillar is thin.
+def _title_key(title: str) -> str:
+    return re.sub(r"\s+", "", str(title or "")).lower()
 
-    Prefer Traditional/Simplified Chinese titles (better for HK WhatsApp openers).
+
+def _importance_score(row: dict[str, Any], *, now_ts: float | None = None) -> float:
+    """Score「重中之重」— theme priority first, recency only as tie-break."""
+    title = str(row.get("title") or "")
+    pillar = str(row.get("pillar") or "society")
+    score = 0.0
+
+    hit_s = bool(_PRIORITY_SOCIETY.search(title))
+    hit_f = bool(_PRIORITY_FINANCE.search(title))
+    hit_c = bool(_PRIORITY_CHINA.search(title))
+
+    if pillar == "society" and hit_s:
+        score += 55
+    elif pillar == "finance" and hit_f:
+        score += 55
+    elif pillar == "china" and hit_c:
+        score += 55
+
+    # Cross-pillar substance still counts
+    if hit_f:
+        score += 18
+    if hit_c:
+        score += 18
+    if hit_s:
+        score += 12
+
+    if _has_cjk(title):
+        score += 6
+    if _NOISE_KW.search(title):
+        score -= 50
+
+    # Recency: at most ~12 pts — never outrank a real priority story
+    ts = float(row.get("ts") or 0.0)
+    if ts > 0:
+        now = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
+        age_h = max(0.0, (now - ts) / 3600.0)
+        score += max(0.0, 12.0 - age_h / 4.0)
+
+    return score
+
+
+def _attach_wa(row: dict[str, Any]) -> dict[str, Any]:
+    pillar = row.get("pillar") or "society"
+    out = dict(row)
+    out["wa_text"] = whatsapp_opener(out["title"], pillar)
+    out["wa_url"] = wa_opener_url(out["title"], pillar)
+    out["pillar_label"] = PILLAR_LABELS.get(pillar, "社會問題")
+    return out
+
+
+def _pick_balanced(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+    """Pick up to 5「重中之重」: 2 社會 + 2 財經 + 1 內地, ranked by importance.
+
+    Backfill by global importance if a pillar is thin. Skips low-substance fluff
+    when higher-scored alternatives exist.
     """
+    return _pick_priority(items, limit=limit)
+
+
+def _pick_priority(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+    now_ts = datetime.now(timezone.utc).timestamp()
     by: dict[str, list[dict[str, Any]]] = {"society": [], "finance": [], "china": []}
     seen: set[str] = set()
 
-    def _rank_key(row: dict[str, Any]) -> tuple:
-        # Higher = better: CJK first, then recency
-        return (1 if _has_cjk(row.get("title") or "") else 0, row.get("ts") or 0.0)
-
-    for row in sorted(items, key=_rank_key, reverse=True):
-        key = re.sub(r"\s+", "", row["title"]).lower()
-        if key in seen:
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for row in items:
+        key = _title_key(row.get("title") or "")
+        if not key or key in seen:
             continue
         seen.add(key)
         p = row.get("pillar") or "society"
         if p not in by:
             p = "society"
-        by[p].append(row)
+        enriched = dict(row)
+        enriched["pillar"] = p
+        enriched["_score"] = _importance_score(enriched, now_ts=now_ts)
+        by[p].append(enriched)
+        scored.append((float(enriched["_score"]), enriched))
 
-    # Within each pillar, keep CJK + newest order
     for p in by:
-        by[p].sort(key=_rank_key, reverse=True)
+        by[p].sort(key=lambda r: (float(r.get("_score") or 0), float(r.get("ts") or 0)), reverse=True)
+    scored.sort(key=lambda x: (x[0], float(x[1].get("ts") or 0)), reverse=True)
 
     quotas = {"society": 2, "finance": 2, "china": 1}
     picked: list[dict[str, Any]] = []
     used: set[str] = set()
 
-    def _take(pillar: str, n: int) -> None:
+    def _take(pillar: str, n: int, *, min_score: float = 20.0) -> None:
         for row in by.get(pillar, []):
-            if len([x for x in picked if x["pillar"] == pillar]) >= n:
+            if sum(1 for x in picked if x["pillar"] == pillar) >= n:
                 break
-            k = re.sub(r"\s+", "", row["title"]).lower()
+            # Prefer substance; allow softer fill only if pillar otherwise empty
+            if float(row.get("_score") or 0) < min_score and any(
+                float(r.get("_score") or 0) >= min_score for r in by.get(pillar, [])
+            ):
+                continue
+            k = _title_key(row["title"])
             if k in used:
                 continue
             used.add(k)
             picked.append(row)
 
     for pillar, n in quotas.items():
-        _take(pillar, n)
+        _take(pillar, n, min_score=20.0)
+        # If still empty for this pillar, take best available regardless
+        if not any(x["pillar"] == pillar for x in picked):
+            _take(pillar, 1, min_score=-999.0)
 
-    # Backfill to `limit` from remaining (CJK-first)
     if len(picked) < limit:
-        rest: list[dict[str, Any]] = []
-        for pillar in ("society", "finance", "china"):
-            rest.extend(by[pillar])
-        rest.sort(key=_rank_key, reverse=True)
-        for row in rest:
+        for _score, row in scored:
             if len(picked) >= limit:
                 break
-            k = re.sub(r"\s+", "", row["title"]).lower()
+            k = _title_key(row["title"])
             if k in used:
                 continue
             used.add(k)
             picked.append(row)
 
-    for row in picked:
-        pillar = row.get("pillar") or "society"
-        row["wa_text"] = whatsapp_opener(row["title"], pillar)
-        row["wa_url"] = wa_opener_url(row["title"], pillar)
-        row["pillar_label"] = PILLAR_LABELS.get(pillar, "社會關注")
+    # Stable display order: society → finance → china, then score within
+    order = {"society": 0, "finance": 1, "china": 2}
+    picked.sort(
+        key=lambda r: (
+            order.get(str(r.get("pillar")), 9),
+            -float(r.get("_score") or 0),
+            -float(r.get("ts") or 0),
+        )
+    )
 
-    return picked[:limit]
+    out = [_attach_wa(r) for r in picked[:limit]]
+    for r in out:
+        r.pop("_score", None)
+    return out
+
+
+def _pin_path(day: str) -> Path:
+    return _PIN_DIR / f"daily_news_{day}.json"
+
+
+def _load_daily_pin(day: str) -> dict[str, Any] | None:
+    """Load today's locked pack from disk (and best-effort system_settings)."""
+    path = _pin_path(day)
+    try:
+        if path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            items = data.get("items") or []
+            if data.get("day") == day and isinstance(items, list) and items:
+                return data
+    except Exception:
+        pass
+    # Cross-replica best effort via Sheets settings
+    try:
+        from tt_core.coach_tim import _settings_get
+
+        raw = _settings_get(f"{_SETTINGS_KEY_PREFIX}{day}", "")
+        if raw:
+            data = json.loads(raw)
+            items = data.get("items") or []
+            if data.get("day") == day and isinstance(items, list) and items:
+                # Mirror to disk for faster subsequent reads on this worker
+                try:
+                    _PIN_DIR.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+                return data
+    except Exception:
+        pass
+    return None
+
+
+def _save_daily_pin(day: str, payload: dict[str, Any]) -> None:
+    """Persist today's pack so every login sees the same 5 headlines."""
+    payload = dict(payload)
+    payload["day"] = day
+    try:
+        _PIN_DIR.mkdir(parents=True, exist_ok=True)
+        _pin_path(day).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        from tt_core.coach_tim import _settings_set
+
+        # Keep payload compact for Sheets cell
+        slim_items = []
+        for row in payload.get("items") or []:
+            slim_items.append(
+                {
+                    "title": row.get("title"),
+                    "url": row.get("url"),
+                    "source": row.get("source"),
+                    "pillar": row.get("pillar"),
+                    "pillar_label": row.get("pillar_label"),
+                    "published": row.get("published"),
+                    "ts": row.get("ts"),
+                    "wa_text": row.get("wa_text"),
+                    "wa_url": row.get("wa_url"),
+                }
+            )
+        slim = {
+            "day": day,
+            "items": slim_items,
+            "fetched_at": payload.get("fetched_at"),
+            "ok": payload.get("ok"),
+            "pillars": payload.get("pillars"),
+            "pinned": True,
+        }
+        _settings_set(f"{_SETTINGS_KEY_PREFIX}{day}", json.dumps(slim, ensure_ascii=False))
+    except Exception:
+        pass
 
 
 def _fetch_feed_safe(pillar: str, source: str, url: str) -> tuple[list[dict[str, Any]], str | None]:
@@ -366,21 +552,45 @@ def _fetch_feed_safe(pillar: str, source: str, url: str) -> tuple[list[dict[str,
         return [], f"{source}:{type(e).__name__}"
 
 
-@st.cache_data(ttl=30 * 60, show_spinner=False)
-def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 6) -> dict[str, Any]:
-    """Return up to 5 headlines across 3 pillars. Cached ~30 minutes.
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def fetch_daily_headlines(
+    limit: int = 5,
+    day: str = "",
+    _cache_ver: int = 7,
+) -> dict[str, Any]:
+    """Return today's locked 5「重中之重」headlines (society / finance / china).
 
-    Feeds are fetched **in parallel** with a short per-feed timeout and an
-    overall budget so a cold home page after login stays under ~5s.
+    ``day`` is the Hong Kong calendar date. The first successful pick for that
+    day is pinned (disk + system_settings) so every login sees the same five —
+    not a reshuffle on each cold start / RSS race.
     """
     import time
+
+    day = (day or _hk_today()).strip()
+    pinned = _load_daily_pin(day)
+    if pinned and (pinned.get("items") or []):
+        items = list(pinned["items"])[:limit]
+        # Refresh WA copy in case opener templates changed mid-day
+        items = [_attach_wa(r) for r in items]
+        return {
+            "items": items,
+            "fetched_at": str(pinned.get("fetched_at") or ""),
+            "errors": list(pinned.get("errors") or []),
+            "ok": True,
+            "day": day,
+            "pinned": True,
+            "pillars": {
+                "society": sum(1 for x in items if x.get("pillar") == "society"),
+                "finance": sum(1 for x in items if x.get("pillar") == "finance"),
+                "china": sum(1 for x in items if x.get("pillar") == "china"),
+            },
+        }
 
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
     started = time.monotonic()
     budget = max(1.5, _FETCH_BUDGET_SEC)
 
-    # Parallel RSS — sequential 7×10s used to stall login→home
     with ThreadPoolExecutor(max_workers=min(8, len(_FEEDS))) as pool:
         futures = {
             pool.submit(_fetch_feed_safe, pillar, source, url): source
@@ -397,23 +607,28 @@ def fetch_daily_headlines(limit: int = 5, _cache_ver: int = 6) -> dict[str, Any]
                     break
         except TimeoutError:
             errors.append("budget:TimeoutError")
-        # Cancel stragglers so the home page can paint
         for fut in futures:
             if not fut.done():
                 fut.cancel()
 
-    items = _pick_balanced(collected, limit=limit)
-    return {
+    items = _pick_priority(collected, limit=limit)
+    payload = {
         "items": items,
-        "fetched_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M"),
+        "fetched_at": datetime.now(_HK_TZ).strftime("%Y-%m-%d %H:%M"),
         "errors": errors,
         "ok": bool(items),
+        "day": day,
+        "pinned": False,
         "pillars": {
             "society": sum(1 for x in items if x.get("pillar") == "society"),
             "finance": sum(1 for x in items if x.get("pillar") == "finance"),
             "china": sum(1 for x in items if x.get("pillar") == "china"),
         },
     }
+    if items:
+        _save_daily_pin(day, payload)
+        payload["pinned"] = True
+    return payload
 
 
 def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
@@ -586,7 +801,7 @@ def _news_panel_html(items: list[dict[str, Any]], *, fetched_at: str) -> str:
       <div class="tt-news-kicker">Morning briefing</div>
       <h2 class="tt-news-title-main">今日重點新聞</h2>
     </div>
-    <div class="tt-news-meta">{when}<br/>社會 · 財經 · 內地<br/>撳標題展開</div>
+    <div class="tt-news-meta">{when}<br/>今日五則重中之重 · 全日不變<br/>社會問題 · 金融經濟 · 內地政經<br/>撳標題展開</div>
   </div>
   <div class="tt-news-list">{body}</div>
 </div>
@@ -610,8 +825,9 @@ def render_daily_news(*, limit: int = 5) -> None:
     """Homepage block: collapsed headlines; expand for link + WhatsApp angle."""
     import streamlit.components.v1 as components
 
+    day = _hk_today()
     try:
-        data = fetch_daily_headlines(limit=limit)
+        data = fetch_daily_headlines(limit=limit, day=day)
     except Exception:
         st.caption("新聞暫時載入唔到，稍後自動再試。")
         return
@@ -623,7 +839,10 @@ def render_daily_news(*, limit: int = 5) -> None:
             st.caption("（網絡／RSS 暫時唔穩定）")
         return
 
-    panel = _news_panel_html(items, fetched_at=str(data.get("fetched_at") or ""))
+    when = str(data.get("fetched_at") or "")
+    if data.get("pinned") and day:
+        when = f"{day} · 今日鎖定" + (f" · {when}" if when else "")
+    panel = _news_panel_html(items, fetched_at=when)
     # Collapsed list is compact; leave room so one expanded row + WA fits
-    height = 100 + (78 * len(items)) + 220
-    components.html(panel, height=min(height, 900), scrolling=True)
+    height = 110 + (78 * len(items)) + 220
+    components.html(panel, height=min(height, 920), scrolling=True)
