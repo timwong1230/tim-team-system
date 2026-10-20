@@ -22,6 +22,31 @@ def test_strip_whatsapp_markup():
     assert "只供參考" in plain
 
 
+def test_parse_report_blocks_classifies_structure():
+    from tt_core.client_pdf import parse_report_blocks
+
+    raw = (
+        "🛡️ *保障分析摘要* — 陳生\n\n"
+        "四大保障達標：*0/4*\n"
+        "• *人壽*：有買但不足\n"
+        "  已有 $1,000,000／建議 $5,000,000\n"
+        "已有保障總額：$1,000,000\n"
+        "保障缺口約：*$6,000,000*\n"
+        "_只供參考_\n"
+    )
+    blocks = parse_report_blocks(raw)
+    kinds = [k for k, _ in blocks]
+    texts = [t for _, t in blocks]
+    # WA opener title dropped (redundant with PDF title)
+    assert not any("保障分析摘要" in t for t in texts)
+    assert "bullet" in kinds
+    assert "detail" in kinds
+    assert "hero" in kinds
+    assert "strong" in kinds
+    assert "note" in kinds
+    assert any("保障缺口" in t for k, t in blocks if k == "hero")
+
+
 def test_build_client_pdf_contains_chinese_and_is_pdf():
     from tt_core.client_pdf import build_client_pdf, pdf_filename, resolve_cjk_font
 
@@ -29,11 +54,14 @@ def test_build_client_pdf_contains_chinese_and_is_pdf():
     assert Path(font).is_file()
 
     body = (
-        "保障分析摘要 — 陳生\n\n"
-        "四大保障達標：0/4\n"
-        "• 人壽：有買但不足\n"
+        "*保障分析摘要* — 陳生\n\n"
+        "四大保障達標：*0/4*\n"
+        "• *人壽*：有買但不足\n"
         "  已有 $1,000,000／建議 $5,000,000\n"
-        "保障缺口約：$6,000,000\n"
+        "• *危疾*：未有\n"
+        "  已有 $0／建議 $2,000,000\n"
+        "保障缺口約：*$6,000,000*\n"
+        "_呢份只供參考，實際需要視乎家庭責任。_\n"
     )
     data = build_client_pdf(
         title="保障缺口分析報告",
@@ -43,7 +71,7 @@ def test_build_client_pdf_contains_chinese_and_is_pdf():
         agent="Tim",
     )
     assert data.startswith(b"%PDF")
-    assert len(data) > 500
+    assert len(data) > 800
     name = pdf_filename(client="陳生", tool="保障缺口")
     assert name.endswith(".pdf")
     assert "TIM-" in name
