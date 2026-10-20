@@ -1676,6 +1676,12 @@ def page_coach_tim():
             f"AI Tim 背景諗緊：「{str(job.get('question') or '')[:48]}」——"
             "你可以去其他版面做嘢，返嚟就有答案。"
         )
+        if st.button("取消等待／解鎖對話", use_container_width=True, key="ct_cancel_job"):
+            cj.cancel_job(user, reason="已取消等待")
+            cj.sync_job_into_session(user)
+            st.session_state.pop("coach_tim_job_running", None)
+            st.toast("已取消，可以再問", icon="ℹ️")
+            st.rerun()
     elif ai_on:
         st.success(
             "AI Tim 已接通——按你嘅業績、跟進同準客戶即時答。"
@@ -2018,20 +2024,26 @@ def page_coach_tim():
 
     if job_running:
         with st.chat_message("assistant"):
-            st.markdown("_⋯ AI Tim 背景諗緊，完成後呢度會自動出現答案。_")
+            st.markdown(
+                "_⋯ AI Tim 背景諗緊（約數十秒）。完成後呢度會自動出現答案；"
+                "若太耐可撳上面「取消等待」。_"
+            )
 
         @st.fragment(run_every=2)
         def _coach_page_poll() -> None:
-            if cj.sync_job_into_session(user):
+            # Sweep + sync — unlocks if the job timed out in the background
+            if cj.sync_job_into_session(user) or not cj.is_running(user):
                 st.rerun()
 
         _coach_page_poll()
 
     chat_pending = st.session_state.pop("coach_tim_pending", None)
     user_text = chat_pending or quick
+    # Keep input enabled — user can cancel via button; disabled chat felt "broken"
     chat_in = st.chat_input(
-        "AI Tim 諗緊上一條…稍等" if job_running else "問 AI Tim…（例如：幫我打卡／拆呢單點跟）",
-        disabled=job_running,
+        "AI Tim 諗緊上一條…完成或取消後再問"
+        if job_running
+        else "問 AI Tim…（例如：幫我打卡／拆 Elaine 點跟）"
     )
     if chat_in and not job_running:
         user_text = chat_in
