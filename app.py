@@ -2225,6 +2225,7 @@ def _render_whatsapp_share(
     pdf_client: str = "",
     pdf_tool: str = "",
     pdf_footer: str = "",
+    pdf_data: dict | None = None,
 ) -> None:
     """Show copyable summary + WhatsApp + optional one-click PDF report."""
     try:
@@ -2256,6 +2257,7 @@ def _render_whatsapp_share(
                 tool_name=pdf_tool or "",
                 agent=str(st.session_state.get("user") or ""),
                 footer=pdf_footer or "",
+                pdf_data=pdf_data,
             )
             st.download_button(
                 "下載 PDF 報告",
@@ -5020,6 +5022,15 @@ def page_protection_gap():
                 pdf_client=client,
                 pdf_tool="保障缺口",
                 pdf_footer="建議保額只供銷售參考，並非核保或財務建議；實際需要視乎家庭責任、負債、Lifestyle。",
+                pdf_data={
+                    "kind": "protection_gap",
+                    "pillars": pillars,
+                    "policies": rows,
+                    "summary": summary,
+                    "total_have": total_have,
+                    "total_gap": total_gap,
+                    "total_prem": total_prem,
+                },
             )
         except Exception as e:
             st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
