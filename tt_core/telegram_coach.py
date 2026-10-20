@@ -267,13 +267,14 @@ def telegram_start_message() -> str:
     from tt_core.product_knowledge import product_pack_labels
 
     packs = product_pack_labels()
-    pack_line = "、".join(packs) if packs else "產品知識"
+    pack_line = "、".join(packs) if packs else "產品／培訓知識"
     return (
         "你好，我係 **Coach Tim／AI Tim**（Telegram）。\n\n"
-        f"而家已載入產品知識：**{pack_line}**。\n"
-        "可以問例如「危疾全應援點賣」「所需全同更周全分別」「家添守護點講」。\n\n"
-        "若要跟住你嘅業績／準客戶傾下一步，叫 Leader 喺 M+2 將你嘅 Telegram "
-        "綁定 M+2 帳號。"
+        f"而家已載入：**{pack_line}**。\n"
+        "可以問例如：\n"
+        "- 「危疾全應援點賣」「所需全同更周全分別」\n"
+        "- 「約唔到人點開」「異議處理」「轉介紹 Script」／MDRT 基本功\n\n"
+        "若要跟住你嘅業績／準客戶傾下一步，喺呢度打 `/link 你的M+2帳號`。"
     )
 
 

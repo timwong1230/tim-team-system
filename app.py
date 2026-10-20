@@ -1836,15 +1836,20 @@ def page_coach_tim():
                 st.toast("已儲存", icon="✅")
                 st.rerun()
 
-            with st.expander("Telegram Coach Tim：產品知識＋Bot", expanded=True):
+            with st.expander("Telegram Coach Tim：產品／培訓知識＋Bot", expanded=True):
                 try:
                     from tt_core import telegram_coach as tg
                     from tt_core import product_knowledge as pk
 
+                    # Refresh export so new packs (MDRT 基本功) are included
+                    try:
+                        pk.write_telegram_knowledge_file()
+                    except Exception:
+                        pass
                     status = tg.knowledge_status()
                     names = "、".join(status.get("pack_names") or []) or "（未有）"
                     st.markdown(
-                        f"已準備俾 **Telegram Coach Tim** 用嘅產品知識：**{names}**。"
+                        f"已準備俾 **Telegram Coach Tim**：**{names}**。"
                     )
                     kb_path = pk.telegram_knowledge_path()
                     if kb_path.is_file():
@@ -1871,9 +1876,31 @@ def page_coach_tim():
                             use_container_width=True,
                             key="ct_dl_ci_pdf",
                         )
+                    train_dir = Path(__file__).resolve().parent / "static" / "training"
+                    model_img = train_dir / "mdrt-fundamentals-model.jpg"
+                    scripts_img = train_dir / "mdrt-8-gates-scripts.jpg"
+                    if model_img.is_file():
+                        st.download_button(
+                            "下載 MDRT 基本功模型圖",
+                            data=model_img.read_bytes(),
+                            file_name=model_img.name,
+                            mime="image/jpeg",
+                            use_container_width=True,
+                            key="ct_dl_mdrt_model",
+                        )
+                    if scripts_img.is_file():
+                        st.download_button(
+                            "下載 8難關×3段 Script 圖",
+                            data=scripts_img.read_bytes(),
+                            file_name=scripts_img.name,
+                            mime="image/jpeg",
+                            use_container_width=True,
+                            key="ct_dl_mdrt_scripts",
+                        )
                     st.caption(
                         "若 Telegram bot 係 Custom GPT／外部平台：下載上面檔案再上載去佢嘅 knowledge。"
-                        "若係 BotFather bot：貼 token，撳「拉取並回覆」即可用同一套產品知識答。"
+                        "若係 BotFather bot：貼 token，撳「拉取並回覆」即可用同一套知識答"
+                        "（產品＋MDRT 基本功 Script）。"
                     )
                     tok_existing = tg.get_bot_token()
                     if tok_existing:

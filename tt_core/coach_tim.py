@@ -63,7 +63,7 @@ TOOL_CATALOG: dict[str, str] = {
     TOOL_SEARCH_PROSPECTS: "按人名搜尋準客戶",
     TOOL_STUCK_CASES: "卡住／久未推進個案",
     TOOL_TEAM_OVERVIEW: "團隊教練總覽（Leader）",
-    TOOL_PRODUCT_KB: "產品知識（危疾全應援等）",
+    TOOL_PRODUCT_KB: "產品／培訓知識（危疾全應援、MDRT 基本功等）",
 }
 
 
@@ -548,6 +548,14 @@ def choose_tools(user_text: str, *, role: str = "Member") -> list[str]:
                 "產品",
                 "計劃書",
                 "賣點",
+                "基本功",
+                "難關",
+                "話術",
+                "script",
+                "無人脈",
+                "約唔到",
+                "異議",
+                "轉介紹",
             )
         )
 
@@ -832,6 +840,7 @@ def system_prompt(ctx: dict[str, Any]) -> str:
 6. 如果問醫療融資／保障缺口／打卡／準客戶名單，引導去 M+2 對應功能。
 {write_rule}
 8. 如果 briefing 有「產品知識」（例如危疾全應援），可以教銷售角度／三個級別差異／自選附約；但條款細節以正式計劃書為準，唔好發明保費或保證回報。
+9. 如果 briefing 有「培訓知識／MDRT 基本功」，先診斷卡喺邊關，再俾對應目標＋最多 3 段 Script（A/B/C）；提醒 Script 只係示範，要按對方語氣改。
 """
     product_brief = str(ctx.get("product_brief") or "").strip()
     if product_brief:
@@ -1171,7 +1180,8 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             pass
         return (
             f"{name}，你可以問我 **危疾全應援**（所需全／更周全／摯齊全）、"
-            "家添守護、樂齡無憂點賣。細節以計劃書為準。"
+            "家添守護、樂齡無憂點賣；或者 **MDRT 基本功**（約唔到人／異議／轉介紹）"
+            "要 3 段 Script。細節以計劃書為準；話術請自然調整。"
         )
 
     if intent == "checkin_write":
@@ -1595,6 +1605,7 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     return (
         f"你好 {name}，我係 **AI Tim**（{mode}）。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
-        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10、危疾全應援點賣；"
+        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10、"
+        "危疾全應援點賣、或者「約唔到人點開」／MDRT 基本功 Script；"
         "要打卡可以講「幫我打卡」——齊料後你確認先會寫入。"
     )

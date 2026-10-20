@@ -35,7 +35,22 @@ def test_telegram_start_mentions_product():
 
     msg = telegram_start_message()
     assert "Coach Tim" in msg or "AI Tim" in msg
-    assert "危疾全應援" in msg
+    assert "危疾全應援" in msg or "MDRT" in msg
+    assert "基本功" in msg or "約唔到" in msg
+
+
+def test_answer_telegram_mdrt_skills_offline():
+    from tt_core.telegram_coach import answer_telegram
+
+    with patch("tt_core.coach_tim._secret_gemini_key", return_value=""):
+        with patch("tt_core.coach_tim._secret_openai_key", return_value=""):
+            ans, mode, _meta = answer_telegram(
+                "約唔到人有咩 Script？",
+                telegram_user_id=999002,
+                display_name="Ann",
+            )
+    assert mode == "offline"
+    assert "約唔到" in ans or "小手信" in ans or "見面" in ans
 
 
 def test_answer_telegram_product_offline():

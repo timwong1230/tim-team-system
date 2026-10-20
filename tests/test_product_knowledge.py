@@ -56,9 +56,43 @@ def test_telegram_knowledge_export():
     md = export_telegram_knowledge()
     assert "Telegram Coach Tim" in md
     assert "危疾全應援" in md
+    assert "MDRT 基本功" in md
+    assert "約唔到人" in md
     path = write_telegram_knowledge_file()
     assert path.is_file()
     assert path.name == "telegram_coach_knowledge.md"
+
+
+def test_mdrt_fundamentals_pack_and_scripts():
+    from tt_core.product_knowledge import (
+        format_matched_briefs,
+        get_product_pack,
+        match_product_packs,
+        match_stage,
+        offline_product_reply,
+        offline_skills_reply,
+    )
+
+    pack = get_product_pack("mdrt_fundamentals")
+    assert pack is not None
+    assert len(pack.get("stages") or []) == 8
+    assert match_product_packs("約唔到人點開？")
+    stage = match_stage(pack, "我約唔到人")
+    assert stage and stage.get("id") == 2
+    brief = format_matched_briefs("異議處理點講")
+    assert "異議" in brief or "已經買晒" in brief or "撇" in brief
+    ans = offline_skills_reply("轉介紹點開口", username="Sam")
+    assert ans and "轉介紹" in ans
+    assert "Script" in ans or "示範" in ans
+    ans2 = offline_product_reply("MDRT 基本功有邊幾關", username="Tim")
+    assert ans2 and "難關" in ans2
+
+
+def test_mdrt_training_images_bundled():
+    model = _ROOT / "static" / "training" / "mdrt-fundamentals-model.jpg"
+    scripts = _ROOT / "static" / "training" / "mdrt-8-gates-scripts.jpg"
+    assert model.is_file() and model.stat().st_size > 50_000
+    assert scripts.is_file() and scripts.stat().st_size > 50_000
 
 
 def test_coach_routes_product_tool_and_offline():
