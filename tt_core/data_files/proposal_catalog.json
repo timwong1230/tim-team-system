@@ -1,0 +1,188 @@
+{
+  "plan_types": [
+    {
+      "id": "full_protection",
+      "name_zh": "Full Protection Plan",
+      "name_short": "全面保障",
+      "blurb": "醫療 + 危疾 + 意外，為客戶砌一份保障組合計劃書"
+    },
+    {
+      "id": "saving",
+      "name_zh": "Saving Plan",
+      "name_short": "儲蓄計劃",
+      "blurb": "教育基金／財富傳承等儲蓄計劃書"
+    }
+  ],
+  "medical": [
+    {
+      "id": "vbooster",
+      "name": "FWD 倍衛您醫療計劃",
+      "short": "倍衛您",
+      "premium_source": "table",
+      "finance_plan_id": "vbooster",
+      "term_note": "至 100 歲（以計劃條款為準）",
+      "highlights": [
+        "每年保障額內全數保障（以計劃級別為準）",
+        "不分項目，只睇總額；不限宗數（以條款為準）",
+        "日間手術現金保障",
+        "住院現金（如住公立醫院）",
+        "病房／巡房費／手術費／麻醉費／手術室費用全數保障（符合條款）",
+        "緊急意外全數保障（符合條款）",
+        "無索償折扣：生效 2 年無索償每年 9 折；5 年無索償每年 85 折（以最新條款為準）"
+      ]
+    },
+    {
+      "id": "vprime",
+      "name": "FWD 尊衛您（寰譽版）醫療計劃",
+      "short": "尊衛您（寰譽版）",
+      "premium_source": "table",
+      "finance_plan_id": "vprime",
+      "term_note": "至 100 歲（以計劃條款為準）",
+      "highlights": [
+        "亞洲／全球（美國除外）保障級別可選",
+        "自付費選項靈活",
+        "住院、手術及相關醫療費用保障（以條款為準）",
+        "適合想要較高保障額及地域覆蓋嘅客戶"
+      ]
+    },
+    {
+      "id": "vfamily",
+      "name": "FWD 醫家保醫療計劃",
+      "short": "醫家保",
+      "premium_source": "table",
+      "finance_plan_id": "vfamily",
+      "term_note": "至 100 歲（以計劃條款為準）",
+      "highlights": [
+        "獨立自願醫保風格醫療計劃",
+        "男女分價",
+        "標準保障級別；適合入門全面醫療"
+      ]
+    },
+    {
+      "id": "vtheone",
+      "name": "FWD 至．衛一醫療計劃",
+      "short": "至．衛一",
+      "premium_source": "table",
+      "finance_plan_id": "vtheone",
+      "term_note": "至 100 歲（以計劃條款為準）",
+      "highlights": [
+        "多個保障級別（標準／標準優越版／特等／優等）",
+        "自付費選項齊全",
+        "高階醫療保障定位"
+      ]
+    }
+  ],
+  "critical_illness": [
+    {
+      "id": "ci_essential",
+      "name": "FWD 危疾全應援／應援保（所需全）",
+      "short": "所需全",
+      "premium_source": "manual",
+      "pay_terms": [10, 15, 20, 25, 30],
+      "default_pay_term": 20,
+      "currency": "USD",
+      "default_sa_usd": 128000,
+      "term_note": "保障至約 100 歲；供款年期可選（以條款為準）",
+      "highlights": [
+        "約 62 種危疾；特定器官原位癌／早期癌症及冠狀動脈成形術",
+        "輕微狀況每日住院現金支援（手術並連續住院≥3天）",
+        "首 15 年額外保障：危疾／身故額外約原有投保額 35%",
+        "預支後危疾／身故保障復原 100%（符合條件）",
+        "生活守護權益（ICU 等）"
+      ]
+    },
+    {
+      "id": "ci_advanced",
+      "name": "FWD 危疾全應援／應援保（更周全／升級版）",
+      "short": "更周全",
+      "premium_source": "manual",
+      "pay_terms": [10, 15, 20, 25, 30],
+      "default_pay_term": 20,
+      "currency": "USD",
+      "default_sa_usd": 128000,
+      "term_note": "保障至約 100 歲；供款年期可選（以條款為準）",
+      "highlights": [
+        "在所需全之上擴展；約 86 種特別疾病（含兒童特別疾病）",
+        "指定危疾多重保障高達約 9 次（合共約原有投保額 1290%）",
+        "首 15 年額外保障：危疾／身故額外約 75%",
+        "3 大疾病現金權益（癌症年付／心梗中風月付）",
+        "身體檢查權益（指定保單週年，以條款為準）",
+        "可選家添守護等自選權益"
+      ]
+    },
+    {
+      "id": "ci_premier",
+      "name": "FWD 危疾全應援／應援保（摯齊全）",
+      "short": "摯齊全",
+      "premium_source": "manual",
+      "pay_terms": [10, 15, 20, 25, 30],
+      "default_pay_term": 20,
+      "currency": "USD",
+      "default_sa_usd": 128000,
+      "term_note": "保障至約 100 歲；供款年期可選（以條款為準）",
+      "highlights": [
+        "在更周全之上再加高階保障",
+        "指定危疾試驗性藥物合理及慣常費用（上限以條款為準）",
+        "因危疾入住深切治療部等伸延",
+        "3 大疾病現金權益加強",
+        "延伸重大醫療護理權益"
+      ]
+    }
+  ],
+  "accident": [
+    {
+      "id": "life_accident_rider",
+      "name": "FWD 人生意外保險附約",
+      "short": "人生意外附約",
+      "premium_source": "manual",
+      "default_sa_hkd": 800000,
+      "term_note": "至約 65 歲（以附約條款為準）",
+      "highlights": [
+        "意外身故／傷殘保障（以保額為準）",
+        "意外醫療費用保障（每宗上限以計劃為準）",
+        "可附於主保單，見客時一齊講明"
+      ]
+    },
+    {
+      "id": "full_care_accident",
+      "name": "FWD 全意守護意外（計劃／附約）",
+      "short": "全意守護意外",
+      "premium_source": "manual",
+      "default_sa_hkd": 800000,
+      "term_note": "以正式條款為準",
+      "highlights": [
+        "意外保障計劃／附約選項",
+        "見客時請核對最新計劃書保障額及保費"
+      ]
+    }
+  ],
+  "saving": [
+    {
+      "id": "yingju5",
+      "name": "FWD 盈聚‧天下 II 保險計劃（5 年供）",
+      "short": "盈聚天下 II · 5pay",
+      "premium_source": "manual_usd",
+      "pay_years": 5,
+      "currency": "USD",
+      "default_annual_usd": 10000,
+      "term_note": "可滾存至約 123 歲（以條款為準）",
+      "highlights": [
+        "第 6 年開始可以每年提款；提款後保單繼續滾存",
+        "可以轉換被保人（例如子女），用作財富傳承",
+        "多種貨幣／保單貨幣轉換；保單分拆選項",
+        "長線潛在收益（分紅非保證；IRR／實現率以公司最新資料為準）",
+        "靈活貸款；身故賠償約 105% 保單價值（以條款為準）"
+      ],
+      "goals": [
+        "創造被動收入，為將來子女教育做好準備",
+        "傳承財富，留給後代一點心意"
+      ]
+    }
+  ],
+  "missing_data_notes": [
+    "危疾全應援／應援保：未有按年齡／性別／保額／供款年期嘅保費表——計劃書暫時要同事手動輸入年保費（港元）。",
+    "意外保險：未有保費表——暫時手動輸入年保費（港元）。",
+    "盈聚天下：年供金額由同事／客戶決定；預期回報只係示意，非保證。",
+    "醫療：已接倍衛您／尊衛您／醫家保／至．衛一保費表（同醫療融資計算機同一來源）。"
+  ]
+}

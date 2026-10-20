@@ -1109,6 +1109,7 @@ except Exception as e:
 # Sales / recruit tools live under hubs so mobile top-nav stays short.
 CLIENT_TOOLS_MENU = "🧰 客戶工具"
 CLIENT_TOOL_LABELS = [
+    "📋 計劃書",
     "🩺 常見疾病核保",
     "💹 收入／支出 T-Account",
     "🛡️ 保障缺口",
@@ -4336,7 +4337,7 @@ def _medical_uw():
 def page_client_tools():
     """Hub for client-facing sales tools — keeps root menu short on mobile."""
     st.markdown("## 🧰 客戶工具")
-    st.caption("見客用工具（核保／缺口／融資等）；招募 Package 對比喺「招募工具」。")
+    st.caption("見客用工具（計劃書／核保／缺口／融資等）；招募 Package 對比喺「招募工具」。")
 
     options = list(CLIENT_TOOL_LABELS)
     preferred = st.session_state.get("_client_tool")
@@ -4357,7 +4358,9 @@ def page_client_tools():
     st.session_state["_client_tool"] = pick
     st.divider()
 
-    if "核保" in pick:
+    if "計劃書" in pick:
+        page_proposal()
+    elif "核保" in pick:
         page_medical_uw()
     elif "T-Account" in pick or "收入／支出" in pick:
         page_cashflow_taccount()
@@ -5102,6 +5105,324 @@ def page_protection_gap():
     if st.button("清空重計", use_container_width=True, key="pg_reset"):
         st.session_state["_pg_pending_reset"] = True
         st.rerun()
+
+
+def page_proposal():
+    """見客用：為客戶制作 Full Protection / Saving 計劃書。"""
+    st.markdown("## 📋 計劃書")
+    st.caption(
+        "輸入客戶資料 → 揀 Full Protection 或 Saving Plan → 揀產品 → "
+        "預覽保障內容同保費（可出 PDF／WhatsApp）。"
+    )
+
+    try:
+        from tt_core import proposal as prop
+        from tt_core import proposal_pdf as prop_pdf
+        from tt_core import medical_finance as mf
+        import importlib
+
+        importlib.reload(prop)
+        importlib.reload(prop_pdf)
+    except Exception as e:
+        st.error(f"計劃書模組未能載入：{e}。請 Reboot 後再試。")
+        return
+
+    notes = prop.missing_data_notes()
+    with st.expander("資料齊備情況（請睇清楚）", expanded=True):
+        for n in notes:
+            st.markdown(f"- {n}")
+
+    st.markdown("#### 1. 客戶個人資料")
+    c1, c2 = st.columns(2)
+    with c1:
+        client_name = st.text_input(
+            "姓名", key="prop_name", placeholder="例如：Mathilda／Fai BB"
+        )
+        age = st.number_input(
+            "年齡", min_value=0, max_value=80, value=30, step=1, key="prop_age"
+        )
+    with c2:
+        gender = st.radio("性別", ["女", "男"], horizontal=True, key="prop_gender")
+        occupation = st.text_input(
+            "職業", key="prop_occ", placeholder="例如：教師／行政"
+        )
+
+    st.markdown("#### 2. 計劃類型")
+    plan_types = prop.plan_types()
+    plan_ids = [p["id"] for p in plan_types]
+    plan_labels = {p["id"]: f"{p.get('name_zh')}（{p.get('name_short')}）" for p in plan_types}
+    plan_id = st.radio(
+        "計劃類型",
+        plan_ids,
+        format_func=lambda x: plan_labels.get(x, x),
+        horizontal=True,
+        key="prop_plan_type",
+        label_visibility="collapsed",
+    )
+    blurb = next((p.get("blurb") for p in plan_types if p["id"] == plan_id), "")
+    if blurb:
+        st.caption(blurb)
+
+    proposal = None
+
+    if plan_id == "full_protection":
+        st.markdown("#### 3. 揀保障組合")
+        inc1, inc2, inc3 = st.columns(3)
+        with inc1:
+            want_med = st.checkbox("醫療保險", value=True, key="prop_inc_med")
+        with inc2:
+            want_ci = st.checkbox("危疾保險", value=True, key="prop_inc_ci")
+        with inc3:
+            want_acc = st.checkbox("意外保險", value=True, key="prop_inc_acc")
+
+        med_id = None
+        med_level = None
+        med_ded = None
+        if want_med:
+            st.markdown("##### 醫療保險")
+            meds = prop.products_in("medical")
+            med_id = st.selectbox(
+                "邊份醫療",
+                [m["id"] for m in meds],
+                format_func=lambda i: next(
+                    (m["name"] for m in meds if m["id"] == i), i
+                ),
+                key="prop_med_id",
+            )
+            fin = mf.get_plan(str(next(m["finance_plan_id"] for m in meds if m["id"] == med_id)))
+            o1, o2 = st.columns(2)
+            with o1:
+                if len(fin.get("levels") or []) > 1:
+                    med_level = st.selectbox(
+                        "保障級別",
+                        fin["levels"],
+                        index=fin["levels"].index(fin["default_level"]),
+                        key="prop_med_lv",
+                    )
+                else:
+                    med_level = (fin.get("levels") or ["標準"])[0]
+                    st.caption(f"保障級別：{med_level}")
+            with o2:
+                deds = [int(d) for d in (fin.get("deductibles") or [0])]
+                if len(deds) > 1:
+                    med_ded = st.selectbox(
+                        "自付費（港元）",
+                        deds,
+                        index=deds.index(int(fin.get("default_deductible") or 0)),
+                        format_func=lambda d: "無自付費" if int(d) == 0 else f"${int(d):,}",
+                        key="prop_med_ded",
+                    )
+                else:
+                    med_ded = 0
+                    st.caption("自付費：無")
+
+        ci_id = None
+        ci_sa = None
+        ci_pay = None
+        ci_prem = None
+        if want_ci:
+            st.markdown("##### 危疾保險")
+            cis = prop.products_in("critical_illness")
+            ci_id = st.selectbox(
+                "邊份危疾",
+                [c["id"] for c in cis],
+                format_func=lambda i: next((c["name"] for c in cis if c["id"] == i), i),
+                key="prop_ci_id",
+            )
+            ci_meta = next(c for c in cis if c["id"] == ci_id)
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                ci_sa = st.number_input(
+                    "保額（USD）",
+                    min_value=15000,
+                    max_value=1500000,
+                    value=int(ci_meta.get("default_sa_usd") or 128000),
+                    step=1000,
+                    key="prop_ci_sa",
+                )
+            with c2:
+                pays = [int(x) for x in (ci_meta.get("pay_terms") or [20])]
+                default_pay = int(ci_meta.get("default_pay_term") or pays[0])
+                ci_pay = st.selectbox(
+                    "供款年期",
+                    pays,
+                    index=pays.index(default_pay) if default_pay in pays else 0,
+                    key="prop_ci_pay",
+                )
+            with c3:
+                ci_prem = st.number_input(
+                    "年保費（HKD）*",
+                    min_value=0,
+                    value=0,
+                    step=100,
+                    key="prop_ci_prem",
+                    help="系統未有危疾保費表，請自行輸入報價年保費。",
+                )
+            st.caption("＊危疾保費表未入系統——請填正式報價／計劃書年保費。")
+
+        acc_id = None
+        acc_sa = None
+        acc_prem = None
+        if want_acc:
+            st.markdown("##### 意外保險")
+            accs = prop.products_in("accident")
+            acc_id = st.selectbox(
+                "邊份意外",
+                [a["id"] for a in accs],
+                format_func=lambda i: next((a["name"] for a in accs if a["id"] == i), i),
+                key="prop_acc_id",
+            )
+            acc_meta = next(a for a in accs if a["id"] == acc_id)
+            a1, a2 = st.columns(2)
+            with a1:
+                acc_sa = st.number_input(
+                    "保障額（HKD）",
+                    min_value=0,
+                    value=int(acc_meta.get("default_sa_hkd") or 800000),
+                    step=10000,
+                    key="prop_acc_sa",
+                )
+            with a2:
+                acc_prem = st.number_input(
+                    "年保費（HKD）*",
+                    min_value=0,
+                    value=0,
+                    step=50,
+                    key="prop_acc_prem",
+                    help="系統未有意外保費表，請自行輸入。",
+                )
+            st.caption("＊意外保費表未入系統——請填正式報價年保費。")
+
+        if st.button("產生計劃書", type="primary", use_container_width=True, key="prop_gen_fp"):
+            proposal = prop.build_protection_proposal(
+                client_name=client_name,
+                age=int(age),
+                gender=gender,
+                occupation=occupation,
+                include_medical=want_med,
+                include_ci=want_ci,
+                include_accident=want_acc,
+                medical_id=med_id,
+                medical_level=med_level,
+                medical_deductible=int(med_ded) if med_ded is not None else None,
+                ci_id=ci_id,
+                ci_sa_usd=float(ci_sa) if ci_sa is not None else None,
+                ci_pay_term=int(ci_pay) if ci_pay is not None else None,
+                ci_annual_hkd=float(ci_prem or 0),
+                accident_id=acc_id,
+                accident_sa_hkd=float(acc_sa) if acc_sa is not None else None,
+                accident_annual_hkd=float(acc_prem or 0),
+            )
+            st.session_state["prop_last"] = proposal
+
+    else:
+        st.markdown("#### 3. 揀儲蓄計劃")
+        savs = prop.products_in("saving")
+        sav_id = st.selectbox(
+            "邊份 Saving Plan",
+            [s["id"] for s in savs],
+            format_func=lambda i: next((s["name"] for s in savs if s["id"] == i), i),
+            key="prop_sav_id",
+        )
+        sav_meta = next(s for s in savs if s["id"] == sav_id)
+        s1, s2 = st.columns(2)
+        with s1:
+            purpose = st.selectbox(
+                "用途",
+                ["教育基金", "退休儲備", "財富傳承", "其他儲蓄"],
+                key="prop_sav_purpose",
+            )
+        with s2:
+            annual_usd = st.number_input(
+                "年供（USD）",
+                min_value=0,
+                value=int(sav_meta.get("default_annual_usd") or 10000),
+                step=500,
+                key="prop_sav_usd",
+            )
+        st.caption(str(sav_meta.get("term_note") or ""))
+        if st.button("產生計劃書", type="primary", use_container_width=True, key="prop_gen_sv"):
+            proposal = prop.build_saving_proposal(
+                client_name=client_name,
+                age=int(age),
+                gender=gender,
+                occupation=occupation,
+                saving_id=sav_id,
+                annual_usd=float(annual_usd),
+                purpose=purpose,
+            )
+            st.session_state["prop_last"] = proposal
+
+    proposal = st.session_state.get("prop_last") or proposal
+    if not proposal:
+        return
+
+    st.divider()
+    st.markdown("#### 計劃書預覽")
+    if proposal.get("gaps"):
+        for g in proposal["gaps"]:
+            st.warning(g)
+
+    try:
+        import streamlit.components.v1 as _prop_components
+
+        html = prop.html_preview(proposal)
+        _prop_components.html(html, height=720, scrolling=True)
+    except Exception as e:
+        st.error(f"預覽未能顯示：{e}")
+
+    # WhatsApp + PDF
+    try:
+        from tt_core.whatsapp_share import wa_me_url
+
+        report = prop.proposal_whatsapp(proposal)
+        st.code(report, language=None)
+        st.link_button("打開 WhatsApp 傳送摘要", wa_me_url(report), use_container_width=True)
+    except Exception as e:
+        st.caption(f"WhatsApp 摘要暫時未能產生：{e}")
+
+    try:
+        import base64
+
+        import streamlit.components.v1 as _prop_components
+
+        from tt_core.client_pdf import pdf_filename
+
+        pdf_bytes = prop_pdf.build_proposal_pdf(
+            proposal, agent=str(st.session_state.get("user") or "")
+        )
+        fname = pdf_filename(
+            title=str(proposal.get("title") or "計劃書"),
+            client=str((proposal.get("client") or {}).get("name") or ""),
+            tool="proposal",
+        )
+        b64 = base64.b64encode(pdf_bytes).decode("ascii")
+        p1, p2 = st.columns(2)
+        with p1:
+            _prop_components.html(
+                f"""
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <a href="data:application/pdf;base64,{b64}" download="{fname}" target="_blank" rel="noopener"
+     style="display:block;text-align:center;padding:0.55rem 0.75rem;background:#1C2430;
+            color:#F0D078;text-decoration:none;border-radius:10px;font-weight:600;">
+    新分頁開啟 PDF
+  </a>
+</div>""",
+                height=48,
+            )
+        with p2:
+            st.download_button(
+                "下載計劃書 PDF",
+                data=pdf_bytes,
+                file_name=fname,
+                mime="application/pdf",
+                use_container_width=True,
+                key="prop_pdf_dl",
+            )
+    except Exception as e:
+        st.error(f"PDF 暫時未能產生：{e}")
+
+    st.caption("細節以正式計劃書／條款為準；分紅非保證。數字只留在此裝置 session。")
 
 
 def page_medical_finance():
