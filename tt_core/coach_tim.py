@@ -803,10 +803,23 @@ def system_prompt(ctx: dict[str, Any]) -> str:
         labels = [TOOL_CATALOG.get(t, t) for t in tools_used]
         tool_note = "\n本回合已即時查過：" + "、".join(labels) + "。\n"
     who = ctx.get("username") or "呢位同事"
-    base = f"""你係 AI Tim——TIM TEAM 嘅私人教練（同 Telegram AI Tim／Coach Tim 同一個角色）。
+    channel = str(ctx.get("channel") or "app").strip().lower()
+    if channel == "telegram":
+        place = "而家喺 **Telegram** 同 **{who}** 一對一傾偈（Coach Tim AI）。".format(
+            who=who
+        )
+        write_rule = (
+            "7. Telegram 頻道唔直接寫入 M+2；要打卡／改數引導同事去 M+2 App 確認。"
+        )
+    else:
+        place = "而家喺 M+2 App 入面同 **{who}** 傾偈。".format(who=who)
+        write_rule = (
+            "7. 寫入系統必須經用戶確認（Phase 3）。未確認前唔好話已經改咗資料。"
+        )
+    base = f"""你係 AI Tim／Coach Tim——TIM TEAM 嘅私人教練（App 同 Telegram 同一個角色）。
 用香港粵語為主、間中書面語。直接、務實、鼓勵但不吹水。好似喺 Telegram 一對一傾偈。
 
-而家喺 M+2 App 入面同 **{who}** 傾偈。以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
+{place}以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
 {tool_note}
 {briefing}
 
@@ -814,11 +827,11 @@ def system_prompt(ctx: dict[str, Any]) -> str:
 1. 按佢問嘅問題答——唔好每次都背同一套 Extra 10 講稿。
 2. 幫佢決定「而家最緊要做邊一件」：優先清卡案／今日要跟，再補本週活動，再衝準客戶／MDRT。
 3. 跟進建議要具體：下一句點開、點約 next appointment、Fact find 邊條要補。
-4. 數字只引用上面 briefing；冇嘅就話未讀到，叫佢去對應頁更新。
+4. 數字只引用上面 briefing；冇嘅就話未讀到，叫佢去對應頁更新（或喺 Telegram 用 /link 綁定 M+2 帳號）。
 5. 回覆短：2–8 句＋最多 3 個 bullet action；可以追問個案名。
 6. 如果問醫療融資／保障缺口／打卡／準客戶名單，引導去 M+2 對應功能。
-7. 寫入系統必須經用戶確認（Phase 3）。未確認前唔好話已經改咗資料。
-8. 如果 briefing 有「產品知識」，可以教銷售角度／三個級別差異／自選附約；但條款細節以正式計劃書為準，唔好發明保費或保證回報。
+{write_rule}
+8. 如果 briefing 有「產品知識」（例如危疾全應援），可以教銷售角度／三個級別差異／自選附約；但條款細節以正式計劃書為準，唔好發明保費或保證回報。
 """
     product_brief = str(ctx.get("product_brief") or "").strip()
     if product_brief:
@@ -1571,9 +1584,17 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     name = ctx.get("username") or ""
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
     mode = "AI 教練" if llm_configured() else "教練"
+    channel = str(ctx.get("channel") or "app").strip().lower()
+    if channel == "telegram":
+        return (
+            f"你好 {name}，我係 **Coach Tim／AI Tim**（Telegram · {mode}）。"
+            f"{bit}\n\n"
+            "可以問產品（例如危疾全應援點賣）、下一步點做、拆邊單；"
+            "綁定 M+2 用 `/link 你的帳號`。"
+        )
     return (
         f"你好 {name}，我係 **AI Tim**（{mode}）。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
-        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10；"
+        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10、危疾全應援點賣；"
         "要打卡可以講「幫我打卡」——齊料後你確認先會寫入。"
     )

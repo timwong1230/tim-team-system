@@ -1836,6 +1836,99 @@ def page_coach_tim():
                 st.toast("已儲存", icon="✅")
                 st.rerun()
 
+            with st.expander("Telegram Coach Tim：產品知識＋Bot", expanded=True):
+                try:
+                    from tt_core import telegram_coach as tg
+                    from tt_core import product_knowledge as pk
+
+                    status = tg.knowledge_status()
+                    names = "、".join(status.get("pack_names") or []) or "（未有）"
+                    st.markdown(
+                        f"已準備俾 **Telegram Coach Tim** 用嘅產品知識：**{names}**。"
+                    )
+                    kb_path = pk.telegram_knowledge_path()
+                    if kb_path.is_file():
+                        st.download_button(
+                            "下載知識庫（上載去 Telegram／Custom GPT）",
+                            data=kb_path.read_bytes(),
+                            file_name="telegram_coach_knowledge.md",
+                            mime="text/markdown",
+                            use_container_width=True,
+                            key="ct_dl_tg_kb",
+                        )
+                    brochure = (
+                        Path(__file__).resolve().parent
+                        / "static"
+                        / "products"
+                        / "crisis-allsupporter-insurance-plan-series-tc.pdf"
+                    )
+                    if brochure.is_file():
+                        st.download_button(
+                            "下載危疾全應援小冊子 PDF",
+                            data=brochure.read_bytes(),
+                            file_name=brochure.name,
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="ct_dl_ci_pdf",
+                        )
+                    st.caption(
+                        "若 Telegram bot 係 Custom GPT／外部平台：下載上面檔案再上載去佢嘅 knowledge。"
+                        "若係 BotFather bot：貼 token，撳「拉取並回覆」即可用同一套產品知識答。"
+                    )
+                    tok_existing = tg.get_bot_token()
+                    if tok_existing:
+                        st.caption(f"Bot token：`{tg.mask_token(tok_existing)}`")
+                    tg_tok = st.text_input(
+                        "Telegram BotFather token",
+                        value="",
+                        type="password",
+                        placeholder="123456:AA…",
+                        key="ct_tg_bot_token",
+                    )
+                    t1, t2, t3 = st.columns(3)
+                    with t1:
+                        if st.button("儲存 bot token", use_container_width=True, key="ct_save_tg_tok"):
+                            raw = tg_tok.strip()
+                            if ":" in raw and len(raw) >= 20:
+                                tg.save_bot_token(raw)
+                                st.toast("已儲存 Telegram bot token", icon="✅")
+                                st.rerun()
+                            else:
+                                st.warning("請貼完整 BotFather token。")
+                    with t2:
+                        if st.button("測試 bot", use_container_width=True, key="ct_test_tg"):
+                            me = tg.get_me()
+                            if me.get("ok"):
+                                u = (me.get("result") or {}).get("username") or "?"
+                                st.success(f"Bot 正常：@{u}")
+                            else:
+                                st.error(me.get("description") or "getMe 失敗")
+                    with t3:
+                        if st.button("拉取並回覆", use_container_width=True, key="ct_poll_tg"):
+                            with st.spinner("Telegram 拉取訊息…"):
+                                polled = tg.poll_once(limit=20, timeout=0)
+                            if polled.get("ok"):
+                                st.success(f"已處理 {polled.get('handled', 0)} 則訊息")
+                            else:
+                                st.error(polled.get("error") or "poll 失敗")
+                    push_chat = st.text_input(
+                        "（可選）推送知識庫去 Telegram chat id",
+                        value="",
+                        placeholder="例如你同 bot 嘅 chat id",
+                        key="ct_tg_push_chat",
+                    )
+                    if st.button("推送知識庫去 Telegram", use_container_width=True, key="ct_push_kb"):
+                        if not push_chat.strip():
+                            st.warning("請填 chat id。")
+                        else:
+                            pushed = tg.push_knowledge_to_chat(push_chat.strip())
+                            if pushed.get("ok"):
+                                st.success("已推送知識庫檔案去 Telegram。")
+                            else:
+                                st.error(pushed.get("description") or "推送失敗")
+                except Exception as e:
+                    st.warning(f"Telegram Coach 設定未能載入：{e}")
+
     tg_link = ct.get_telegram_coach_url()
     if tg_link:
         st.markdown(f"[亦可喺 Telegram 開 AI Tim]({tg_link})")

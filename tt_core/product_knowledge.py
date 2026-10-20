@@ -209,3 +209,39 @@ def offline_product_reply(query: str, *, username: str = "你") -> str | None:
         "記住：紅利非保證；細節以計劃書／條款為準。想我比較「所需全 vs 更周全」"
         "或者點講家添守護／樂齡無憂，直接問就得。"
     )
+
+
+def export_telegram_knowledge(*, max_chars: int = 12000) -> str:
+    """Full knowledge document for Telegram Coach Tim / Custom GPT upload."""
+    lines: list[str] = [
+        "# TIM TEAM · Telegram Coach Tim 產品知識庫",
+        "",
+        "用途：俾 Telegram Coach Tim AI／Custom GPT 作為內部培訓知識。"
+        "同事可以問點賣、三個級別分別、附約點講；細節以正式計劃書為準。",
+        "",
+    ]
+    for pack in list_product_packs():
+        lines.append(format_pack_brief(pack, max_chars=max_chars))
+        brochure = str(pack.get("brochure_file") or "").strip()
+        if brochure:
+            lines.append(f"- 小冊子檔案：`{brochure}`")
+        lines.append("")
+    text = "\n".join(lines).strip() + "\n"
+    if len(text) > max_chars:
+        return text[: max_chars - 20] + "\n…（已截斷）\n"
+    return text
+
+
+def telegram_knowledge_path() -> Path:
+    return _DATA_DIR / "telegram_coach_knowledge.md"
+
+
+def write_telegram_knowledge_file() -> Path:
+    """Materialize export next to other data_files (for download / GPT upload)."""
+    path = telegram_knowledge_path()
+    path.write_text(export_telegram_knowledge(), encoding="utf-8")
+    return path
+
+
+def product_pack_labels() -> list[str]:
+    return [str(p.get("name_zh") or p.get("id") or "") for p in list_product_packs()]

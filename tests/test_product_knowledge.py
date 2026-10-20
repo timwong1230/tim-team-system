@@ -50,6 +50,17 @@ def test_brochure_pdf_is_bundled():
     assert pdf.stat().st_size > 100_000
 
 
+def test_telegram_knowledge_export():
+    from tt_core.product_knowledge import export_telegram_knowledge, write_telegram_knowledge_file
+
+    md = export_telegram_knowledge()
+    assert "Telegram Coach Tim" in md
+    assert "危疾全應援" in md
+    path = write_telegram_knowledge_file()
+    assert path.is_file()
+    assert path.name == "telegram_coach_knowledge.md"
+
+
 def test_coach_routes_product_tool_and_offline():
     from tt_core.coach_tim import (
         TOOL_PRODUCT_KB,
