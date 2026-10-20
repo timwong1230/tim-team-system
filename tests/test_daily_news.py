@@ -89,9 +89,9 @@ def test_pick_balanced_five_across_pillars():
     from tt_core.daily_news import _pick_balanced
 
     items = [
-        {"title": "本地社會新聞甲", "url": "https://a1", "source": "港聞", "pillar": "society", "ts": 10},
-        {"title": "本地社會新聞乙", "url": "https://a2", "source": "港聞", "pillar": "society", "ts": 9},
-        {"title": "本地社會新聞丙", "url": "https://a3", "source": "港聞", "pillar": "society", "ts": 8},
+        {"title": "公屋輪候民生壓力升", "url": "https://a1", "source": "港聞", "pillar": "society", "ts": 10},
+        {"title": "公立醫院急症室逼爆", "url": "https://a2", "source": "港聞", "pillar": "society", "ts": 9},
+        {"title": "本地社會花邊甲", "url": "https://a3", "source": "港聞", "pillar": "society", "ts": 8},
         {"title": "利率決議影響股市", "url": "https://f1", "source": "財經", "pillar": "finance", "ts": 7},
         {"title": "銀行公布業績", "url": "https://f2", "source": "財經", "pillar": "finance", "ts": 6},
         {"title": "國務院發布新政策", "url": "https://c1", "source": "中國", "pillar": "china", "ts": 5},
@@ -103,18 +103,39 @@ def test_pick_balanced_five_across_pillars():
     assert pillars.count("society") == 2
     assert pillars.count("finance") == 2
     assert pillars.count("china") == 1
+    society_titles = [p["title"] for p in picked if p["pillar"] == "society"]
+    assert "公屋輪候民生壓力升" in society_titles
+    assert "公立醫院急症室逼爆" in society_titles
     for row in picked:
         assert row["wa_text"]
         assert "wa.me" in row["wa_url"]
-        assert row["pillar_label"] in ("社會關注", "財經經濟", "內地政策")
+        assert row["pillar_label"] in ("社會問題", "金融經濟", "內地政經")
+
+
+def test_pick_priority_prefers_substance_over_recency():
+    from tt_core.daily_news import _pick_priority
+
+    items = [
+        # Fresh but fluff society
+        {"title": "商場展覽人流升", "url": "https://fluff", "source": "港聞", "pillar": "society", "ts": 999},
+        # Older but real social issue
+        {"title": "公屋輪候時間再創新高", "url": "https://s", "source": "港台", "pillar": "society", "ts": 1},
+        {"title": "聯儲局議息市場觀望", "url": "https://f", "source": "財經", "pillar": "finance", "ts": 2},
+        {"title": "港股成交萎縮", "url": "https://f2", "source": "財經", "pillar": "finance", "ts": 3},
+        {"title": "國務院會議部署穩增長", "url": "https://cn", "source": "中國", "pillar": "china", "ts": 4},
+    ]
+    picked = _pick_priority(items, limit=5)
+    society = [p for p in picked if p["pillar"] == "society"]
+    assert society
+    assert "公屋" in society[0]["title"]
 
 
 def test_pick_balanced_prefers_cjk():
     from tt_core.daily_news import _pick_balanced
 
     items = [
-        {"title": "English only society story", "url": "https://e", "source": "SCMP", "pillar": "society", "ts": 99},
-        {"title": "港府公布民生措施", "url": "https://c", "source": "港台", "pillar": "society", "ts": 1},
+        {"title": "English only housing shortage story", "url": "https://e", "source": "SCMP", "pillar": "society", "ts": 99},
+        {"title": "港府公布民生房屋措施", "url": "https://c", "source": "港台", "pillar": "society", "ts": 1},
         {"title": "股市創新高", "url": "https://f", "source": "財經", "pillar": "finance", "ts": 2},
         {"title": "銀行加息預期", "url": "https://f2", "source": "財經", "pillar": "finance", "ts": 3},
         {"title": "國務院會議部署", "url": "https://cn", "source": "中國", "pillar": "china", "ts": 4},
@@ -265,13 +286,14 @@ def test_news_panel_html_collapsed_accordion_and_escapes():
     assert "睇原文" in html
     assert "<b>XSS</b>" not in html
     assert "&lt;b&gt;XSS&lt;/b&gt;" in html
-    assert "社會關注" in html
-    assert "財經經濟" in html
+    assert "社會問題" in html or "社會關注" in html
+    assert "金融經濟" in html or "財經經濟" in html
     assert "WhatsApp 開話題" in html
     assert "嗨！想聽下你點睇？" in html
     assert "wa.me" in html
     assert "01" in html
     assert "撳標題展開" in html
+    assert "重中之重" in html or "今日" in html
     # Collapsed by default — no open attribute on details
     assert "<details open" not in html
 
@@ -285,8 +307,83 @@ def test_fetch_daily_headlines_uses_parallel_short_timeout():
     src = inspect.getsource(dn.fetch_daily_headlines)
     assert "ThreadPoolExecutor" in src
     assert "as_completed" in src
+    assert "_load_daily_pin" in src or "_save_daily_pin" in src
     assert dn._FEED_TIMEOUT_SEC <= 5
     assert dn._FETCH_BUDGET_SEC <= 8
+
+
+def test_daily_pin_keeps_same_five_across_calls(tmp_path, monkeypatch):
+    """Same HK day → same locked pack (not reshuffled each login)."""
+    from tt_core import daily_news as dn
+
+    monkeypatch.setattr(dn, "_PIN_DIR", tmp_path)
+    monkeypatch.setattr(dn, "_hk_today", lambda: "2026-10-20")
+
+    pack = {
+        "day": "2026-10-20",
+        "fetched_at": "2026-10-20 08:00",
+        "ok": True,
+        "items": [
+            {
+                "title": "公屋輪候創新高",
+                "url": "https://s1",
+                "source": "港聞",
+                "pillar": "society",
+                "ts": 1,
+            },
+            {
+                "title": "公立醫院逼爆",
+                "url": "https://s2",
+                "source": "港聞",
+                "pillar": "society",
+                "ts": 2,
+            },
+            {
+                "title": "聯儲局議息",
+                "url": "https://f1",
+                "source": "財經",
+                "pillar": "finance",
+                "ts": 3,
+            },
+            {
+                "title": "港股成交萎縮",
+                "url": "https://f2",
+                "source": "財經",
+                "pillar": "finance",
+                "ts": 4,
+            },
+            {
+                "title": "國務院部署穩增長",
+                "url": "https://c1",
+                "source": "中國",
+                "pillar": "china",
+                "ts": 5,
+            },
+        ],
+    }
+    (tmp_path / "daily_news_2026-10-20.json").write_text(
+        __import__("json").dumps(pack, ensure_ascii=False), encoding="utf-8"
+    )
+
+    def _boom(*a, **k):
+        raise AssertionError("RSS must not be called when pin exists")
+
+    with patch.object(dn, "_fetch_feed_safe", side_effect=_boom):
+        try:
+            dn.fetch_daily_headlines.clear()
+        except Exception:
+            pass
+        a = dn.fetch_daily_headlines(limit=5, day="2026-10-20")
+        try:
+            dn.fetch_daily_headlines.clear()
+        except Exception:
+            pass
+        b = dn.fetch_daily_headlines(limit=5, day="2026-10-20")
+
+    assert a["pinned"] is True
+    assert [i["title"] for i in a["items"]] == [i["title"] for i in b["items"]]
+    assert len(a["items"]) == 5
+    assert a["items"][0]["wa_url"].startswith("https://wa.me/")
 
 
 def test_live_rss_optional_smoke():
