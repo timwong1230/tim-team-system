@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64
 import datetime
 import re
 import sys
@@ -2237,8 +2238,10 @@ def _render_whatsapp_share(
     if caption:
         st.caption(caption)
     else:
-        st.caption("可開 WhatsApp 傳摘要，或下載 PDF 用 report 形式同客戶講解。")
+        st.caption("可開 WhatsApp 傳摘要，或預覽／下載 PDF 用 report 形式同客戶講解。")
     st.code(report, language=None)
+
+    preview_flag = f"{key}_pdf_show"
     c1, c2 = st.columns(2)
     with c1:
         st.link_button(
@@ -2247,30 +2250,86 @@ def _render_whatsapp_share(
             use_container_width=True,
         )
     with c2:
-        try:
-            from tt_core.client_pdf import build_client_pdf, pdf_filename
+        if st.button(
+            "預覽／下載 PDF",
+            use_container_width=True,
+            key=f"{key}_pdf_toggle",
+            type="primary" if not st.session_state.get(preview_flag) else "secondary",
+        ):
+            st.session_state[preview_flag] = not bool(st.session_state.get(preview_flag))
+            st.rerun()
 
-            pdf_bytes = build_client_pdf(
-                title=pdf_title or "客戶報告",
-                body=report,
-                client=pdf_client or "",
-                tool_name=pdf_tool or "",
-                agent=str(st.session_state.get("user") or ""),
-                footer=pdf_footer or "",
-                pdf_data=pdf_data,
+    if not st.session_state.get(preview_flag):
+        return
+
+    try:
+        from tt_core.client_pdf import build_client_pdf, pdf_filename
+
+        pdf_bytes = build_client_pdf(
+            title=pdf_title or "客戶報告",
+            body=report,
+            client=pdf_client or "",
+            tool_name=pdf_tool or "",
+            agent=str(st.session_state.get("user") or ""),
+            footer=pdf_footer or "",
+            pdf_data=pdf_data,
+        )
+        fname = pdf_filename(title=pdf_title, client=pdf_client, tool=pdf_tool)
+        b64 = base64.b64encode(pdf_bytes).decode("ascii")
+
+        st.info(
+            "手機建議撳「新分頁開啟」——睇完合上／返回分頁就返到呢度，"
+            "唔會困喺系統 Preview。若用下載，撳左上「完成」或向下掃即可返回。"
+        )
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            # Open in a new browser tab — keeps Streamlit session underneath
+            components.html(
+                f"""
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <a href="data:application/pdf;base64,{b64}"
+     download="{fname}"
+     target="_blank" rel="noopener"
+     style="display:block;text-align:center;padding:0.55rem 0.75rem;
+            background:#1C2430;color:#F0D078;text-decoration:none;
+            border-radius:10px;font-weight:600;font-size:0.95rem;">
+    新分頁開啟
+  </a>
+</div>
+""",
+                height=48,
             )
+        with a2:
             st.download_button(
-                "下載 PDF 報告",
+                "下載到檔案",
                 data=pdf_bytes,
-                file_name=pdf_filename(
-                    title=pdf_title, client=pdf_client, tool=pdf_tool
-                ),
+                file_name=fname,
                 mime="application/pdf",
                 use_container_width=True,
-                key=f"{key}_pdf",
+                key=f"{key}_pdf_dl",
             )
-        except Exception as e:
-            st.caption(f"PDF 暫時未能產生：{e}")
+        with a3:
+            if st.button("關閉預覽", use_container_width=True, key=f"{key}_pdf_close"):
+                st.session_state[preview_flag] = False
+                st.rerun()
+
+        # Inline viewer (desktop / Android Chrome); iOS may show blank — new-tab is fallback
+        components.html(
+            f"""
+<div style="border:1px solid #E6E8EC;border-radius:12px;overflow:hidden;background:#F8F9FA;">
+  <object data="data:application/pdf;base64,{b64}" type="application/pdf"
+          width="100%" height="520">
+    <p style="padding:16px;color:#6B7280;font-family:sans-serif;font-size:14px;">
+      呢個瀏覽器唔支援內嵌預覽，請撳上面「新分頁開啟」。
+    </p>
+  </object>
+</div>
+""",
+            height=540,
+            scrolling=False,
+        )
+    except Exception as e:
+        st.caption(f"PDF 暫時未能產生：{e}")
 
 
 def _avatar_url(row) -> str:

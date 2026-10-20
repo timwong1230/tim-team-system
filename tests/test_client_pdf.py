@@ -135,7 +135,9 @@ def test_build_protection_gap_pdf_card_layout():
 
 def test_app_wires_pdf_download_on_client_tools():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert "下載 PDF 報告" in src
+    assert "預覽／下載 PDF" in src
+    assert "新分頁開啟" in src
+    assert "關閉預覽" in src
     assert "build_client_pdf" in src
     assert "pdf_title" in src
     assert "帶得走：WhatsApp／PDF" in src
