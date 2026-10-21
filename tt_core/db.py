@@ -391,11 +391,14 @@ def init_db_gs():
                 ("Admin", "admin123", "Leader"),
                 ("Tim", "1234", "Member"),
                 ("Oscar", "1234", "Member"),
+                # Trial login — role Guest stays off 打卡／業績／招募 rosters
+                ("guest", "1234", "Guest"),
             ]
+            existing_l = {str(x).strip().lower() for x in existing}
             for u in defaults:
                 if time.time() - started > budget:
                     break
-                if u[0] not in existing:
+                if u[0].lower() not in existing_l:
                     url = (
                         f"https://ui-avatars.com/api/?name={u[0]}"
                         f"&background=d4af37&color=fff&size=128"
@@ -404,6 +407,7 @@ def init_db_gs():
                         [u[0], u[1], u[2], "Tim Team", 0, url, ""],
                         value_input_option="USER_ENTERED",
                     )
+                    existing_l.add(u[0].lower())
 
         for sn in CORE_SHEETS:
             if time.time() - started > budget:
