@@ -5,6 +5,7 @@ INACTIVE_MEMBERS = ["Wilson", "Catherine", "Maggie"]
 # Trial login — can sign in, but never appears on 打卡／業績／招募 team lists
 GUEST_ROLE = "Guest"
 GUEST_USERNAMES = ["guest"]
+GUEST_PASSWORD = "1234"
 
 MDRT_TARGET = 512_800
 Q1_TARGET = 88_000

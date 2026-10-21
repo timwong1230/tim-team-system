@@ -967,6 +967,13 @@ if not st.session_state["logged_in"]:
                 init_db_gs()
             except Exception:
                 pass
+            try:
+                from tt_core.data import ensure_guest_user
+
+                if str(u or "").strip().lower() in ("guest",):
+                    ensure_guest_user()
+            except Exception:
+                pass
             d = login(u, p)
         if d:
             st.session_state.update(
