@@ -136,9 +136,9 @@ def build_protection_proposal(
                 gaps.append(f"醫療「{prod.get('short')}」呢個年齡／選項暫時查唔到保費。")
             else:
                 total_annual += annual
-            cover = "每年保障額內全包（以計劃級別為準）"
+            cover = "每年保障額內全包"
             if medical_id == "vbooster" and int(prem.get("deductible") or 0) == 0:
-                cover = "每年約 800 萬內全包（$0 墊底費；以條款為準）"
+                cover = "每年約 800 萬內全包"
             sections.append(
                 {
                     "category": "醫療保險",
@@ -158,8 +158,10 @@ def build_protection_proposal(
                     "cover_summary": cover,
                     "term": prod.get("term_note") or "",
                     "meta_rows": [
-                        ("產品", str(prod.get("name"))),
-                        ("保費", f"{format_hkd(annual)}／年" if annual else "待提供／待查"),
+                        (
+                            "保障級別",
+                            str(prem.get("level") or prod.get("short") or "標準"),
+                        ),
                         (
                             "自付費",
                             "無自付費"
@@ -167,6 +169,7 @@ def build_protection_proposal(
                             else format_hkd(prem.get("deductible") or 0),
                         ),
                         ("保障期", str(prod.get("term_note") or "—")),
+                        ("保費來源", "系統保費表（見客參考）"),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {
@@ -204,13 +207,13 @@ def build_protection_proposal(
                     else "待輸入年保費",
                     "premium_ok": annual > 0,
                     "premium_source": "manual",
-                    "cover_summary": f"保額 {format_usd(sa)}（約 {format_hkd(sa_hkd)}）",
+                    "cover_summary": f"保額 {format_usd(sa)}",
                     "term": f"供款 {pay} 年；{prod.get('term_note') or ''}",
                     "meta_rows": [
-                        ("產品", str(prod.get("name"))),
-                        ("保費", f"{format_hkd(annual)}／年" if annual else "待輸入"),
                         ("供款年期", f"{pay} 年"),
-                        ("保額", f"{format_usd(sa)}（約 {format_hkd(sa_hkd)}）"),
+                        ("保額", f"{format_usd(sa)}"),
+                        ("約合港元", format_hkd(sa_hkd)),
+                        ("保障期", str(prod.get("term_note") or "—")),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {"sa_usd": sa, "pay_term": pay, "fx": fx},
@@ -250,10 +253,10 @@ def build_protection_proposal(
                     "cover_summary": f"保障額 {format_hkd(sa)}" if sa else "保障額待定",
                     "term": str(prod.get("term_note") or ""),
                     "meta_rows": [
-                        ("產品", str(prod.get("name"))),
-                        ("保費", f"{format_hkd(annual)}／年" if annual else "待輸入"),
                         ("保障額", format_hkd(sa) if sa else "—"),
                         ("保障期", str(prod.get("term_note") or "—")),
+                        ("形式", "可附於主保單／獨立（以條款為準）"),
+                        ("計費", "同事輸入報價年保費"),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {"sa_hkd": sa},
@@ -262,11 +265,12 @@ def build_protection_proposal(
 
     summary_rows = []
     for s in sections:
+        annual = float(s.get("premium_annual_hkd") or 0)
         summary_rows.append(
             {
                 "保險類別": s["category"],
                 "產品名稱": s.get("short") or s.get("product_name"),
-                "年供保費": s.get("premium_display"),
+                "年供保費": f"{format_hkd(annual)}／年" if annual else "待輸入",
                 "保障摘要": s.get("cover_summary"),
                 "供款／年期": s.get("term"),
             }
@@ -361,11 +365,10 @@ def build_saving_proposal(
             "cover_summary": f"{pay_years} 年供；可滾存長線",
             "term": str(prod.get("term_note") or ""),
             "meta_rows": [
-                ("產品", str(prod.get("name"))),
-                ("年期", f"{pay_years} 年"),
-                ("年供", f"{format_usd(annual_u)}（約 {format_hkd(annual_hkd)}）"),
+                ("供款年期", f"{pay_years} 年"),
                 ("總供款（未計折扣）", format_hkd(total_hkd)),
                 ("提取", "第 6 年起可按計劃提款（以條款為準）"),
+                ("保障期", str(prod.get("term_note") or "—")),
             ],
             "highlights": highlights,
             "goals": goals,
@@ -377,7 +380,9 @@ def build_saving_proposal(
         {
             "保險類別": purpose or "儲蓄",
             "產品名稱": prod.get("short") or prod.get("name"),
-            "年供保費": sections[0]["premium_display"],
+            "年供保費": f"{format_usd(annual_u)}／年"
+            if annual_u
+            else "待輸入",
             "保障摘要": sections[0]["cover_summary"],
             "供款／年期": f"{pay_years} 年",
         }
@@ -432,11 +437,12 @@ def html_preview(proposal: dict[str, Any]) -> str:
     sections_html = []
     for s in proposal.get("sections") or []:
         bullets = "".join(
-            f"<li>{_esc(h)}</li>" for h in (s.get("highlights") or [])[:8]
+            f"<li>{_esc(h)}</li>" for h in (s.get("highlights") or [])
         )
         meta = "".join(
             f"<div class='kv'><span>{_esc(k)}</span><strong>{_esc(v)}</strong></div>"
             for k, v in (s.get("meta_rows") or [])
+            if str(k) not in ("保費", "產品", "年供")
         )
         goals = s.get("goals") or []
         goals_html = ""
@@ -532,9 +538,16 @@ def html_preview(proposal: dict[str, Any]) -> str:
   .illus{{margin-top:10px;padding:10px;border-radius:10px;background:#EEF2F7;
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;color:#334155;}}
   .sum{{background:#fff;border:1px solid #E4DFD4;border-radius:14px;padding:14px;overflow:auto;}}
-  table{{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;}}
-  th{{text-align:left;padding:8px 6px;border-bottom:2px solid #1A2B4C;color:#1A2B4C;}}
-  td{{padding:8px 6px;border-bottom:1px solid #E8E4DA;vertical-align:top;}}
+  table{{width:100%;border-collapse:collapse;table-layout:fixed;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;}}
+  th{{text-align:left;padding:10px 8px;border-bottom:2px solid #1A2B4C;color:#1A2B4C;
+    white-space:nowrap;}}
+  td{{padding:10px 8px;border-bottom:1px solid #E8E4DA;vertical-align:top;
+    word-break:keep-all;overflow-wrap:anywhere;line-height:1.45;}}
+  td:nth-child(1){{width:18%;}}
+  td:nth-child(2){{width:22%;}}
+  td:nth-child(3){{width:22%;}}
+  td:nth-child(4){{width:38%;}}
   .total{{margin-top:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     font-size:16px;font-weight:700;color:#1A2B4C;}}
   .gaps{{margin-top:12px;padding:12px;border-radius:12px;background:#FFF7ED;border:1px solid #FDBA74;
