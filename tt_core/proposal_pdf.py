@@ -521,6 +521,6 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
     pdf.multi_cell(
         178,
         4,
-        "本文件由 TIM TEAM M+2 產生，只供內部見客參考。"
+        "只供內部見客參考。"
         "保障、保費、折扣、分紅及特別紅利均以保險公司正式計劃書及條款為準；非保證利益並非承諾。",
     )
