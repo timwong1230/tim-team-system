@@ -26,7 +26,7 @@
        data-rate="{{ bill.service_charge_rate }}">
     <div class="row"><span>Subtotal (products)</span><span id="vSub">${{ '%.0f'|format(bill.subtotal) }}</span></div>
     <div class="row" id="discRow" style="{% if not bill.discount_percent %}display:none{% endif %}">
-      <span id="discLabel">Discount {{ bill.discount_percent|int }}% (products only)</span>
+      <span id="discLabel">Discount {{ bill.discount_percent|int }}% (products + snacks)</span>
       <span id="vDisc">-${{ '%.0f'|format(bill.discount_amount) }}</span>
     </div>
     <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span id="vSnack">${{ '%.0f'|format(bill.snack_charge) }}</span></div>
