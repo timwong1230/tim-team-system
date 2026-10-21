@@ -142,7 +142,8 @@ def test_app_wires_pdf_download_on_client_tools():
     assert "pdf_title" in src
     assert "帶得走：WhatsApp／PDF" in src
     assert 'kind": "protection_gap"' in src or "protection_gap" in src
-    assert src.count("pdf_title=") >= 4
+    assert src.count("pdf_title=") >= 5
+    assert 'kind": "pfin"' in src or '"kind": "pfin"' in src
 
 
 def test_requirements_and_packages_for_pdf():

@@ -336,3 +336,55 @@ def format_hkd(n: float) -> str:
 
 def format_pct(n: float, digits: int = 2) -> str:
     return f"{float(n):.{digits}f}%"
+
+
+_SCENARIO_LABELS = {
+    "expected": "當前假設（Expected）",
+    "pessimistic": "較保守（Pessimistic）",
+    "optimistic": "較樂觀（Optimistic）",
+}
+
+
+def scenario_label(scenario: str) -> str:
+    return _SCENARIO_LABELS.get(str(scenario or ""), str(scenario or "—"))
+
+
+def whatsapp_summary(result: dict[str, Any], *, client: str = "") -> str:
+    """Client-facing WhatsApp summary from a compute_financing() result."""
+    s = result.get("summary") or {}
+    bank = result.get("bank") or {}
+    lines = [
+        f"*{result.get('product') or '智盈匯聚 V'} · 保費融資計劃書*",
+    ]
+    if client:
+        lines.append(f"客戶：{client}")
+    lines.extend(
+        [
+            f"銀行：{bank.get('name') or '—'}",
+            f"保費：{format_usd(float(s.get('premium_usd') or 0))}"
+            + (
+                f"（折扣 {float(s.get('discount_rate') or 0) * 100:.0f}% → "
+                f"實付 {format_usd(float(s.get('actual_premium_paid_usd') or 0))}）"
+                if s.get("apply_promotion") and float(s.get("discount_usd") or 0)
+                else ""
+            ),
+            f"貸款：{format_usd(float(s.get('loan_usd') or 0))}"
+            f"（LTV {float(s.get('ltv_ratio') or 0) * 100:.0f}%）",
+            f"初期自資：{format_usd(float(s.get('initial_outlay_usd') or 0))} · "
+            f"槓桿 {float(s.get('leverage_ratio') or 0):.2f}x",
+            f"預估年息：{float(s.get('annual_interest_rate_pct') or 0):.2f}%"
+            f"（約 {format_usd(float(s.get('annual_interest_usd') or 0))}/年）",
+            f"紅利情景：{scenario_label(str(result.get('scenario') or 'expected'))}",
+            "",
+            "*重點年份（槓桿 IRR）*",
+        ]
+    )
+    for y in result.get("focus_years") or []:
+        if int(y.get("year") or 0) in (1, 5, 6, 10, 20, 30):
+            lines.append(
+                f"第 {y['year']} 年：淨值 {format_usd(float(y.get('net_sv_usd') or 0))} · "
+                f"IRR {float(y.get('leveraged_irr_pct') or 0):.1f}%"
+            )
+    lines.append("")
+    lines.append("_示意數字；紅利／利率非保證；以正式計劃書及銀行批核為準_")
+    return "\n".join(lines)

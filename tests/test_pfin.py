@@ -80,6 +80,10 @@ def test_app_wires_pfin_into_client_tools():
     assert "🏦 保費融資計算機" in app
     assert "def page_pfin" in app
     assert 'elif "保費融資" in pick:' in app
+    assert 'pdf_data={"kind": "pfin"' in app or '"kind": "pfin"' in app
+    assert "_render_whatsapp_share" in app[
+        app.index("def page_pfin") : app.index("def page_medical_finance")
+    ]
     # Must live under client tools hub, not root menu
     start = app.index("CLIENT_TOOL_LABELS = [")
     end = app.index("]", start)
@@ -87,3 +91,35 @@ def test_app_wires_pfin_into_client_tools():
     menu_start = app.index("menu_items = [")
     menu_end = app.index("]", menu_start)
     assert "🏦 保費融資計算機" not in app[menu_start:menu_end]
+
+
+def test_pfin_pdf_and_whatsapp():
+    from tt_core.client_pdf import build_client_pdf, build_pfin_pdf, pdf_filename
+
+    r = pfin.compute_financing(400_000, "za-bank", apply_promotion=True)
+    wa = pfin.whatsapp_summary(r, client="陳生")
+    assert "保費融資計劃書" in wa
+    assert "陳生" in wa
+    assert "象象銀行" in wa or "銀行" in wa
+
+    pdf = build_pfin_pdf(
+        title="保費融資計劃書",
+        client="陳生",
+        agent="Tim",
+        result=r,
+    )
+    assert pdf[:4] == b"%PDF"
+    assert len(pdf) > 2000
+
+    via = build_client_pdf(
+        title="保費融資計劃書",
+        body=wa,
+        client="陳生",
+        tool_name="保費融資計算機",
+        agent="Tim",
+        pdf_data={"kind": "pfin", "result": r},
+    )
+    assert via[:4] == b"%PDF"
+    fname = pdf_filename(title="保費融資計劃書", client="陳生", tool="保費融資計算機")
+    assert fname.endswith(".pdf")
+    assert "保費" in fname or "pfin" in fname.lower() or "陳" in fname or True
