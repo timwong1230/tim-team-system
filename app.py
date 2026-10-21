@@ -5416,74 +5416,113 @@ def page_proposal():
                 help="同一份盈聚會因角度出唔同計劃書內容同圖像時間線",
             )
         with s2:
-            if str(sav_meta.get("currency") or "USD").upper() == "HKD" or str(
-                sav_meta.get("premium_source")
-            ) == "manual_hkd":
-                annual_hkd = st.number_input(
-                    "年供（HKD）",
-                    min_value=0,
-                    value=int(sav_meta.get("default_annual_hkd") or 60000),
-                    step=1000,
-                    key="prop_sav_hkd",
-                )
-                annual_usd = None
+            annual_hkd = None
+            annual_usd = None
+            # 盈聚年供由官方 PDF 讀入；其他產品仍手動輸入
+            if sav_id != "yingju5":
+                if str(sav_meta.get("currency") or "USD").upper() == "HKD" or str(
+                    sav_meta.get("premium_source")
+                ) == "manual_hkd":
+                    annual_hkd = st.number_input(
+                        "年供（HKD）",
+                        min_value=0,
+                        value=int(sav_meta.get("default_annual_hkd") or 60000),
+                        step=1000,
+                        key="prop_sav_hkd",
+                    )
+                else:
+                    annual_usd = st.number_input(
+                        "年供（USD）",
+                        min_value=0,
+                        value=int(sav_meta.get("default_annual_usd") or 10000),
+                        step=500,
+                        key="prop_sav_usd",
+                    )
             else:
-                annual_usd = st.number_input(
-                    "年供（USD）",
-                    min_value=0,
-                    value=int(sav_meta.get("default_annual_usd") or 10000),
-                    step=500,
-                    key="prop_sav_usd",
-                )
-                annual_hkd = None
+                st.caption("年供／提款數字由官方建議書 PDF 讀取")
         st.caption(str(sav_meta.get("term_note") or ""))
 
+        illustration = None
         wd_start = wd_years = wd_usd = None
-        if sav_id == "yingju5" and annual_usd is not None:
-            try:
-                from tt_core.yingju_angles import (
-                    default_withdraw_start_year,
-                    default_withdraw_years,
-                    default_withdraw_usd,
-                )
-
-                _ds = default_withdraw_start_year(purpose, int(age))
-                _dy = default_withdraw_years(purpose)
-                _du = int(default_withdraw_usd(float(annual_usd or 0)))
-            except Exception:
-                _ds, _dy, _du = 6, 4, int(float(annual_usd or 0) * 0.35)
-            st.markdown("#### 提款示意（見客用）")
+        if sav_id == "yingju5":
+            st.markdown("#### 上載官方建議書（必須）")
             st.caption(
-                "輸入邊幾年提、每年提幾多，系統會計示意戶口同提款後尚餘。"
-                "預設約等於總保費 7%／年（可改）。數字非保證。"
+                "請上載 FWD 盈聚‧天下 II 利益說明／建議書 PDF。"
+                "計劃書數字會直接用 PDF 入面嘅退保價值同提款表，唔再估算。"
             )
-            w1, w2, w3 = st.columns(3)
-            with w1:
-                wd_start = st.number_input(
-                    "提款開始（保單年度）",
-                    min_value=6,
-                    max_value=80,
-                    value=int(_ds),
-                    step=1,
-                    key="prop_sav_wd_start",
-                )
-            with w2:
-                wd_years = st.number_input(
-                    "連續提款年數",
-                    min_value=0,
-                    max_value=40,
-                    value=int(_dy),
-                    step=1,
-                    key="prop_sav_wd_years",
-                )
-            with w3:
-                wd_usd = st.number_input(
-                    "每年提款（USD）",
-                    min_value=0,
-                    value=int(_du),
-                    step=100,
-                    key="prop_sav_wd_usd",
-                )
+            if "prop_yingju_illust" not in st.session_state:
+                st.session_state["prop_yingju_illust"] = None
+            if "prop_yingju_upload_nonce" not in st.session_state:
+                st.session_state["prop_yingju_upload_nonce"] = 0
+            _yj_nonce = int(st.session_state.get("prop_yingju_upload_nonce") or 0)
+            yj_up = st.file_uploader(
+                "官方利益說明 PDF",
+                type=["pdf"],
+                key=f"prop_yingju_pdf_{_yj_nonce}",
+                help="公司系統匯出嘅完整利益說明（含退保價值表）",
+            )
+            if yj_up is not None:
+                try:
+                    from tt_core.yingju_proposal_parse import (
+                        parse_yingju_illustration_pdf,
+                    )
+
+                    raw, up_name = _bytes_from_upload(
+                        yj_up, max_bytes=20 * 1024 * 1024
+                    )
+                    parsed = parse_yingju_illustration_pdf(raw)
+                    parsed["upload_name"] = up_name
+                    st.session_state["prop_yingju_illust"] = parsed
+                    st.session_state["prop_yingju_upload_nonce"] = _yj_nonce + 1
+                    st.success(
+                        f"已讀取 {up_name}：年供 US${parsed.get('annual_usd') or 0:,.0f}；"
+                        f"第 6 年退保價值 US${parsed.get('year6_sv_usd') or 0:,.0f}"
+                        + (
+                            f"；提款自第 {parsed.get('withdraw_start_year')} 年 "
+                            f"每年 US${parsed.get('withdraw_usd') or 0:,.0f}"
+                            if parsed.get("has_withdrawal_scenario")
+                            else "；建議書無提款情景"
+                        )
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"讀唔到呢份 PDF：{e}")
+            illustration = st.session_state.get("prop_yingju_illust")
+            if illustration:
+                meta = illustration.get("meta") or {}
+                m1, m2, m3, m4 = st.columns(4)
+                with m1:
+                    st.metric("年供（USD）", f"{illustration.get('annual_usd') or 0:,.0f}")
+                with m2:
+                    st.metric("第 6 年 SV", f"{illustration.get('year6_sv_usd') or 0:,.0f}")
+                with m3:
+                    st.metric(
+                        "受保人",
+                        f"{meta.get('age') or '—'} 歲／{meta.get('gender') or '—'}",
+                    )
+                with m4:
+                    if illustration.get("has_withdrawal_scenario"):
+                        st.metric(
+                            "每年提款",
+                            f"{illustration.get('withdraw_usd') or 0:,.0f}",
+                        )
+                        st.caption(
+                            f"第 {illustration.get('withdraw_start_year')}–"
+                            f"{illustration.get('withdraw_end_year')} 年"
+                        )
+                    else:
+                        st.metric("提款情景", "無")
+                if st.button("清除已上載建議書", key="prop_yingju_clear"):
+                    st.session_state["prop_yingju_illust"] = None
+                    st.session_state["prop_yingju_upload_nonce"] = _yj_nonce + 1
+                    st.rerun()
+                annual_usd = float(illustration.get("annual_usd") or 0) or None
+                if illustration.get("has_withdrawal_scenario"):
+                    wd_start = illustration.get("withdraw_start_year")
+                    wd_years = illustration.get("withdraw_years")
+                    wd_usd = illustration.get("withdraw_usd")
+            else:
+                st.warning("未上載官方建議書前，唔會產生盈聚計劃書數字。")
 
         if st.button("產生計劃書", type="primary", use_container_width=True, key="prop_gen_sv"):
             proposal = prop.build_saving_proposal(
@@ -5498,6 +5537,7 @@ def page_proposal():
                 withdraw_start_year=int(wd_start) if wd_start is not None else None,
                 withdraw_years=int(wd_years) if wd_years is not None else None,
                 withdraw_usd=float(wd_usd) if wd_usd is not None else None,
+                illustration=illustration if sav_id == "yingju5" else None,
             )
             st.session_state["prop_last"] = proposal
 

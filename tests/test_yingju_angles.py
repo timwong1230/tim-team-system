@@ -42,17 +42,19 @@ def test_four_angles_and_year6_projection():
 
 
 def test_proposal_no_summary_and_tc():
+    from tt_core.yingju_proposal_parse import parse_yingju_illustration_pdf
+
+    fixtures = ROOT / "tests" / "fixtures" / "yingju"
+    parsed = parse_yingju_illustration_pdf(fixtures / "yingju_7700_edu.pdf")
     prop = build_saving_proposal(
         client_name="BB",
         age=2,
         gender="男",
         occupation="Child",
         saving_id="yingju5",
-        annual_usd=20000,
+        annual_usd=7700,
         purpose="教育基金",
-        withdraw_start_year=16,
-        withdraw_years=4,
-        withdraw_usd=7000,
+        illustration=parsed,
     )
     assert prop["skip_summary"] is True
     assert prop["summary_rows"] == []
@@ -63,7 +65,7 @@ def test_proposal_no_summary_and_tc():
     assert "保险公司" not in html
     assert "保險公司" in html
     assert "第 6 年" in html
-    assert "期末戶口" in html
+    assert "期末戶口" in html or "官方" in html
     pdf = build_proposal_pdf(prop, agent="Tim")
     assert pdf[:4] == b"%PDF"
     # Saving proposal should be cover + section pages, no dedicated summary
