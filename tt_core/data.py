@@ -11,6 +11,8 @@ import streamlit as st
 from PIL import Image
 
 from tt_core.constants import (
+    GUEST_ROLE,
+    GUEST_USERNAMES,
     INACTIVE_MEMBERS,
     MDRT_TARGET,
     RECRUIT_YEAR_TARGET,
@@ -19,7 +21,15 @@ from tt_core.constants import (
 from tt_core.db import read_data, run_query_gs, update_user_field
 
 
+def is_guest_account(username: str = "", role: str = "") -> bool:
+    """Trial guest — login OK, hidden from team ops lists."""
+    u = str(username or "").strip().lower()
+    r = str(role or "").strip().lower()
+    return u in {x.lower() for x in GUEST_USERNAMES} or r == GUEST_ROLE.lower()
+
+
 def get_clean_users() -> pd.DataFrame:
+    """Active accounts that may log in (includes Guest trial users)."""
     df = read_data("users")
     if df.empty:
         return pd.DataFrame(
@@ -29,12 +39,29 @@ def get_clean_users() -> pd.DataFrame:
     return df[~df["username"].isin(INACTIVE_MEMBERS)]
 
 
+def get_team_users() -> pd.DataFrame:
+    """Roster for 打卡／業績／招募 — excludes Guest trial accounts."""
+    df = get_clean_users()
+    if df.empty:
+        return df
+    guest_names = {x.lower() for x in GUEST_USERNAMES}
+    mask = df["username"].astype(str).str.strip().str.lower().isin(guest_names)
+    if "role" in df.columns:
+        mask = mask | (df["role"].astype(str).str.strip().str.lower() == GUEST_ROLE.lower())
+    return df[~mask].copy()
+
+
 def login(u: str, p: str):
     df = get_clean_users()
     if df.empty:
         return []
     df["password"] = df["password"].astype(str)
-    user = df[(df["username"] == u) & (df["password"] == str(p))]
+    # Case-insensitive username so "Guest" / "guest" both work
+    uname = str(u or "").strip()
+    user = df[
+        (df["username"].astype(str).str.strip().str.lower() == uname.lower())
+        & (df["password"] == str(p))
+    ]
     return user.values.tolist() if not user.empty else []
 
 
@@ -390,7 +417,7 @@ def get_coach_member_pack(username: str, *, today=None) -> dict:
 def get_team_coach_overview(*, today=None) -> pd.DataFrame:
     """Leader summary row per member for weekly challenge coach view."""
     today = today or datetime.date.today()
-    users = get_clean_users()
+    users = get_team_users()
     if users.empty:
         return pd.DataFrame()
     members = users[users["role"] == "Member"]["username"].astype(str).tolist()
@@ -620,7 +647,18 @@ def get_all_act() -> pd.DataFrame:
         )
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.drop_duplicates(subset=["username", "date", "type", "note"], keep="first")
-    return df[~df["username"].isin(INACTIVE_MEMBERS)].sort_values(by="date", ascending=False)
+    guest_names = {x.lower() for x in GUEST_USERNAMES}
+    hide = set(INACTIVE_MEMBERS) | guest_names
+    # Also drop any username whose role is Guest if we can resolve it
+    team = get_team_users()
+    if not team.empty:
+        allowed = set(team["username"].astype(str))
+        return df[df["username"].astype(str).isin(allowed)].sort_values(
+            by="date", ascending=False
+        )
+    return df[
+        ~df["username"].astype(str).str.strip().str.lower().isin({x.lower() for x in hide})
+    ].sort_values(by="date", ascending=False)
 
 
 def get_data(month=None) -> pd.DataFrame:
@@ -636,7 +674,7 @@ def get_data(month=None) -> pd.DataFrame:
         pass
 
     base_columns = ["username", "team", "recruit", "avatar", "fyc", "Total_Score"]
-    users = get_clean_users()
+    users = get_team_users()
     users = users[users["role"] == "Member"][["username", "team", "recruit", "avatar"]]
     if users.empty:
         return pd.DataFrame(columns=base_columns)
@@ -739,7 +777,7 @@ def set_mdrt_progress(username: str, amount: float) -> None:
 
 
 def get_q1_data() -> pd.DataFrame:
-    users = get_clean_users()
+    users = get_team_users()
     users = users[users["role"] == "Member"][["username", "avatar"]]
     if users.empty:
         return pd.DataFrame(columns=["username", "q1_total"])
@@ -763,7 +801,7 @@ def get_q1_data() -> pd.DataFrame:
 
 
 def _week_stats(start: datetime.date, end: datetime.date | None = None):
-    users = get_clean_users()
+    users = get_team_users()
     users = users[users["role"] == "Member"][["username", "avatar"]]
     if users.empty:
         return pd.DataFrame(columns=["username", "wk_score", "wk_count"])
@@ -930,12 +968,19 @@ def check_notifications(current_user: str):
         if st.session_state.get("_notif_checked_this_login"):
             return
 
+        # Guests don't participate in team activity notifications
+        if is_guest_account(current_user):
+            st.session_state["_notif_checked_this_login"] = True
+            return
         users_df = get_clean_users()
         act_df = read_data("activities")
         if users_df.empty or act_df.empty:
             st.session_state["_notif_checked_this_login"] = True
             return
-        user_record = users_df[users_df["username"] == current_user]
+        user_record = users_df[
+            users_df["username"].astype(str).str.strip().str.lower()
+            == str(current_user).strip().lower()
+        ]
         if user_record.empty:
             st.session_state["_notif_checked_this_login"] = True
             return
@@ -953,10 +998,12 @@ def check_notifications(current_user: str):
             return
         act_df = act_df.copy()
         act_df["timestamp_dt"] = pd.to_datetime(act_df["timestamp"], errors="coerce")
+        guest_names = {x.lower() for x in GUEST_USERNAMES}
         new_activities = act_df[
             (act_df["timestamp_dt"] > last_read)
             & (act_df["username"] != current_user)
             & (~act_df["username"].isin(INACTIVE_MEMBERS))
+            & (~act_df["username"].astype(str).str.strip().str.lower().isin(guest_names))
         ]
         st.session_state["_notif_checked_this_login"] = True
         rows = _activities_to_plain_rows(new_activities)
