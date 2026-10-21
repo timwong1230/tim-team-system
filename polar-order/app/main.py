@@ -6,12 +6,14 @@ import json
 import os
 import sqlite3
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import qrcode
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -20,13 +22,18 @@ from .db import (
     connect,
     ensure_session,
     get_open_session,
+    get_session,
     get_table_by_code,
     init_db,
     load_menu_meta,
     publish_event,
     utc_now,
 )
-from .pricing import compute_bill, current_promo, price_item
+from .pricing import business_date, compute_bill, current_promo, price_item
+from .receipt import generate_receipt_pdf
+from .reports import daily_sales_report, item_purchase_report, monthly_sales_report
+
+HK = ZoneInfo("Asia/Hong_Kong")
 
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -84,6 +91,7 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                     "note": item["note"],
                     "allow_note": bool(item["allow_note"]),
                     "promo_tag": tag,
+                    "image": item["image"],
                 }
             )
         out.append(
@@ -366,8 +374,24 @@ def staff_tables(request: Request, pin: str = ""):
     )
 
 
+def _session_lines(conn: sqlite3.Connection, session_id: int) -> list[dict]:
+    return [
+        dict(x)
+        for x in conn.execute(
+            """
+            SELECT oi.*, o.id AS order_id, o.created_at
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE o.session_id = ? AND o.status != 'cancelled'
+            ORDER BY o.id ASC, oi.id ASC
+            """,
+            (session_id,),
+        ).fetchall()
+    ]
+
+
 @app.get("/staff/bill/{table_code}", response_class=HTMLResponse)
-def staff_bill(request: Request, table_code: str, pin: str = ""):
+def staff_bill(request: Request, table_code: str, pin: str = "", discount: float = 0):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
     conn = connect()
@@ -380,24 +404,13 @@ def staff_bill(request: Request, table_code: str, pin: str = ""):
     lines: list[dict] = []
     bill = None
     if session:
-        lines = [
-            dict(x)
-            for x in conn.execute(
-                """
-                SELECT oi.*, o.id AS order_id, o.created_at
-                FROM order_items oi
-                JOIN orders o ON o.id = oi.order_id
-                WHERE o.session_id = ? AND o.status != 'cancelled'
-                ORDER BY o.id ASC, oi.id ASC
-                """,
-                (session["id"],),
-            ).fetchall()
-        ]
+        lines = _session_lines(conn, session["id"])
         bill = compute_bill(
             lines,
             session["party_size"],
             meta["service_charge_rate"],
             meta["snack_charge_per_head"],
+            discount_percent=discount,
         )
     conn.close()
     return templates.TemplateResponse(
@@ -410,12 +423,17 @@ def staff_bill(request: Request, table_code: str, pin: str = ""):
             "lines": lines,
             "bill": bill,
             "pin": pin,
+            "discount": discount or 0,
         },
     )
 
 
 @app.post("/api/staff/bill/{table_code}/close")
-def close_bill(table_code: str, pin: str = Form(...)):
+def close_bill(
+    table_code: str,
+    pin: str = Form(...),
+    discount_percent: float = Form(0),
+):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     conn = connect()
@@ -427,10 +445,53 @@ def close_bill(table_code: str, pin: str = Form(...)):
     if not session:
         conn.close()
         return {"ok": True, "message": "No open session"}
+
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = compute_bill(
+        lines,
+        session["party_size"],
+        meta["service_charge_rate"],
+        meta["snack_charge_per_head"],
+        discount_percent=discount_percent,
+    )
     now = utc_now()
+    biz = business_date(datetime.now(HK)).isoformat()
+    receipt_rel = generate_receipt_pdf(
+        session_id=session["id"],
+        table_label=table["label"],
+        party_size=session["party_size"],
+        lines=lines,
+        bill=bill,
+        closed_at_iso=now,
+    )
     conn.execute(
-        "UPDATE sessions SET status = 'closed', closed_at = ? WHERE id = ?",
-        (now, session["id"]),
+        """
+        UPDATE sessions SET
+          status = 'closed',
+          closed_at = ?,
+          discount_percent = ?,
+          subtotal = ?,
+          snack_charge = ?,
+          service_charge = ?,
+          discount_amount = ?,
+          total = ?,
+          receipt_path = ?,
+          business_date = ?
+        WHERE id = ?
+        """,
+        (
+            now,
+            bill["discount_percent"],
+            bill["subtotal"],
+            bill["snack_charge"],
+            bill["service_charge"],
+            bill["discount_amount"],
+            bill["total"],
+            receipt_rel,
+            biz,
+            session["id"],
+        ),
     )
     conn.execute(
         "UPDATE orders SET status = 'served', updated_at = ? WHERE session_id = ? AND status != 'cancelled'",
@@ -438,7 +499,31 @@ def close_bill(table_code: str, pin: str = Form(...)):
     )
     conn.commit()
     conn.close()
-    return {"ok": True}
+    return {
+        "ok": True,
+        "session_id": session["id"],
+        "total": bill["total"],
+        "receipt_url": f"/staff/receipt/{session['id']}?pin={pin}",
+    }
+
+
+@app.get("/staff/receipt/{session_id}")
+def staff_receipt(session_id: int, pin: str = ""):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    session = get_session(conn, session_id)
+    conn.close()
+    if not session or not session["receipt_path"]:
+        raise HTTPException(404, "Receipt not found")
+    path = ROOT / session["receipt_path"]
+    if not path.exists():
+        raise HTTPException(404, "Receipt file missing")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"Polar-Receipt-S{session_id}.pdf",
+    )
 
 
 @app.get("/staff/qrs", response_class=HTMLResponse)
@@ -497,6 +582,48 @@ async def sse_events(pin: str = ""):
                 _subscribers.remove(queue)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/staff/reports", response_class=HTMLResponse)
+def staff_reports(request: Request, pin: str = "", day: str = "", month: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    today_biz = business_date(datetime.now(HK))
+    if day:
+        try:
+            biz = date.fromisoformat(day)
+        except ValueError:
+            biz = today_biz
+    else:
+        biz = today_biz
+
+    if month:
+        try:
+            y_str, m_str = month.split("-")
+            year, mon = int(y_str), int(m_str)
+        except Exception:
+            year, mon = today_biz.year, today_biz.month
+    else:
+        year, mon = today_biz.year, today_biz.month
+
+    conn = connect()
+    daily = daily_sales_report(conn, biz)
+    monthly = monthly_sales_report(conn, year, mon)
+    items = item_purchase_report(conn, year=year, month=mon)
+    conn.close()
+    return templates.TemplateResponse(
+        "staff_reports.html",
+        {
+            "request": request,
+            "title": "Reports",
+            "pin": pin,
+            "daily": daily,
+            "monthly": monthly,
+            "items": items,
+            "day": biz.isoformat(),
+            "month": f"{year}-{mon:02d}",
+        },
+    )
 
 
 @app.get("/health")

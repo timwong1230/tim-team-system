@@ -37,8 +37,16 @@ Open:
 
 Menu seeded from `data/menu.json` (Polar Menu Final Version).
 
+## Staff extras
+
+- **Discount on bill:** enter `10` for 10% off (blank/0 = full price)
+- **PDF receipt:** generated when you mark paid (`/staff/receipt/{session_id}`)
+- **Reports:** `/staff/reports` — nightly close (2pm–2am), monthly sales, purchase by category / by item
+- **Menu photos:** see `docs/ADD-MENU-PHOTOS.md`
+
 ## Notes
 
 - This system does **not** process payments.
-- Change `STAFF_PIN` in `app/main.py` before production.
+- Change staff PIN via env `POLAR_STAFF_PIN` (default `polar2026`).
 - SQLite DB file: `data/polar_order.db` (created on first run).
+- Receipt PDFs: `data/receipts/` (gitignored).

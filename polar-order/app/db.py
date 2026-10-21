@@ -24,6 +24,29 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    migrations = [
+        ("menu_items", "image", "TEXT"),
+        ("sessions", "discount_percent", "REAL NOT NULL DEFAULT 0"),
+        ("sessions", "subtotal", "REAL"),
+        ("sessions", "snack_charge", "REAL"),
+        ("sessions", "service_charge", "REAL"),
+        ("sessions", "discount_amount", "REAL"),
+        ("sessions", "total", "REAL"),
+        ("sessions", "receipt_path", "TEXT"),
+        ("sessions", "business_date", "TEXT"),
+    ]
+    for table, col, decl in migrations:
+        if not _column_exists(conn, table, col):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    conn.commit()
+
+
 def init_db() -> None:
     conn = connect()
     conn.executescript(
@@ -51,6 +74,7 @@ def init_db() -> None:
             note TEXT,
             allow_note INTEGER NOT NULL DEFAULT 0,
             available INTEGER NOT NULL DEFAULT 1,
+            image TEXT,
             FOREIGN KEY(category_id) REFERENCES menu_categories(id)
         );
 
@@ -61,6 +85,14 @@ def init_db() -> None:
             status TEXT NOT NULL DEFAULT 'open',
             opened_at TEXT NOT NULL,
             closed_at TEXT,
+            discount_percent REAL NOT NULL DEFAULT 0,
+            subtotal REAL,
+            snack_charge REAL,
+            service_charge REAL,
+            discount_amount REAL,
+            total REAL,
+            receipt_path TEXT,
+            business_date TEXT,
             FOREIGN KEY(table_id) REFERENCES tables(id)
         );
 
@@ -99,8 +131,9 @@ def init_db() -> None:
         """
     )
     conn.commit()
+    _ensure_columns(conn)
     _seed_tables(conn)
-    _seed_menu(conn)
+    sync_menu(conn)
     conn.close()
 
 
@@ -114,10 +147,8 @@ def _seed_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _seed_menu(conn: sqlite3.Connection) -> None:
-    count = conn.execute("SELECT COUNT(*) AS c FROM menu_items").fetchone()["c"]
-    if count:
-        return
+def sync_menu(conn: sqlite3.Connection) -> None:
+    """Upsert categories/items from menu.json (prices, notes, images)."""
     menu = json.loads(MENU_PATH.read_text(encoding="utf-8"))
     for cat in menu["categories"]:
         conn.execute(
@@ -127,9 +158,18 @@ def _seed_menu(conn: sqlite3.Connection) -> None:
         for item in cat["items"]:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO menu_items
-                (id, category_id, name, price, unit, note, allow_note, available)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                INSERT INTO menu_items
+                (id, category_id, name, price, unit, note, allow_note, available, image)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  category_id=excluded.category_id,
+                  name=excluded.name,
+                  price=excluded.price,
+                  unit=excluded.unit,
+                  note=excluded.note,
+                  allow_note=excluded.allow_note,
+                  image=excluded.image,
+                  available=1
                 """,
                 (
                     item["id"],
@@ -139,6 +179,7 @@ def _seed_menu(conn: sqlite3.Connection) -> None:
                     item.get("unit"),
                     item.get("note"),
                     1 if item.get("allow_note") else 0,
+                    item.get("image"),
                 ),
             )
     conn.commit()
@@ -185,3 +226,7 @@ def publish_event(conn: sqlite3.Connection, kind: str, payload: dict[str, Any]) 
         (kind, json.dumps(payload), utc_now()),
     )
     conn.commit()
+
+
+def get_session(conn: sqlite3.Connection, session_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()

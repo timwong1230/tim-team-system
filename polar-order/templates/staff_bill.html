@@ -15,12 +15,24 @@
   </div>
 
   {% if bill %}
-  <div class="bill-total">${{ '%.0f'|format(bill.total) }}</div>
-  <div class="card">
-    <div class="row"><span>Subtotal</span><span>${{ '%.0f'|format(bill.subtotal) }}</span></div>
-    <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span>${{ '%.0f'|format(bill.snack_charge) }}</span></div>
-    <div class="row"><span>Service {{ (bill.service_charge_rate * 100)|int }}%</span><span>${{ '%.0f'|format(bill.service_charge) }}</span></div>
-    <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span>${{ '%.0f'|format(bill.total) }}</span></div>
+  <label class="muted">Discount % (blank / 0 = full price · 10 = 10% off)</label>
+  <input class="field" id="discountInput" type="number" min="0" max="100" step="1" value="{{ discount|int if discount else '' }}" placeholder="0" />
+
+  <div class="bill-total" id="billTotal">${{ '%.0f'|format(bill.total) }}</div>
+  <div class="card" id="billCard"
+       data-subtotal="{{ bill.subtotal }}"
+       data-snack="{{ bill.snack_charge }}"
+       data-service="{{ bill.service_charge }}"
+       data-rate="{{ bill.service_charge_rate }}"
+       data-pre="{{ bill.pre_discount_total }}">
+    <div class="row"><span>Subtotal</span><span id="vSub">${{ '%.0f'|format(bill.subtotal) }}</span></div>
+    <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span id="vSnack">${{ '%.0f'|format(bill.snack_charge) }}</span></div>
+    <div class="row"><span>Service {{ (bill.service_charge_rate * 100)|int }}%</span><span id="vSvc">${{ '%.0f'|format(bill.service_charge) }}</span></div>
+    <div class="row" id="discRow" style="{% if not bill.discount_percent %}display:none{% endif %}">
+      <span id="discLabel">Discount {{ bill.discount_percent|int }}%</span>
+      <span id="vDisc">-${{ '%.0f'|format(bill.discount_amount) }}</span>
+    </div>
+    <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span id="vTotal">${{ '%.0f'|format(bill.total) }}</span></div>
   </div>
   <p class="muted">Collect payment with your third-party POS / terminal, then mark paid.</p>
 
@@ -39,20 +51,52 @@
 
   <form method="post" action="/api/staff/bill/{{ table.code }}/close" id="closeForm">
     <input type="hidden" name="pin" value="{{ pin }}" />
-    <button class="primary" type="submit">Mark paid & close table</button>
+    <input type="hidden" name="discount_percent" id="discountHidden" value="{{ discount|int if discount else 0 }}" />
+    <button class="primary" type="submit">Mark paid & open PDF receipt</button>
   </form>
   {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
+  const money = (n) => '$' + Math.round(n);
+  const input = document.getElementById('discountInput');
+  const card = document.getElementById('billCard');
+  function recalc() {
+    if (!card) return;
+    const pre = Number(card.dataset.pre);
+    let d = Number(input.value || 0);
+    if (Number.isNaN(d)) d = 0;
+    d = Math.max(0, Math.min(100, d));
+    const discAmt = pre * (d / 100);
+    const total = pre - discAmt;
+    document.getElementById('billTotal').textContent = money(total);
+    document.getElementById('vTotal').textContent = money(total);
+    document.getElementById('discountHidden').value = d;
+    const row = document.getElementById('discRow');
+    if (d > 0) {
+      row.style.display = 'flex';
+      document.getElementById('discLabel').textContent = `Discount ${d}%`;
+      document.getElementById('vDisc').textContent = '-' + money(discAmt);
+    } else {
+      row.style.display = 'none';
+    }
+  }
+  input?.addEventListener('input', recalc);
+
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!confirm('Close table after payment collected?')) return;
     const fd = new FormData(e.target);
     const res = await fetch(e.target.action, { method: 'POST', body: fd });
-    if (res.ok) location.href = '/staff/tables?pin={{ pin }}';
-    else alert('Failed to close');
+    const data = await res.json();
+    if (res.ok && data.receipt_url) {
+      window.location.href = data.receipt_url;
+    } else if (res.ok) {
+      location.href = '/staff/tables?pin={{ pin }}';
+    } else {
+      alert('Failed to close');
+    }
   });
 </script>
 {% endblock %}

@@ -8,8 +8,22 @@
       "sort": 1,
       "promo": "shisha",
       "items": [
-        {"id": "shisha-regular", "name": "Regular Shisha", "price": 398, "note": "Omakase — tell staff your flavour", "allow_note": true},
-        {"id": "shisha-change", "name": "Change Head", "price": 180, "note": "New head / flavour change", "allow_note": true}
+        {
+          "id": "shisha-regular",
+          "name": "Regular Shisha",
+          "price": 398,
+          "note": "Omakase — tell staff your flavour. Please wait for our packer to serve you personally after your order",
+          "allow_note": true,
+          "image": "/static/images/menu/shisha-regular.jpg"
+        },
+        {
+          "id": "shisha-change",
+          "name": "Change Head",
+          "price": 180,
+          "note": "New head / flavour change",
+          "allow_note": true,
+          "image": "/static/images/menu/shisha-change.jpg"
+        }
       ]
     },
     {
@@ -18,18 +32,79 @@
       "sort": 2,
       "promo": "drinks",
       "items": [
-        {"id": "aries", "name": "Aries — The Passionate Strike", "price": 129, "note": "Vodka, lychee, strawberry, passionfruit"},
-        {"id": "taurus", "name": "Taurus — The Grounded Soul", "price": 129, "note": "Lemongrass gin, cranberry, St. Germain"},
-        {"id": "gemini", "name": "Gemini — The Dual Reflection", "price": 129, "note": "Tequila, pineapple, yogurt, lime"},
-        {"id": "cancer", "name": "Cancer — The Soothing Oasis", "price": 139, "note": "Rose gin, cucumber, Cointreau, soda"},
-        {"id": "leo", "name": "Leo — The Radiant Majesty", "price": 139, "note": "B&B D.O.M, Martini Blanco, Patron"},
-        {"id": "virgo", "name": "Virgo — The Refined Botanist", "price": 139, "note": "Earl Grey, gin, elderflower, rose"},
-        {"id": "libra", "name": "Libra — The Elegant Balance", "price": 129, "note": "Rum, lychee, violet, egg white"},
-        {"id": "scorpio", "name": "Scorpio — The Smoky Enigma", "price": 129, "note": "Mezcal, Aperol, cucumber, lime"},
-        {"id": "sagittarius", "name": "Sagittarius — The Eternal Explorer", "price": 129, "note": "Rose gin, violette, St. Germain"},
-        {"id": "capricorn", "name": "Capricorn — The Earthy Sophistication", "price": 129, "note": "Dark rum, perilla, bitters, ginger ale"},
-        {"id": "aquarius", "name": "Aquarius — The Unconventional Kiss", "price": 139, "note": "Moscato, blue curaçao, caviar"},
-        {"id": "pisces", "name": "Pisces — The Midnight Daydream", "price": 129, "note": "Disaronno, Malibu, Martini Extra Dry"}
+        {
+          "id": "aries",
+          "name": "Aries — The Passionate Strike",
+          "price": 129,
+          "note": "Vodka, lychee, strawberry, passionfruit",
+          "image": "/static/images/menu/aries.jpg"
+        },
+        {
+          "id": "taurus",
+          "name": "Taurus — The Grounded Soul",
+          "price": 129,
+          "note": "Lemongrass gin, cranberry, St. Germain"
+        },
+        {
+          "id": "gemini",
+          "name": "Gemini — The Dual Reflection",
+          "price": 129,
+          "note": "Tequila, pineapple, yogurt, lime"
+        },
+        {
+          "id": "cancer",
+          "name": "Cancer — The Soothing Oasis",
+          "price": 139,
+          "note": "Rose gin, cucumber, Cointreau, soda"
+        },
+        {
+          "id": "leo",
+          "name": "Leo — The Radiant Majesty",
+          "price": 139,
+          "note": "B&B D.O.M, Martini Blanco, Patron"
+        },
+        {
+          "id": "virgo",
+          "name": "Virgo — The Refined Botanist",
+          "price": 139,
+          "note": "Earl Grey, gin, elderflower, rose"
+        },
+        {
+          "id": "libra",
+          "name": "Libra — The Elegant Balance",
+          "price": 129,
+          "note": "Rum, lychee, violet, egg white"
+        },
+        {
+          "id": "scorpio",
+          "name": "Scorpio — The Smoky Enigma",
+          "price": 129,
+          "note": "Mezcal, Aperol, cucumber, lime"
+        },
+        {
+          "id": "sagittarius",
+          "name": "Sagittarius — The Eternal Explorer",
+          "price": 129,
+          "note": "Rose gin, violette, St. Germain"
+        },
+        {
+          "id": "capricorn",
+          "name": "Capricorn — The Earthy Sophistication",
+          "price": 129,
+          "note": "Dark rum, perilla, bitters, ginger ale"
+        },
+        {
+          "id": "aquarius",
+          "name": "Aquarius — The Unconventional Kiss",
+          "price": 139,
+          "note": "Moscato, blue curaçao, caviar"
+        },
+        {
+          "id": "pisces",
+          "name": "Pisces — The Midnight Daydream",
+          "price": 129,
+          "note": "Disaronno, Malibu, Martini Extra Dry"
+        }
       ]
     },
     {
@@ -38,16 +113,66 @@
       "sort": 3,
       "promo": "drinks",
       "items": [
-        {"id": "coke", "name": "Coke", "price": 59, "unit": "Glass"},
-        {"id": "coke-zero", "name": "Coke Zero", "price": 59, "unit": "Glass"},
-        {"id": "sprite", "name": "Sprite", "price": 59, "unit": "Glass"},
-        {"id": "ginger-ale", "name": "Ginger Ale", "price": 59, "unit": "Glass"},
-        {"id": "tonic", "name": "Tonic Water", "price": 59, "unit": "Glass"},
-        {"id": "redbull", "name": "Redbull", "price": 69, "unit": "Glass"},
-        {"id": "oj", "name": "Orange Juice", "price": 49, "unit": "Glass"},
-        {"id": "aj", "name": "Apple Juice", "price": 49, "unit": "Glass"},
-        {"id": "cran", "name": "Cranberry Juice", "price": 49, "unit": "Glass"},
-        {"id": "pellegrino", "name": "S. Pellegrino Sparkling Water", "price": 98, "unit": "Bottle"}
+        {
+          "id": "coke",
+          "name": "Coke",
+          "price": 59,
+          "unit": "Glass"
+        },
+        {
+          "id": "coke-zero",
+          "name": "Coke Zero",
+          "price": 59,
+          "unit": "Glass"
+        },
+        {
+          "id": "sprite",
+          "name": "Sprite",
+          "price": 59,
+          "unit": "Glass"
+        },
+        {
+          "id": "ginger-ale",
+          "name": "Ginger Ale",
+          "price": 59,
+          "unit": "Glass"
+        },
+        {
+          "id": "tonic",
+          "name": "Tonic Water",
+          "price": 59,
+          "unit": "Glass"
+        },
+        {
+          "id": "redbull",
+          "name": "Redbull",
+          "price": 69,
+          "unit": "Glass"
+        },
+        {
+          "id": "oj",
+          "name": "Orange Juice",
+          "price": 49,
+          "unit": "Glass"
+        },
+        {
+          "id": "aj",
+          "name": "Apple Juice",
+          "price": 49,
+          "unit": "Glass"
+        },
+        {
+          "id": "cran",
+          "name": "Cranberry Juice",
+          "price": 49,
+          "unit": "Glass"
+        },
+        {
+          "id": "pellegrino",
+          "name": "S. Pellegrino Sparkling Water",
+          "price": 98,
+          "unit": "Bottle"
+        }
       ]
     },
     {
@@ -56,9 +181,24 @@
       "sort": 4,
       "promo": "drinks",
       "items": [
-        {"id": "tea-orange", "name": "Fresh Orange Jasmine", "price": 88, "note": "Includes tea biscuit"},
-        {"id": "tea-pineapple", "name": "Pineapple Earl Grey", "price": 88, "note": "Includes tea biscuit"},
-        {"id": "tea-lemon", "name": "Lemon Ginger Honey", "price": 88, "note": "Includes tea biscuit"}
+        {
+          "id": "tea-orange",
+          "name": "Fresh Orange Jasmine",
+          "price": 88,
+          "note": "Includes tea biscuit"
+        },
+        {
+          "id": "tea-pineapple",
+          "name": "Pineapple Earl Grey",
+          "price": 88,
+          "note": "Includes tea biscuit"
+        },
+        {
+          "id": "tea-lemon",
+          "name": "Lemon Ginger Honey",
+          "price": 88,
+          "note": "Includes tea biscuit"
+        }
       ]
     },
     {
@@ -67,9 +207,22 @@
       "sort": 5,
       "promo": "snacks",
       "items": [
-        {"id": "fries", "name": "French Fries", "price": 58},
-        {"id": "kfc", "name": "Korean Fried Chicken (6pcs)", "price": 88},
-        {"id": "wings", "name": "Chicken Wings (4pcs)", "price": 78}
+        {
+          "id": "fries",
+          "name": "French Fries",
+          "price": 58,
+          "image": "/static/images/menu/fries.jpg"
+        },
+        {
+          "id": "kfc",
+          "name": "Korean Fried Chicken (6pcs)",
+          "price": 88
+        },
+        {
+          "id": "wings",
+          "name": "Chicken Wings (4pcs)",
+          "price": 78
+        }
       ]
     },
     {
@@ -78,10 +231,30 @@
       "sort": 6,
       "promo": "drinks",
       "items": [
-        {"id": "corona", "name": "Corona", "price": 79, "unit": "Bottle"},
-        {"id": "asahi", "name": "Asahi Super Dry", "price": 89, "unit": "Glass"},
-        {"id": "asahi-dark", "name": "Asahi Dark", "price": 89, "unit": "Glass"},
-        {"id": "vedett", "name": "Vedett Extra White", "price": 89, "unit": "Glass"}
+        {
+          "id": "corona",
+          "name": "Corona",
+          "price": 79,
+          "unit": "Bottle"
+        },
+        {
+          "id": "asahi",
+          "name": "Asahi Super Dry",
+          "price": 89,
+          "unit": "Glass"
+        },
+        {
+          "id": "asahi-dark",
+          "name": "Asahi Dark",
+          "price": 89,
+          "unit": "Glass"
+        },
+        {
+          "id": "vedett",
+          "name": "Vedett Extra White",
+          "price": 89,
+          "unit": "Glass"
+        }
       ]
     },
     {
@@ -90,9 +263,21 @@
       "sort": 7,
       "promo": "drinks",
       "items": [
-        {"id": "single-mix", "name": "Single Mix", "price": 459},
-        {"id": "draft-tower", "name": "Draft Beer Tower", "price": 349},
-        {"id": "bottle-tower", "name": "Bottle Beer Tower", "price": 329}
+        {
+          "id": "single-mix",
+          "name": "Single Mix",
+          "price": 459
+        },
+        {
+          "id": "draft-tower",
+          "name": "Draft Beer Tower",
+          "price": 349
+        },
+        {
+          "id": "bottle-tower",
+          "name": "Bottle Beer Tower",
+          "price": 329
+        }
       ]
     },
     {
@@ -101,17 +286,61 @@
       "sort": 8,
       "promo": "drinks",
       "items": [
-        {"id": "lfe-cab-g", "name": "LFE Cabernet Sauvignon (Glass)", "price": 79},
-        {"id": "lfe-cab-b", "name": "LFE Cabernet Sauvignon (Bottle)", "price": 399},
-        {"id": "bella-g", "name": "Bella Storia Merlot (Glass)", "price": 99},
-        {"id": "bella-b", "name": "Bella Storia Merlot (Bottle)", "price": 459},
-        {"id": "lfe-sav-g", "name": "LFE Sauvignon Blanc (Glass)", "price": 79},
-        {"id": "lfe-sav-b", "name": "LFE Sauvignon Blanc (Bottle)", "price": 399},
-        {"id": "trebbiano-g", "name": "Terre Allegre Trebbiano (Glass)", "price": 99},
-        {"id": "trebbiano-b", "name": "Terre Allegre Trebbiano (Bottle)", "price": 459},
-        {"id": "moscato-b", "name": "Borgo Imperiale Moscato (Bottle)", "price": 459},
-        {"id": "rose-b", "name": "St. Jean de Villecroze Rosé (Bottle)", "price": 459},
-        {"id": "chaos-b", "name": "Dacastello Chaos & Kosmos Sparkling (Bottle)", "price": 459}
+        {
+          "id": "lfe-cab-g",
+          "name": "LFE Cabernet Sauvignon (Glass)",
+          "price": 79
+        },
+        {
+          "id": "lfe-cab-b",
+          "name": "LFE Cabernet Sauvignon (Bottle)",
+          "price": 399
+        },
+        {
+          "id": "bella-g",
+          "name": "Bella Storia Merlot (Glass)",
+          "price": 99
+        },
+        {
+          "id": "bella-b",
+          "name": "Bella Storia Merlot (Bottle)",
+          "price": 459
+        },
+        {
+          "id": "lfe-sav-g",
+          "name": "LFE Sauvignon Blanc (Glass)",
+          "price": 79
+        },
+        {
+          "id": "lfe-sav-b",
+          "name": "LFE Sauvignon Blanc (Bottle)",
+          "price": 399
+        },
+        {
+          "id": "trebbiano-g",
+          "name": "Terre Allegre Trebbiano (Glass)",
+          "price": 99
+        },
+        {
+          "id": "trebbiano-b",
+          "name": "Terre Allegre Trebbiano (Bottle)",
+          "price": 459
+        },
+        {
+          "id": "moscato-b",
+          "name": "Borgo Imperiale Moscato (Bottle)",
+          "price": 459
+        },
+        {
+          "id": "rose-b",
+          "name": "St. Jean de Villecroze Rosé (Bottle)",
+          "price": 459
+        },
+        {
+          "id": "chaos-b",
+          "name": "Dacastello Chaos & Kosmos Sparkling (Bottle)",
+          "price": 459
+        }
       ]
     },
     {
@@ -120,12 +349,36 @@
       "sort": 9,
       "promo": "drinks",
       "items": [
-        {"id": "jessy-vodka-g", "name": "Jessy's Barrel (Glass)", "price": 89},
-        {"id": "jessy-vodka-b", "name": "Jessy's Barrel (Bottle)", "price": 1099},
-        {"id": "belvedere-g", "name": "Belvedere (Glass)", "price": 99},
-        {"id": "belvedere-b", "name": "Belvedere (Bottle)", "price": 1699},
-        {"id": "grey-goose-g", "name": "Grey Goose (Glass)", "price": 129},
-        {"id": "grey-goose-b", "name": "Grey Goose (Bottle)", "price": 1999}
+        {
+          "id": "jessy-vodka-g",
+          "name": "Jessy's Barrel (Glass)",
+          "price": 89
+        },
+        {
+          "id": "jessy-vodka-b",
+          "name": "Jessy's Barrel (Bottle)",
+          "price": 1099
+        },
+        {
+          "id": "belvedere-g",
+          "name": "Belvedere (Glass)",
+          "price": 99
+        },
+        {
+          "id": "belvedere-b",
+          "name": "Belvedere (Bottle)",
+          "price": 1699
+        },
+        {
+          "id": "grey-goose-g",
+          "name": "Grey Goose (Glass)",
+          "price": 129
+        },
+        {
+          "id": "grey-goose-b",
+          "name": "Grey Goose (Bottle)",
+          "price": 1999
+        }
       ]
     },
     {
@@ -134,16 +387,56 @@
       "sort": 10,
       "promo": "drinks",
       "items": [
-        {"id": "jessy-gin-g", "name": "Jessy's Barrel (Glass)", "price": 89},
-        {"id": "jessy-gin-b", "name": "Jessy's Barrel (Bottle)", "price": 1099},
-        {"id": "mg-rosa-g", "name": "MG Gin Rosa (Glass)", "price": 99},
-        {"id": "mg-rosa-b", "name": "MG Gin Rosa (Bottle)", "price": 1499},
-        {"id": "bombay-g", "name": "Bombay (Glass)", "price": 109},
-        {"id": "bombay-b", "name": "Bombay (Bottle)", "price": 1599},
-        {"id": "tanqueray-g", "name": "Tanqueray (Glass)", "price": 109},
-        {"id": "tanqueray-b", "name": "Tanqueray (Bottle)", "price": 1699},
-        {"id": "hendricks-g", "name": "Hendrick's (Glass)", "price": 119},
-        {"id": "hendricks-b", "name": "Hendrick's (Bottle)", "price": 1799}
+        {
+          "id": "jessy-gin-g",
+          "name": "Jessy's Barrel (Glass)",
+          "price": 89
+        },
+        {
+          "id": "jessy-gin-b",
+          "name": "Jessy's Barrel (Bottle)",
+          "price": 1099
+        },
+        {
+          "id": "mg-rosa-g",
+          "name": "MG Gin Rosa (Glass)",
+          "price": 99
+        },
+        {
+          "id": "mg-rosa-b",
+          "name": "MG Gin Rosa (Bottle)",
+          "price": 1499
+        },
+        {
+          "id": "bombay-g",
+          "name": "Bombay (Glass)",
+          "price": 109
+        },
+        {
+          "id": "bombay-b",
+          "name": "Bombay (Bottle)",
+          "price": 1599
+        },
+        {
+          "id": "tanqueray-g",
+          "name": "Tanqueray (Glass)",
+          "price": 109
+        },
+        {
+          "id": "tanqueray-b",
+          "name": "Tanqueray (Bottle)",
+          "price": 1699
+        },
+        {
+          "id": "hendricks-g",
+          "name": "Hendrick's (Glass)",
+          "price": 119
+        },
+        {
+          "id": "hendricks-b",
+          "name": "Hendrick's (Bottle)",
+          "price": 1799
+        }
       ]
     },
     {
@@ -152,20 +445,76 @@
       "sort": 11,
       "promo": "drinks",
       "items": [
-        {"id": "claymore-g", "name": "Claymore (Glass)", "price": 89},
-        {"id": "claymore-b", "name": "Claymore (Bottle)", "price": 1099},
-        {"id": "black-label-g", "name": "Black Label (Glass)", "price": 99},
-        {"id": "black-label-b", "name": "Black Label (Bottle)", "price": 1499},
-        {"id": "jd-g", "name": "Jack Daniels (Glass)", "price": 99},
-        {"id": "jd-b", "name": "Jack Daniels (Bottle)", "price": 1599},
-        {"id": "makers-g", "name": "Maker's Mark (Glass)", "price": 99},
-        {"id": "makers-b", "name": "Maker's Mark (Bottle)", "price": 1599},
-        {"id": "glenfiddich-g", "name": "Glenfiddich 12 (Glass)", "price": 109},
-        {"id": "glenfiddich-b", "name": "Glenfiddich 12 (Bottle)", "price": 1699},
-        {"id": "glenlivet-g", "name": "Glenlivet 12 (Glass)", "price": 109},
-        {"id": "glenlivet-b", "name": "Glenlivet 12 (Bottle)", "price": 1699},
-        {"id": "singleton-g", "name": "Singleton 13 (Glass)", "price": 109},
-        {"id": "singleton-b", "name": "Singleton 13 (Bottle)", "price": 1799}
+        {
+          "id": "claymore-g",
+          "name": "Claymore (Glass)",
+          "price": 89
+        },
+        {
+          "id": "claymore-b",
+          "name": "Claymore (Bottle)",
+          "price": 1099
+        },
+        {
+          "id": "black-label-g",
+          "name": "Black Label (Glass)",
+          "price": 99
+        },
+        {
+          "id": "black-label-b",
+          "name": "Black Label (Bottle)",
+          "price": 1499
+        },
+        {
+          "id": "jd-g",
+          "name": "Jack Daniels (Glass)",
+          "price": 99
+        },
+        {
+          "id": "jd-b",
+          "name": "Jack Daniels (Bottle)",
+          "price": 1599
+        },
+        {
+          "id": "makers-g",
+          "name": "Maker's Mark (Glass)",
+          "price": 99
+        },
+        {
+          "id": "makers-b",
+          "name": "Maker's Mark (Bottle)",
+          "price": 1599
+        },
+        {
+          "id": "glenfiddich-g",
+          "name": "Glenfiddich 12 (Glass)",
+          "price": 109
+        },
+        {
+          "id": "glenfiddich-b",
+          "name": "Glenfiddich 12 (Bottle)",
+          "price": 1699
+        },
+        {
+          "id": "glenlivet-g",
+          "name": "Glenlivet 12 (Glass)",
+          "price": 109
+        },
+        {
+          "id": "glenlivet-b",
+          "name": "Glenlivet 12 (Bottle)",
+          "price": 1699
+        },
+        {
+          "id": "singleton-g",
+          "name": "Singleton 13 (Glass)",
+          "price": 109
+        },
+        {
+          "id": "singleton-b",
+          "name": "Singleton 13 (Bottle)",
+          "price": 1799
+        }
       ]
     },
     {
@@ -174,14 +523,46 @@
       "sort": 12,
       "promo": "drinks",
       "items": [
-        {"id": "baileys-g", "name": "Baileys (Glass)", "price": 79},
-        {"id": "baileys-b", "name": "Baileys (Bottle)", "price": 1199},
-        {"id": "kahlua-g", "name": "Kahlua (Glass)", "price": 79},
-        {"id": "kahlua-b", "name": "Kahlua (Bottle)", "price": 1199},
-        {"id": "jager-g", "name": "Jagermeister (Glass)", "price": 89},
-        {"id": "jager-b", "name": "Jagermeister (Bottle)", "price": 1399},
-        {"id": "tequila-rose-g", "name": "Tequila Rose (Glass)", "price": 89},
-        {"id": "tequila-rose-b", "name": "Tequila Rose (Bottle)", "price": 1399}
+        {
+          "id": "baileys-g",
+          "name": "Baileys (Glass)",
+          "price": 79
+        },
+        {
+          "id": "baileys-b",
+          "name": "Baileys (Bottle)",
+          "price": 1199
+        },
+        {
+          "id": "kahlua-g",
+          "name": "Kahlua (Glass)",
+          "price": 79
+        },
+        {
+          "id": "kahlua-b",
+          "name": "Kahlua (Bottle)",
+          "price": 1199
+        },
+        {
+          "id": "jager-g",
+          "name": "Jagermeister (Glass)",
+          "price": 89
+        },
+        {
+          "id": "jager-b",
+          "name": "Jagermeister (Bottle)",
+          "price": 1399
+        },
+        {
+          "id": "tequila-rose-g",
+          "name": "Tequila Rose (Glass)",
+          "price": 89
+        },
+        {
+          "id": "tequila-rose-b",
+          "name": "Tequila Rose (Bottle)",
+          "price": 1399
+        }
       ]
     },
     {
@@ -190,9 +571,24 @@
       "sort": 13,
       "promo": "drinks",
       "items": [
-        {"id": "moet", "name": "Moet", "price": 1099, "unit": "Bottle"},
-        {"id": "vcp", "name": "VCP", "price": 1099, "unit": "Bottle"},
-        {"id": "dom", "name": "Dom Perignon", "price": 3099, "unit": "Bottle"}
+        {
+          "id": "moet",
+          "name": "Moet",
+          "price": 1099,
+          "unit": "Bottle"
+        },
+        {
+          "id": "vcp",
+          "name": "VCP",
+          "price": 1099,
+          "unit": "Bottle"
+        },
+        {
+          "id": "dom",
+          "name": "Dom Perignon",
+          "price": 3099,
+          "unit": "Bottle"
+        }
       ]
     },
     {
@@ -201,12 +597,36 @@
       "sort": 14,
       "promo": "drinks",
       "items": [
-        {"id": "cuervo-g", "name": "Jose Cuervo Silver (Glass)", "price": 89},
-        {"id": "cuervo-b", "name": "Jose Cuervo Silver (Bottle)", "price": 1199},
-        {"id": "patron-g", "name": "Patron Silver (Glass)", "price": 129},
-        {"id": "patron-b", "name": "Patron Silver (Bottle)", "price": 1999},
-        {"id": "campo-g", "name": "Campo Azul Gran Classico Blanco (Glass)", "price": 109},
-        {"id": "campo-b", "name": "Campo Azul Gran Classico Blanco (Bottle)", "price": 1499}
+        {
+          "id": "cuervo-g",
+          "name": "Jose Cuervo Silver (Glass)",
+          "price": 89
+        },
+        {
+          "id": "cuervo-b",
+          "name": "Jose Cuervo Silver (Bottle)",
+          "price": 1199
+        },
+        {
+          "id": "patron-g",
+          "name": "Patron Silver (Glass)",
+          "price": 129
+        },
+        {
+          "id": "patron-b",
+          "name": "Patron Silver (Bottle)",
+          "price": 1999
+        },
+        {
+          "id": "campo-g",
+          "name": "Campo Azul Gran Classico Blanco (Glass)",
+          "price": 109
+        },
+        {
+          "id": "campo-b",
+          "name": "Campo Azul Gran Classico Blanco (Bottle)",
+          "price": 1499
+        }
       ]
     },
     {
@@ -215,10 +635,26 @@
       "sort": 15,
       "promo": "drinks",
       "items": [
-        {"id": "jessy-rum-g", "name": "Jessy's Barrel (Glass)", "price": 89},
-        {"id": "jessy-rum-b", "name": "Jessy's Barrel (Bottle)", "price": 1099},
-        {"id": "myers-g", "name": "Myers (Glass)", "price": 99},
-        {"id": "myers-b", "name": "Myers (Bottle)", "price": 1599}
+        {
+          "id": "jessy-rum-g",
+          "name": "Jessy's Barrel (Glass)",
+          "price": 89
+        },
+        {
+          "id": "jessy-rum-b",
+          "name": "Jessy's Barrel (Bottle)",
+          "price": 1099
+        },
+        {
+          "id": "myers-g",
+          "name": "Myers (Glass)",
+          "price": 99
+        },
+        {
+          "id": "myers-b",
+          "name": "Myers (Bottle)",
+          "price": 1599
+        }
       ]
     },
     {
@@ -227,8 +663,16 @@
       "sort": 16,
       "promo": "drinks",
       "items": [
-        {"id": "vsop-g", "name": "VSOP (Glass)", "price": 119},
-        {"id": "vsop-b", "name": "VSOP (Bottle)", "price": 1799}
+        {
+          "id": "vsop-g",
+          "name": "VSOP (Glass)",
+          "price": 119
+        },
+        {
+          "id": "vsop-b",
+          "name": "VSOP (Bottle)",
+          "price": 1799
+        }
       ]
     }
   ]

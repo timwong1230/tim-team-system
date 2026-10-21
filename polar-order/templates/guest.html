@@ -35,17 +35,22 @@
     <h2>{{ cat.name }}</h2>
     {% for item in cat['items'] %}
     <article class="item" data-id="{{ item['id'] }}" data-name="{{ item['name'] }}" data-price="{{ item['display_price'] }}" data-allow-note="{{ 1 if item['allow_note'] else 0 }}">
-      <div>
-        <h3>{{ item['name'] }}</h3>
-        {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
-        {% if item['unit'] %}<p class="note">{{ item['unit'] }}</p>{% endif %}
-      </div>
-      <div class="price">
-        <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
-        {% if item['display_price'] < item['price'] %}
-        <div class="was">${{ '%.0f'|format(item['price']) }}</div>
-        {% endif %}
-        <button class="add-btn" type="button">Add</button>
+      {% if item['image'] %}
+      <div class="item-photo"><img src="{{ item['image'] }}" alt="{{ item['name'] }}" loading="lazy" /></div>
+      {% endif %}
+      <div class="item-body">
+        <div>
+          <h3>{{ item['name'] }}</h3>
+          {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
+          {% if item['unit'] %}<p class="note">{{ item['unit'] }}</p>{% endif %}
+        </div>
+        <div class="price">
+          <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
+          {% if item['display_price'] < item['price'] %}
+          <div class="was">${{ '%.0f'|format(item['price']) }}</div>
+          {% endif %}
+          <button class="add-btn" type="button">Add</button>
+        </div>
       </div>
     </article>
     {% endfor %}
