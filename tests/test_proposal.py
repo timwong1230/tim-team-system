@@ -236,3 +236,23 @@ def test_app_wires_proposal_tool():
     assert "📋 計劃書" in src
     assert "def page_proposal" in src
     assert 'if "計劃書" in pick' in src
+
+
+def test_veasy_auto_premium():
+    from tt_core.proposal import build_protection_proposal, load_catalog
+
+    load_catalog.cache_clear()
+    prop = build_protection_proposal(
+        client_name="Tim",
+        age=30,
+        gender="男",
+        include_medical=True,
+        include_ci=False,
+        include_accident=False,
+        medical_id="veasy",
+        medical_level="標準",
+    )
+    assert prop["sections"][0]["premium_ok"] is True
+    assert prop["sections"][0]["premium_annual_hkd"] == 5745
+    assert prop["sections"][0]["premium_source"] == "table"
+    assert not prop["gaps"]
