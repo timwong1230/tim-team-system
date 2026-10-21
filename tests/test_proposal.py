@@ -178,6 +178,8 @@ def test_no_duplicate_premium_meta_and_rich_highlights():
         meta_keys = [k for k, _ in sec.get("meta_rows") or []]
         assert "保費" not in meta_keys
         assert "產品" not in meta_keys
+        assert "參考來源" not in meta_keys
+        assert "報價" not in meta_keys
         assert len(sec.get("highlights") or []) >= 5
     for row in prop["summary_rows"]:
         prem = str(row.get("年供保費") or "")
@@ -190,6 +192,18 @@ def test_no_duplicate_premium_meta_and_rich_highlights():
     assert get_product("critical_illness", "ci_zhishang_plus")
     assert get_product("critical_illness", "ci_easy")
     assert get_product("accident", "life_accident_rider")["short"] == "人身意外附約"
+
+    # Q4 客戶優惠應掛上醫家保；首年 3 個月 → age35 5568 * 9/12
+    med = prop["sections"][0]
+    assert med.get("promo")
+    assert "3 個月" in str(med["promo"].get("detail") or "")
+    assert med["promo"].get("first_year_hkd") == 4176
+    from tt_core.proposal import html_preview
+
+    html = html_preview(prop)
+    assert "參考來源" not in html
+    assert "見客時以正式報價為準" not in html
+    assert "保費折扣" in html
 
 
 def test_html_and_whatsapp_and_pdf():

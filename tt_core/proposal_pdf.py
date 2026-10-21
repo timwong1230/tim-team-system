@@ -126,7 +126,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
     rows = [
         (k, v)
         for k, v in (section.get("meta_rows") or [])
-        if str(k) not in ("保費", "產品", "年供")
+        if str(k) not in ("保費", "產品", "年供", "參考來源", "報價")
     ]
     cell_h = 18
     for i, (k, v) in enumerate(rows):
@@ -145,7 +145,51 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_text_color(*_TEXT)
         pdf.multi_cell(80, 4, str(v))
 
-    y = y + ((len(rows) + 1) // 2) * cell_h + 6
+    y = y + ((len(rows) + 1) // 2) * cell_h + 4
+    promo = section.get("promo") or {}
+    if promo.get("detail"):
+        detail = str(promo.get("detail") or "")
+        fy = str(promo.get("first_year_display") or "")
+        note = str(promo.get("note") or "")
+        pdf.set_font("TT", "", 9)
+        detail_h = float(
+            pdf.multi_cell(170, 5, detail, dry_run=True, output="HEIGHT") or 5
+        )
+        fy_h = 6 if fy else 0
+        note_h = 5 if note else 0
+        box_h = 10 + detail_h + fy_h + note_h + 4
+        if y + box_h > 270:
+            pdf.add_page()
+            pdf.set_fill_color(*_SOFT)
+            pdf.rect(0, 0, 210, 297, "F")
+            y = 40
+        pdf.set_fill_color(255, 248, 232)
+        pdf.set_draw_color(230, 211, 161)
+        pdf.rect(16, y, 178, box_h, "FD")
+        pdf.set_xy(20, y + 3)
+        pdf.set_font("TT", "B", 10)
+        pdf.set_text_color(*_INK)
+        q = str(promo.get("quarter") or "")
+        label = str(promo.get("label") or "保費折扣")
+        pdf.cell(170, 5, f"{label}" + (f"  ·  {q}" if q else ""))
+        pdf.set_xy(20, y + 9)
+        pdf.set_font("TT", "", 9)
+        pdf.set_text_color(*_TEXT)
+        pdf.multi_cell(170, 5, detail)
+        yy = pdf.get_y()
+        if fy:
+            pdf.set_xy(20, yy + 1)
+            pdf.set_font("TT", "B", 10)
+            pdf.set_text_color(*_INK)
+            pdf.multi_cell(170, 5, fy)
+            yy = pdf.get_y()
+        if note:
+            pdf.set_xy(20, yy + 0.5)
+            pdf.set_font("TT", "", 8)
+            pdf.set_text_color(*_MUTED)
+            pdf.multi_cell(170, 4, note)
+        y = y + box_h + 4
+
     if section.get("goals"):
         pdf.set_xy(16, y)
         pdf.set_font("TT", "B", 11)

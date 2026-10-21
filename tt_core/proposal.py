@@ -144,7 +144,6 @@ def build_protection_proposal(
                 annual = float(prem.get("annual_hkd") or 0)
                 level_label = str(prem.get("level") or prod.get("short") or "標準")
                 ded_val = int(prem.get("deductible") or 0)
-                source_label = "系統保費表"
                 if annual <= 0:
                     gaps.append(
                         f"醫療「{prod.get('short')}」呢個年齡／選項暫時查唔到保費。"
@@ -160,7 +159,6 @@ def build_protection_proposal(
                     or "標準"
                 )
                 ded_val = int(medical_deductible or 0)
-                source_label = "同事輸入報價"
                 if annual <= 0:
                     gaps.append(
                         f"醫療「{prod.get('short')}」未接保費表——請手動輸入年保費（港元）。"
@@ -195,7 +193,6 @@ def build_protection_proposal(
                             "無自付費" if ded_val == 0 else format_hkd(ded_val),
                         ),
                         ("保障期", str(prod.get("term_note") or "—")),
-                        ("參考來源", source_label),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {
@@ -282,7 +279,6 @@ def build_protection_proposal(
                         ("保障額", format_hkd(sa) if sa else "—"),
                         ("保障期", str(prod.get("term_note") or "—")),
                         ("形式", "可附於主保單／獨立（以條款為準）"),
-                        ("報價", "見客時以正式報價為準"),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {"sa_hkd": sa},
@@ -327,12 +323,16 @@ def build_protection_proposal(
                         ("保額", format_hkd(sa) if sa else "—"),
                         ("供款年期", f"{pay} 年"),
                         ("保障期", str(prod.get("term_note") or "—")),
-                        ("報價", "見客時以正式報價為準"),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {"sa_hkd": sa, "pay_term": pay},
                 }
             )
+
+    from tt_core.proposal_offers import attach_offer_to_section
+
+    for s in sections:
+        attach_offer_to_section(s)
 
     summary_rows = []
     for s in sections:
@@ -481,6 +481,9 @@ def build_saving_proposal(
             "options": options,
         }
     ]
+    from tt_core.proposal_offers import attach_offer_to_section
+
+    attach_offer_to_section(sections[0])
     summary_rows = [
         {
             "保險類別": purpose or "儲蓄",
@@ -521,6 +524,11 @@ def proposal_whatsapp(proposal: dict[str, Any]) -> str:
         lines.append(f"*{s.get('category')}*")
         lines.append(f"產品：{s.get('product_name')}")
         lines.append(f"保費：{s.get('premium_display')}")
+        promo = s.get("promo") or {}
+        if promo.get("detail"):
+            lines.append(f"保費折扣：{promo.get('detail')}")
+            if promo.get("first_year_display"):
+                lines.append(str(promo["first_year_display"]))
         if s.get("cover_summary"):
             lines.append(f"保障：{s.get('cover_summary')}")
         lines.append("")
@@ -545,8 +553,29 @@ def html_preview(proposal: dict[str, Any]) -> str:
         meta = "".join(
             f"<div class='kv'><span>{_esc(k)}</span><strong>{_esc(v)}</strong></div>"
             for k, v in (s.get("meta_rows") or [])
-            if str(k) not in ("保費", "產品", "年供")
+            if str(k) not in ("保費", "產品", "年供", "參考來源", "報價")
         )
+        promo = s.get("promo") or {}
+        promo_html = ""
+        if promo.get("detail"):
+            fy = (
+                f"<div class='promo-fy'>{_esc(promo.get('first_year_display'))}</div>"
+                if promo.get("first_year_display")
+                else ""
+            )
+            note = (
+                f"<div class='promo-note'>{_esc(promo.get('note'))}</div>"
+                if promo.get("note")
+                else ""
+            )
+            promo_html = (
+                "<div class='promo'>"
+                f"<div class='glabel'>{_esc(promo.get('label') or '保費折扣')}"
+                f" · {_esc(promo.get('quarter') or '')}</div>"
+                f"<div class='promo-detail'>{_esc(promo.get('detail'))}</div>"
+                f"{fy}{note}"
+                "</div>"
+            )
         goals = s.get("goals") or []
         goals_html = ""
         if goals:
@@ -573,6 +602,7 @@ def html_preview(proposal: dict[str, Any]) -> str:
     <div class="prem {premium_cls}">{_esc(s.get('premium_display'))}</div>
   </header>
   <div class="meta">{meta}</div>
+  {promo_html}
   {goals_html}
   <div class="hl"><div class="glabel">計劃內容</div><ul>{bullets}</ul></div>
   {illus_html}
@@ -633,6 +663,12 @@ def html_preview(proposal: dict[str, Any]) -> str:
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;}}
   .kv span{{display:block;color:#6B7280;margin-bottom:2px;}}
   .kv strong{{color:#1C2430;font-weight:600;}}
+  .promo{{background:#FFF8E8;border:1px solid #E6D3A1;border-radius:12px;
+    padding:10px 12px;margin:0 0 12px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}}
+  .promo-detail{{font-size:13px;line-height:1.45;color:#1C2430;white-space:pre-line;}}
+  .promo-fy{{margin-top:6px;font-size:13px;font-weight:700;color:#1A2B4C;}}
+  .promo-note{{margin-top:4px;font-size:11px;color:#6B7280;}}
   .glabel{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     font-size:12px;font-weight:700;color:#5B4A28;margin-bottom:4px;}}
   ul{{margin:0;padding-left:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
