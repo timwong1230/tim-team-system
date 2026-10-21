@@ -102,6 +102,39 @@ def test_saving_proposal_yingju():
     assert sec.get("illustration")
 
 
+def test_no_duplicate_premium_meta_and_rich_highlights():
+    from tt_core.proposal import build_protection_proposal, get_product
+
+    prop = build_protection_proposal(
+        client_name="Tim",
+        age=35,
+        gender="男",
+        include_medical=True,
+        include_ci=True,
+        include_accident=True,
+        medical_id="vfamily",
+        ci_id="ci_essential",
+        ci_sa_usd=128000,
+        ci_pay_term=20,
+        ci_annual_hkd=30000,
+        accident_id="life_accident_rider",
+        accident_sa_hkd=800000,
+        accident_annual_hkd=1208,
+    )
+    for sec in prop["sections"]:
+        meta_keys = [k for k, _ in sec.get("meta_rows") or []]
+        assert "保費" not in meta_keys
+        assert "產品" not in meta_keys
+        assert len(sec.get("highlights") or []) >= 5
+    for row in prop["summary_rows"]:
+        prem = str(row.get("年供保費") or "")
+        assert "／月" not in prem
+        assert "約" not in prem
+
+    fam = get_product("medical", "vfamily")
+    assert fam and len(fam.get("highlights") or []) >= 5
+
+
 def test_html_and_whatsapp_and_pdf():
     from tt_core.proposal import (
         build_protection_proposal,

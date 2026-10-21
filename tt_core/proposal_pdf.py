@@ -122,25 +122,30 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
     pdf.cell(160, 7, str(section.get("premium_display") or "待輸入"))
 
     y = y + 28
-    # Meta grid
-    rows = list(section.get("meta_rows") or [])
+    # Meta grid — skip premium/product (already shown in hero / title)
+    rows = [
+        (k, v)
+        for k, v in (section.get("meta_rows") or [])
+        if str(k) not in ("保費", "產品", "年供")
+    ]
+    cell_h = 18
     for i, (k, v) in enumerate(rows):
         col = i % 2
         row = i // 2
         x = 16 + col * 90
-        yy = y + row * 18
+        yy = y + row * cell_h
         pdf.set_fill_color(*_WHITE)
-        pdf.rect(x, yy, 86, 16, "FD")
+        pdf.rect(x, yy, 86, cell_h - 2, "FD")
         pdf.set_xy(x + 3, yy + 2)
         pdf.set_font("TT", "", 8)
         pdf.set_text_color(*_MUTED)
         pdf.cell(80, 4, str(k))
         pdf.set_xy(x + 3, yy + 7)
-        pdf.set_font("TT", "B", 10)
+        pdf.set_font("TT", "B", 9)
         pdf.set_text_color(*_TEXT)
-        pdf.cell(80, 5, str(v)[:42])
+        pdf.multi_cell(80, 4, str(v))
 
-    y = y + ((len(rows) + 1) // 2) * 18 + 8
+    y = y + ((len(rows) + 1) // 2) * cell_h + 6
     if section.get("goals"):
         pdf.set_xy(16, y)
         pdf.set_font("TT", "B", 11)
@@ -185,6 +190,26 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         )
 
 
+def _summary_kv_height(pdf, value: str, *, value_w: float, line_h: float) -> float:
+    pdf.set_font("TT", "", 10)
+    return float(pdf.multi_cell(value_w, line_h, value, dry_run=True, output="HEIGHT") or line_h)
+
+
+def _draw_summary_kv(
+    pdf, x: float, y: float, label: str, value: str, *, label_w: float, value_w: float, line_h: float
+) -> float:
+    """Draw a label/value row; return height used."""
+    pdf.set_xy(x, y)
+    pdf.set_font("TT", "", 9)
+    pdf.set_text_color(*_MUTED)
+    pdf.cell(label_w, line_h, label)
+    pdf.set_xy(x + label_w, y)
+    pdf.set_font("TT", "", 10)
+    pdf.set_text_color(*_TEXT)
+    pdf.multi_cell(value_w, line_h, value)
+    return max(line_h, float(pdf.get_y() - y))
+
+
 def _summary_page(pdf, proposal: dict[str, Any]) -> None:
     pdf.add_page()
     pdf.set_fill_color(*_SOFT)
@@ -196,43 +221,77 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
     pdf.set_xy(16, 9)
     pdf.cell(0, 8, "SUMMARY")
 
-    pdf.set_text_color(*_TEXT)
-    pdf.set_xy(16, 40)
-    pdf.set_font("TT", "B", 11)
-    # Table header
-    headers = ["保險類別", "產品", "年供保費", "保障摘要"]
-    widths = [32, 40, 50, 56]
-    pdf.set_fill_color(*_INK)
-    pdf.set_text_color(*_WHITE)
-    x = 16
-    for h, w in zip(headers, widths):
-        pdf.set_xy(x, 40)
-        pdf.cell(w, 9, h, border=0, fill=True)
-        x += w
-    y = 49
-    pdf.set_font("TT", "", 9)
+    # Card rows with fixed label column — avoids old table cell jump.
+    y = 40.0
+    line_h = 5.2
+    pad = 5.0
+    label_w = 28.0
+    value_w = 140.0
     for i, row in enumerate(proposal.get("summary_rows") or []):
-        vals = [
-            str(row.get("保險類別") or ""),
-            str(row.get("產品名稱") or ""),
-            str(row.get("年供保費") or ""),
-            str(row.get("保障摘要") or ""),
-        ]
+        category = str(row.get("保險類別") or "")
+        product = str(row.get("產品名稱") or "")
+        premium = str(row.get("年供保費") or "")
+        cover = str(row.get("保障摘要") or "")
+        # Keep term short on Summary so cards stay tidy
+        term_raw = str(row.get("供款／年期") or "").strip()
+        term = term_raw.split("；")[0].strip() if term_raw else ""
+
+        pdf.set_font("TT", "B", 11)
+        title_h = float(
+            pdf.multi_cell(170, 6, f"{category}  ·  {product}", dry_run=True, output="HEIGHT")
+            or 6
+        )
+        prem_h = _summary_kv_height(pdf, premium, value_w=value_w, line_h=line_h)
+        cover_h = _summary_kv_height(pdf, cover, value_w=value_w, line_h=line_h)
+        term_h = _summary_kv_height(pdf, term, value_w=value_w, line_h=line_h) if term else 0.0
+        card_h = pad + title_h + 3 + prem_h + 1.5 + cover_h + (1.5 + term_h if term else 0) + pad
+
+        if y + card_h > 255:
+            pdf.add_page()
+            pdf.set_fill_color(*_SOFT)
+            pdf.rect(0, 0, 210, 297, "F")
+            pdf.set_fill_color(*_INK)
+            pdf.rect(0, 0, 210, 28, "F")
+            pdf.set_text_color(*_GOLD)
+            pdf.set_font("TT", "B", 12)
+            pdf.set_xy(16, 9)
+            pdf.cell(0, 8, "SUMMARY")
+            y = 40.0
+
         bg = _WHITE if i % 2 == 0 else (242, 239, 232)
         pdf.set_fill_color(*bg)
-        pdf.set_text_color(*_TEXT)
-        # estimate height
-        h = 12
-        pdf.rect(16, y, sum(widths), h, "F")
-        x = 16
-        for v, w in zip(vals, widths):
-            pdf.set_xy(x + 1, y + 2)
-            pdf.multi_cell(w - 2, 4, v[:48])
-            x += w
-        y += h
+        pdf.set_draw_color(*_LINE)
+        pdf.rect(16, y, 178, card_h, "FD")
+
+        cy = y + pad
+        pdf.set_xy(20, cy)
+        pdf.set_font("TT", "B", 11)
+        pdf.set_text_color(*_INK)
+        pdf.multi_cell(170, 6, f"{category}  ·  {product}")
+        cy = pdf.get_y() + 3
+
+        cy += _draw_summary_kv(
+            pdf, 20, cy, "年供保費", premium, label_w=label_w, value_w=value_w, line_h=line_h
+        )
+        cy += 1.5
+        cy += _draw_summary_kv(
+            pdf, 20, cy, "保障摘要", cover, label_w=label_w, value_w=value_w, line_h=line_h
+        )
+        if term:
+            cy += 1.5
+            _draw_summary_kv(
+                pdf, 20, cy, "年期", term, label_w=label_w, value_w=value_w, line_h=line_h
+            )
+
+        y += card_h + 6
 
     total = float(proposal.get("total_annual_hkd") or 0)
-    pdf.set_xy(16, y + 10)
+    if y > 250:
+        pdf.add_page()
+        pdf.set_fill_color(*_SOFT)
+        pdf.rect(0, 0, 210, 297, "F")
+        y = 40.0
+    pdf.set_xy(16, y + 4)
     pdf.set_font("TT", "B", 14)
     pdf.set_text_color(*_INK)
     pdf.cell(0, 8, f"合計年供約 {format_hkd(total)}", ln=1)
