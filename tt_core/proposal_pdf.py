@@ -19,6 +19,31 @@ _WHITE = (255, 255, 255)
 _WARN = (180, 83, 9)
 
 
+def _draw_bullet_line(
+    pdf,
+    text: str,
+    *,
+    x: float = 16,
+    width: float = 178,
+    line_h: float = 5.5,
+    bullet: str = "•",
+) -> None:
+    """Bullet with hanging indent so wrapped lines stay under the text, not the dot."""
+    bullet_w = 5.5
+    body = str(text or "").strip()
+    if pdf.get_y() > 270:
+        pdf.add_page()
+        pdf.set_fill_color(*_SOFT)
+        pdf.rect(0, 0, 210, 297, "F")
+    y0 = pdf.get_y()
+    pdf.set_xy(x, y0)
+    pdf.set_font("TT", "", 10)
+    pdf.set_text_color(*_TEXT)
+    pdf.cell(bullet_w, line_h, bullet, align="L")
+    pdf.set_xy(x + bullet_w, y0)
+    pdf.multi_cell(max(width - bullet_w, 20), line_h, body, align="L")
+
+
 def build_proposal_pdf(proposal: dict[str, Any], *, agent: str = "") -> bytes:
     from fpdf import FPDF
 
@@ -61,7 +86,7 @@ def _cover_page(pdf, proposal: dict[str, Any], client: dict[str, Any], *, agent:
     pdf.set_text_color(*_WHITE)
     pdf.set_font("TT", "B", 36)
     name = str(client.get("name") or "客戶")
-    pdf.multi_cell(170, 14, name)
+    pdf.multi_cell(170, 14, name, align="L")
 
     pdf.set_xy(20, 100)
     pdf.set_font("TT", "", 16)
@@ -77,7 +102,7 @@ def _cover_page(pdf, proposal: dict[str, Any], client: dict[str, Any], *, agent:
         pdf.set_xy(20, 114)
         pdf.set_font("TT", "", 12)
         pdf.set_text_color(*_GOLD)
-        pdf.multi_cell(170, 7, tagline)
+        pdf.multi_cell(170, 7, tagline, align="L")
 
     pdf.set_xy(20, 132 if tagline else 120)
     pdf.set_font("TT", "", 12)
@@ -120,7 +145,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
     pdf.set_text_color(*_TEXT)
     pdf.set_xy(16, 40)
     pdf.set_font("TT", "B", 20)
-    pdf.multi_cell(178, 9, str(section.get("product_name") or ""))
+    pdf.multi_cell(178, 9, str(section.get("product_name") or ""), align="L")
 
     # Premium hero
     y = pdf.get_y() + 4
@@ -159,7 +184,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_xy(x + 3, yy + 7)
         pdf.set_font("TT", "B", 9)
         pdf.set_text_color(*_TEXT)
-        pdf.multi_cell(80, 4, str(v))
+        pdf.multi_cell(80, 4, str(v), align="L")
 
     y = y + ((len(rows) + 1) // 2) * cell_h + 4
     promo = section.get("promo") or {}
@@ -169,7 +194,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         note = str(promo.get("note") or "")
         pdf.set_font("TT", "", 9)
         detail_h = float(
-            pdf.multi_cell(170, 5, detail, dry_run=True, output="HEIGHT") or 5
+            pdf.multi_cell(170, 5, detail, dry_run=True, output="HEIGHT", align="L") or 5
         )
         fy_h = 6 if fy else 0
         note_h = 5 if note else 0
@@ -191,19 +216,19 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_xy(20, y + 9)
         pdf.set_font("TT", "", 9)
         pdf.set_text_color(*_TEXT)
-        pdf.multi_cell(170, 5, detail)
+        pdf.multi_cell(170, 5, detail, align="L")
         yy = pdf.get_y()
         if fy:
             pdf.set_xy(20, yy + 1)
             pdf.set_font("TT", "B", 10)
             pdf.set_text_color(*_INK)
-            pdf.multi_cell(170, 5, fy)
+            pdf.multi_cell(170, 5, fy, align="L")
             yy = pdf.get_y()
         if note:
             pdf.set_xy(20, yy + 0.5)
             pdf.set_font("TT", "", 8)
             pdf.set_text_color(*_MUTED)
-            pdf.multi_cell(170, 4, note)
+            pdf.multi_cell(170, 4, note, align="L")
         y = y + box_h + 4
 
     tagline = str(section.get("angle_tagline") or "")
@@ -211,7 +236,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_xy(16, y)
         pdf.set_font("TT", "B", 11)
         pdf.set_text_color(*_GOLD)
-        pdf.multi_cell(178, 6, tagline)
+        pdf.multi_cell(178, 6, tagline, align="L")
         y = pdf.get_y() + 2
 
     visual = section.get("visual") or {}
@@ -229,14 +254,12 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_text_color(*_INK)
         pdf.cell(0, 7, "目標", ln=1)
         y = pdf.get_y() + 1
+        pdf.set_y(y)
         for g in section.get("goals") or []:
-            pdf.set_xy(16, y)
-            pdf.set_font("TT", "", 10)
-            pdf.set_text_color(*_TEXT)
-            pdf.multi_cell(178, 5.5, f"•  {g}")
-            y = pdf.get_y() + 1
+            _draw_bullet_line(pdf, str(g), x=16, width=178, line_h=5.5)
+            pdf.ln(1)
 
-    pdf.set_xy(16, y + 2)
+    pdf.set_xy(16, pdf.get_y() + 2)
     pdf.set_font("TT", "B", 11)
     pdf.set_text_color(*_INK)
     pdf.cell(0, 7, "計劃重點", ln=1)
@@ -245,10 +268,8 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
             pdf.add_page()
             pdf.set_fill_color(*_SOFT)
             pdf.rect(0, 0, 210, 297, "F")
-        pdf.set_x(16)
-        pdf.set_font("TT", "", 10)
-        pdf.set_text_color(*_TEXT)
-        pdf.multi_cell(178, 5.5, f"•  {h}")
+        _draw_bullet_line(pdf, str(h), x=16, width=178, line_h=5.5)
+        pdf.ln(0.8)
 
     disc = str(section.get("angle_disclaimer") or "")
     if disc:
@@ -256,7 +277,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_x(16)
         pdf.set_font("TT", "", 8)
         pdf.set_text_color(*_MUTED)
-        pdf.multi_cell(178, 4, disc)
+        pdf.multi_cell(178, 4, disc, align="L")
 
 
 def _draw_visual_timeline(pdf, visual: dict[str, Any], y: float) -> float:
@@ -339,7 +360,7 @@ def _draw_visual_timeline(pdf, visual: dict[str, Any], y: float) -> float:
             pdf.set_xy(x + 2, y + 14)
             pdf.set_font("TT", "", 7.5)
             pdf.set_text_color(*_TEXT)
-            pdf.multi_cell(w - 4, 3.5, str(st.get("body") or ""))
+            pdf.multi_cell(w - 4, 3.5, str(st.get("body") or ""), align="L")
         y = y + step_h + 6
 
     # Focus-year value table
@@ -399,7 +420,12 @@ def _draw_visual_timeline(pdf, visual: dict[str, Any], y: float) -> float:
 
 def _summary_kv_height(pdf, value: str, *, value_w: float, line_h: float) -> float:
     pdf.set_font("TT", "", 10)
-    return float(pdf.multi_cell(value_w, line_h, value, dry_run=True, output="HEIGHT") or line_h)
+    return float(
+        pdf.multi_cell(
+            value_w, line_h, value, dry_run=True, output="HEIGHT", align="L"
+        )
+        or line_h
+    )
 
 
 def _draw_summary_kv(
@@ -413,7 +439,7 @@ def _draw_summary_kv(
     pdf.set_xy(x + label_w, y)
     pdf.set_font("TT", "", 10)
     pdf.set_text_color(*_TEXT)
-    pdf.multi_cell(value_w, line_h, value)
+    pdf.multi_cell(value_w, line_h, value, align="L")
     return max(line_h, float(pdf.get_y() - y))
 
 
@@ -445,7 +471,7 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
 
         pdf.set_font("TT", "B", 11)
         title_h = float(
-            pdf.multi_cell(170, 6, f"{category}  ·  {product}", dry_run=True, output="HEIGHT")
+            pdf.multi_cell(170, 6, f"{category}  ·  {product}", dry_run=True, output="HEIGHT", align="L")
             or 6
         )
         prem_h = _summary_kv_height(pdf, premium, value_w=value_w, line_h=line_h)
@@ -474,7 +500,7 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
         pdf.set_xy(20, cy)
         pdf.set_font("TT", "B", 11)
         pdf.set_text_color(*_INK)
-        pdf.multi_cell(170, 6, f"{category}  ·  {product}")
+        pdf.multi_cell(170, 6, f"{category}  ·  {product}", align="L")
         cy = pdf.get_y() + 3
 
         cy += _draw_summary_kv(
@@ -511,8 +537,7 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
         pdf.cell(0, 6, "待補資料", ln=1)
         pdf.set_font("TT", "", 9)
         for g in gaps:
-            pdf.set_x(16)
-            pdf.multi_cell(178, 5, f"•  {g}")
+            _draw_bullet_line(pdf, str(g), x=16, width=178, line_h=5.0)
 
     pdf.set_y(270)
     pdf.set_font("TT", "", 8)
@@ -523,4 +548,5 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
         4,
         "只供內部見客參考。"
         "保障、保費、折扣、分紅及特別紅利均以保險公司正式計劃書及條款為準；非保證利益並非承諾。",
+        align="L",
     )
