@@ -5167,17 +5167,20 @@ def page_proposal():
 
     if plan_id == "full_protection":
         st.markdown("#### 3. 揀保障組合")
-        inc1, inc2, inc3 = st.columns(3)
+        inc1, inc2, inc3, inc4 = st.columns(4)
         with inc1:
             want_med = st.checkbox("醫療保險", value=True, key="prop_inc_med")
         with inc2:
             want_ci = st.checkbox("危疾保險", value=True, key="prop_inc_ci")
         with inc3:
             want_acc = st.checkbox("意外保險", value=True, key="prop_inc_acc")
+        with inc4:
+            want_life = st.checkbox("人壽保險", value=False, key="prop_inc_life")
 
         med_id = None
         med_level = None
         med_ded = None
+        med_prem = None
         if want_med:
             st.markdown("##### 醫療保險")
             meds = prop.products_in("medical")
@@ -5189,32 +5192,58 @@ def page_proposal():
                 ),
                 key="prop_med_id",
             )
-            fin = mf.get_plan(str(next(m["finance_plan_id"] for m in meds if m["id"] == med_id)))
-            o1, o2 = st.columns(2)
-            with o1:
-                if len(fin.get("levels") or []) > 1:
+            med_meta = next(m for m in meds if m["id"] == med_id)
+            use_table = (
+                str(med_meta.get("premium_source") or "") == "table"
+                and bool(med_meta.get("finance_plan_id"))
+            )
+            if use_table:
+                fin = mf.get_plan(str(med_meta.get("finance_plan_id")))
+                o1, o2 = st.columns(2)
+                with o1:
+                    if len(fin.get("levels") or []) > 1:
+                        med_level = st.selectbox(
+                            "保障級別",
+                            fin["levels"],
+                            index=fin["levels"].index(fin["default_level"]),
+                            key="prop_med_lv",
+                        )
+                    else:
+                        med_level = (fin.get("levels") or ["標準"])[0]
+                        st.caption(f"保障級別：{med_level}")
+                with o2:
+                    deds = [int(d) for d in (fin.get("deductibles") or [0])]
+                    if len(deds) > 1:
+                        med_ded = st.selectbox(
+                            "自付費（港元）",
+                            deds,
+                            index=deds.index(int(fin.get("default_deductible") or 0)),
+                            format_func=lambda d: "無自付費"
+                            if int(d) == 0
+                            else f"${int(d):,}",
+                            key="prop_med_ded",
+                        )
+                    else:
+                        med_ded = 0
+                        st.caption("自付費：無")
+            else:
+                levels = list(med_meta.get("levels") or ["標準"])
+                o1, o2 = st.columns(2)
+                with o1:
                     med_level = st.selectbox(
-                        "保障級別",
-                        fin["levels"],
-                        index=fin["levels"].index(fin["default_level"]),
-                        key="prop_med_lv",
+                        "保障級別", levels, key="prop_med_lv_manual"
                     )
-                else:
-                    med_level = (fin.get("levels") or ["標準"])[0]
-                    st.caption(f"保障級別：{med_level}")
-            with o2:
-                deds = [int(d) for d in (fin.get("deductibles") or [0])]
-                if len(deds) > 1:
-                    med_ded = st.selectbox(
-                        "自付費（港元）",
-                        deds,
-                        index=deds.index(int(fin.get("default_deductible") or 0)),
-                        format_func=lambda d: "無自付費" if int(d) == 0 else f"${int(d):,}",
-                        key="prop_med_ded",
+                with o2:
+                    med_prem = st.number_input(
+                        "年保費（HKD）*",
+                        min_value=0,
+                        value=0,
+                        step=100,
+                        key="prop_med_prem",
+                        help="此產品未接系統保費表，請自行輸入報價。",
                     )
-                else:
-                    med_ded = 0
-                    st.caption("自付費：無")
+                med_ded = 0
+                st.caption("＊此醫療產品保費請填正式報價（系統未有表價）。")
 
         ci_id = None
         ci_sa = None
@@ -5293,6 +5322,49 @@ def page_proposal():
                 )
             st.caption("＊意外保費表未入系統——請填正式報價年保費。")
 
+        life_id = None
+        life_sa = None
+        life_pay = None
+        life_prem = None
+        if want_life:
+            st.markdown("##### 人壽保險")
+            lives = prop.products_in("life")
+            life_id = st.selectbox(
+                "邊份人壽",
+                [x["id"] for x in lives],
+                format_func=lambda i: next((x["name"] for x in lives if x["id"] == i), i),
+                key="prop_life_id",
+            )
+            life_meta = next(x for x in lives if x["id"] == life_id)
+            l1, l2, l3 = st.columns(3)
+            with l1:
+                life_sa = st.number_input(
+                    "保額（HKD）",
+                    min_value=0,
+                    value=int(life_meta.get("default_sa_hkd") or 1000000),
+                    step=50000,
+                    key="prop_life_sa",
+                )
+            with l2:
+                pays = [int(x) for x in (life_meta.get("pay_terms") or [20])]
+                default_pay = int(life_meta.get("default_pay_term") or pays[0])
+                life_pay = st.selectbox(
+                    "供款年期",
+                    pays,
+                    index=pays.index(default_pay) if default_pay in pays else 0,
+                    key="prop_life_pay",
+                )
+            with l3:
+                life_prem = st.number_input(
+                    "年保費（HKD）*",
+                    min_value=0,
+                    value=0,
+                    step=100,
+                    key="prop_life_prem",
+                    help="系統未有人壽保費表，請自行輸入報價。",
+                )
+            st.caption("＊人壽保費請填正式報價。")
+
         if st.button("產生計劃書", type="primary", use_container_width=True, key="prop_gen_fp"):
             proposal = prop.build_protection_proposal(
                 client_name=client_name,
@@ -5302,9 +5374,11 @@ def page_proposal():
                 include_medical=want_med,
                 include_ci=want_ci,
                 include_accident=want_acc,
+                include_life=want_life,
                 medical_id=med_id,
                 medical_level=med_level,
                 medical_deductible=int(med_ded) if med_ded is not None else None,
+                medical_annual_hkd=float(med_prem or 0) if med_prem is not None else None,
                 ci_id=ci_id,
                 ci_sa_usd=float(ci_sa) if ci_sa is not None else None,
                 ci_pay_term=int(ci_pay) if ci_pay is not None else None,
@@ -5312,6 +5386,10 @@ def page_proposal():
                 accident_id=acc_id,
                 accident_sa_hkd=float(acc_sa) if acc_sa is not None else None,
                 accident_annual_hkd=float(acc_prem or 0),
+                life_id=life_id,
+                life_sa_hkd=float(life_sa) if life_sa is not None else None,
+                life_pay_term=int(life_pay) if life_pay is not None else None,
+                life_annual_hkd=float(life_prem or 0),
             )
             st.session_state["prop_last"] = proposal
 
@@ -5333,13 +5411,26 @@ def page_proposal():
                 key="prop_sav_purpose",
             )
         with s2:
-            annual_usd = st.number_input(
-                "年供（USD）",
-                min_value=0,
-                value=int(sav_meta.get("default_annual_usd") or 10000),
-                step=500,
-                key="prop_sav_usd",
-            )
+            if str(sav_meta.get("currency") or "USD").upper() == "HKD" or str(
+                sav_meta.get("premium_source")
+            ) == "manual_hkd":
+                annual_hkd = st.number_input(
+                    "年供（HKD）",
+                    min_value=0,
+                    value=int(sav_meta.get("default_annual_hkd") or 60000),
+                    step=1000,
+                    key="prop_sav_hkd",
+                )
+                annual_usd = None
+            else:
+                annual_usd = st.number_input(
+                    "年供（USD）",
+                    min_value=0,
+                    value=int(sav_meta.get("default_annual_usd") or 10000),
+                    step=500,
+                    key="prop_sav_usd",
+                )
+                annual_hkd = None
         st.caption(str(sav_meta.get("term_note") or ""))
         if st.button("產生計劃書", type="primary", use_container_width=True, key="prop_gen_sv"):
             proposal = prop.build_saving_proposal(
@@ -5348,7 +5439,8 @@ def page_proposal():
                 gender=gender,
                 occupation=occupation,
                 saving_id=sav_id,
-                annual_usd=float(annual_usd),
+                annual_usd=float(annual_usd) if annual_usd is not None else None,
+                annual_hkd=float(annual_hkd) if annual_hkd is not None else None,
                 purpose=purpose,
             )
             st.session_state["prop_last"] = proposal
