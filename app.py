@@ -5405,10 +5405,15 @@ def page_proposal():
         sav_meta = next(s for s in savs if s["id"] == sav_id)
         s1, s2 = st.columns(2)
         with s1:
+            try:
+                from tt_core.yingju_angles import SELLING_ANGLES as _SAVING_ANGLES
+            except Exception:
+                _SAVING_ANGLES = ["儲蓄錢包", "教育基金", "退休儲備", "醫療融資"]
             purpose = st.selectbox(
-                "用途",
-                ["教育基金", "退休儲備", "財富傳承", "其他儲蓄"],
+                "銷售角度",
+                list(_SAVING_ANGLES),
                 key="prop_sav_purpose",
+                help="同一份盈聚會因角度出唔同計劃書內容同圖像時間線",
             )
         with s2:
             if str(sav_meta.get("currency") or "USD").upper() == "HKD" or str(

@@ -64,8 +64,20 @@ def _cover_page(pdf, proposal: dict[str, Any], client: dict[str, Any], *, agent:
     pdf.set_text_color(230, 220, 200)
     pdf.cell(0, 10, str(proposal.get("title") or "計劃書"), ln=1)
 
-    pdf.set_xy(20, 120)
+    tagline = ""
+    for sec in proposal.get("sections") or []:
+        if sec.get("angle_tagline"):
+            tagline = str(sec.get("angle_tagline"))
+            break
+    if tagline:
+        pdf.set_xy(20, 114)
+        pdf.set_font("TT", "", 12)
+        pdf.set_text_color(*_GOLD)
+        pdf.multi_cell(170, 7, tagline)
+
+    pdf.set_xy(20, 132 if tagline else 120)
     pdf.set_font("TT", "", 12)
+    pdf.set_text_color(230, 220, 200)
     bits = [
         f"{client.get('age')} 歲",
         str(client.get("gender") or ""),
@@ -190,7 +202,24 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
             pdf.multi_cell(170, 4, note)
         y = y + box_h + 4
 
+    tagline = str(section.get("angle_tagline") or "")
+    if tagline:
+        pdf.set_xy(16, y)
+        pdf.set_font("TT", "B", 11)
+        pdf.set_text_color(*_GOLD)
+        pdf.multi_cell(178, 6, tagline)
+        y = pdf.get_y() + 2
+
+    visual = section.get("visual") or {}
+    if visual.get("steps") or visual.get("cards"):
+        y = _draw_visual_timeline(pdf, visual, y)
+
     if section.get("goals"):
+        if y > 250:
+            pdf.add_page()
+            pdf.set_fill_color(*_SOFT)
+            pdf.rect(0, 0, 210, 297, "F")
+            y = 40
         pdf.set_xy(16, y)
         pdf.set_font("TT", "B", 11)
         pdf.set_text_color(*_INK)
@@ -206,7 +235,7 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
     pdf.set_xy(16, y + 2)
     pdf.set_font("TT", "B", 11)
     pdf.set_text_color(*_INK)
-    pdf.cell(0, 7, "計劃內容", ln=1)
+    pdf.cell(0, 7, "計劃重點", ln=1)
     for h in section.get("highlights") or []:
         if pdf.get_y() > 270:
             pdf.add_page()
@@ -217,21 +246,98 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         pdf.set_text_color(*_TEXT)
         pdf.multi_cell(178, 5.5, f"•  {h}")
 
-    illus = section.get("illustration") or {}
-    if illus:
-        pdf.ln(4)
-        pdf.set_fill_color(238, 242, 247)
-        y0 = pdf.get_y()
-        pdf.rect(16, y0, 178, 20, "F")
-        pdf.set_xy(20, y0 + 4)
-        pdf.set_font("TT", "", 9)
+    disc = str(section.get("angle_disclaimer") or "")
+    if disc:
+        pdf.ln(3)
+        pdf.set_x(16)
+        pdf.set_font("TT", "", 8)
         pdf.set_text_color(*_MUTED)
-        pdf.multi_cell(
-            170,
-            5,
-            f"{illus.get('note')}  {format_usd(illus.get('year5_sv_usd') or 0)}"
-            f"（約 {format_hkd(illus.get('year5_sv_hkd') or 0)}）",
-        )
+        pdf.multi_cell(178, 4, disc)
+
+
+def _draw_visual_timeline(pdf, visual: dict[str, Any], y: float) -> float:
+    """Draw metric cards + 4-step timeline as graphic blocks."""
+    cards = list(visual.get("cards") or [])
+    steps = list(visual.get("steps") or [])
+    if y > 200:
+        pdf.add_page()
+        pdf.set_fill_color(*_SOFT)
+        pdf.rect(0, 0, 210, 297, "F")
+        y = 40
+
+    pdf.set_xy(16, y)
+    pdf.set_font("TT", "B", 11)
+    pdf.set_text_color(*_INK)
+    pdf.cell(0, 6, str(visual.get("caption") or "圖像時間線"), ln=1)
+    y = pdf.get_y() + 2
+
+    # 2x2 metric cards
+    if cards:
+        card_h = 22
+        for i, c in enumerate(cards[:4]):
+            col = i % 2
+            row = i // 2
+            x = 16 + col * 90
+            yy = y + row * (card_h + 3)
+            pdf.set_fill_color(238, 242, 247)
+            pdf.set_draw_color(*_LINE)
+            pdf.rect(x, yy, 86, card_h, "FD")
+            pdf.set_xy(x + 3, yy + 3)
+            pdf.set_font("TT", "", 8)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(80, 4, str(c.get("label") or ""))
+            pdf.set_xy(x + 3, yy + 8)
+            pdf.set_font("TT", "B", 12)
+            pdf.set_text_color(*_INK)
+            pdf.cell(80, 5, str(c.get("value") or ""))
+            pdf.set_xy(x + 3, yy + 14)
+            pdf.set_font("TT", "", 8)
+            pdf.set_text_color(*_GOLD)
+            pdf.cell(80, 4, str(c.get("sub") or ""))
+        y = y + ((min(len(cards), 4) + 1) // 2) * (card_h + 3) + 4
+
+    # 4 timeline steps
+    if steps:
+        if y > 220:
+            pdf.add_page()
+            pdf.set_fill_color(*_SOFT)
+            pdf.rect(0, 0, 210, 297, "F")
+            y = 40
+        fills = {
+            "pay": (232, 238, 247),
+            "pot": (255, 244, 214),
+            "enjoy": (231, 246, 238),
+            "roll": (243, 238, 248),
+        }
+        n = min(len(steps), 4)
+        gap = 4
+        w = (178 - gap * (n - 1)) / n
+        step_h = 42
+        for i, st in enumerate(steps[:n]):
+            x = 16 + i * (w + gap)
+            tone = str(st.get("tone") or "pay")
+            pdf.set_fill_color(*fills.get(tone, fills["pay"]))
+            pdf.set_draw_color(*_LINE)
+            pdf.rect(x, y, w, step_h, "FD")
+            # arrow connector
+            if i < n - 1:
+                pdf.set_fill_color(*_GOLD)
+                ax = x + w + 0.8
+                pdf.rect(ax, y + step_h / 2 - 0.6, gap - 1.6, 1.2, "F")
+            pdf.set_xy(x + 2, y + 3)
+            pdf.set_font("TT", "", 7)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(w - 4, 3.5, str(st.get("phase") or ""))
+            pdf.set_xy(x + 2, y + 8)
+            pdf.set_font("TT", "B", 9)
+            pdf.set_text_color(*_INK)
+            pdf.cell(w - 4, 4.5, str(st.get("title") or ""))
+            pdf.set_xy(x + 2, y + 14)
+            pdf.set_font("TT", "", 7.5)
+            pdf.set_text_color(*_TEXT)
+            pdf.multi_cell(w - 4, 3.5, str(st.get("body") or ""))
+        y = y + step_h + 6
+    return y
 
 
 def _summary_kv_height(pdf, value: str, *, value_w: float, line_h: float) -> float:

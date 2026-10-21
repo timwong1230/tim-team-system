@@ -436,29 +436,43 @@ def build_saving_proposal(
         options = {"annual_usd": annual_u, "pay_years": pay_years, "fx": fx}
         extract_note = "第 6 年起可按計劃提款（以條款為準）"
         illus = None
-        if saving_id == "yingju5":
-            try:
-                from tt_core.medical_finance import load_calibration
-
-                cal = load_calibration()
-                k5 = float(cal.get("k5_sv_per_annual_prem") or 0)
-                if k5 > 0 and annual_u > 0:
-                    year5_sv = round(annual_u * k5, 0)
-                    illus = {
-                        "year5_sv_usd": year5_sv,
-                        "year5_sv_hkd": round(year5_sv * fx, 0),
-                        "note": "示意：第 5 年名義退保價值約數（非保證；以正式計劃書為準）",
-                    }
-            except Exception:
-                illus = None
 
     total_hkd = round(float(annual_hkd_v) * pay_years, 0)
     highlights = list(prod.get("highlights") or [])
     goals = list(prod.get("goals") or [])
     cover = str(prod.get("cover_summary_default") or f"{pay_years} 年供；可滾存長線")
+    angle: dict[str, Any] | None = None
+    title = "儲蓄計劃書"
+    purpose_label = str(purpose or "儲蓄計劃")
+
+    if saving_id == "yingju5" and annual_u > 0:
+        from tt_core.yingju_angles import build_angle_story
+
+        angle = build_angle_story(
+            purpose_label, annual_usd=annual_u, age=int(age), fx=float(fx or FX_DEFAULT)
+        )
+        purpose_label = str(angle.get("purpose") or purpose_label)
+        title = str(angle.get("title") or title)
+        goals = list(angle.get("goals") or goals)
+        highlights = list(angle.get("highlights") or highlights)
+        cover = str(angle.get("tagline") or cover)
+        m = angle.get("metrics") or {}
+        illus = {
+            "year5_sv_usd": m.get("year5_sv_usd"),
+            "year5_sv_hkd": m.get("year5_sv_hkd"),
+            "year6_wd_usd": m.get("year6_wd_usd"),
+            "year6_wd_hkd": m.get("year6_wd_hkd"),
+            "note": "示意數字（非保證；以正式利益說明為準）",
+        }
+        extract_note = (
+            f"第 6 年起示意可提約 {format_usd(float(m.get('year6_wd_usd') or 0))}／年"
+            "（約總保費 7%）；亦可唔提繼續滾存"
+        )
+        options["purpose"] = purpose_label
+
     sections = [
         {
-            "category": purpose or "儲蓄計劃",
+            "category": purpose_label,
             "category_key": "saving",
             "product_id": saving_id,
             "product_name": prod.get("name"),
@@ -478,6 +492,9 @@ def build_saving_proposal(
             "highlights": highlights,
             "goals": goals,
             "illustration": illus,
+            "visual": (angle or {}).get("visual"),
+            "angle_tagline": (angle or {}).get("tagline"),
+            "angle_disclaimer": (angle or {}).get("disclaimer"),
             "options": options,
         }
     ]
@@ -486,7 +503,7 @@ def build_saving_proposal(
     attach_offer_to_section(sections[0])
     summary_rows = [
         {
-            "保險類別": purpose or "儲蓄",
+            "保險類別": purpose_label,
             "產品名稱": prod.get("short") or prod.get("name"),
             "年供保費": summary_prem,
             "保障摘要": sections[0]["cover_summary"],
@@ -495,7 +512,7 @@ def build_saving_proposal(
     ]
     return {
         "kind": "saving",
-        "title": "儲蓄計劃書",
+        "title": title,
         "client": {
             "name": str(client_name or "").strip() or "客戶",
             "age": int(age),
@@ -507,7 +524,7 @@ def build_saving_proposal(
         "total_annual_hkd": annual_hkd_v,
         "gaps": gaps,
         "ready": float(annual_hkd_v or 0) > 0 and not gaps,
-        "purpose": purpose,
+        "purpose": purpose_label,
     }
 
 
@@ -576,6 +593,37 @@ def html_preview(proposal: dict[str, Any]) -> str:
                 f"{fy}{note}"
                 "</div>"
             )
+        visual = s.get("visual") or {}
+        visual_html = ""
+        if visual.get("steps"):
+            cards = visual.get("cards") or []
+            cards_html = "".join(
+                "<div class='vcard'>"
+                f"<span>{_esc(c.get('label'))}</span>"
+                f"<strong>{_esc(c.get('value'))}</strong>"
+                f"<em>{_esc(c.get('sub'))}</em>"
+                "</div>"
+                for c in cards
+            )
+            steps_html = "".join(
+                f"<div class='vstep tone-{_esc(st.get('tone') or 'pay')}'>"
+                f"<div class='vphase'>{_esc(st.get('phase'))}</div>"
+                f"<div class='vtitle'>{_esc(st.get('title'))}</div>"
+                f"<div class='vbody'>{_esc(st.get('body'))}</div>"
+                "</div>"
+                for st in visual.get("steps") or []
+            )
+            visual_html = (
+                "<div class='visual'>"
+                f"<div class='glabel'>{_esc(visual.get('caption') or '時間線')}</div>"
+                f"<div class='vcards'>{cards_html}</div>"
+                f"<div class='vtrack'>{steps_html}</div>"
+                "</div>"
+            )
+        tagline = s.get("angle_tagline") or ""
+        tagline_html = (
+            f"<div class='tagline'>{_esc(tagline)}</div>" if tagline else ""
+        )
         goals = s.get("goals") or []
         goals_html = ""
         if goals:
@@ -584,14 +632,6 @@ def html_preview(proposal: dict[str, Any]) -> str:
                 + "".join(f"<li>{_esc(g)}</li>" for g in goals)
                 + "</ul></div>"
             )
-        illus = s.get("illustration") or {}
-        illus_html = ""
-        if illus:
-            illus_html = (
-                f"<div class='illus'>{_esc(illus.get('note'))}："
-                f"約 {_esc(format_usd(illus.get('year5_sv_usd') or 0))} "
-                f"（≈ {_esc(format_hkd(illus.get('year5_sv_hkd') or 0))}）</div>"
-            )
         premium_cls = "ok" if s.get("premium_ok") else "warn"
         sections_html.append(
             f"""
@@ -599,13 +639,14 @@ def html_preview(proposal: dict[str, Any]) -> str:
   <header>
     <div class="cat">{_esc(s.get('category'))}</div>
     <h3>{_esc(s.get('product_name'))}</h3>
+    {tagline_html}
     <div class="prem {premium_cls}">{_esc(s.get('premium_display'))}</div>
   </header>
   <div class="meta">{meta}</div>
+  {visual_html}
   {promo_html}
   {goals_html}
-  <div class="hl"><div class="glabel">計劃內容</div><ul>{bullets}</ul></div>
-  {illus_html}
+  <div class="hl"><div class="glabel">計劃重點</div><ul>{bullets}</ul></div>
 </article>
 """
         )
@@ -669,6 +710,29 @@ def html_preview(proposal: dict[str, Any]) -> str:
   .promo-detail{{font-size:13px;line-height:1.45;color:#1C2430;white-space:pre-line;}}
   .promo-fy{{margin-top:6px;font-size:13px;font-weight:700;color:#1A2B4C;}}
   .promo-note{{margin-top:4px;font-size:11px;color:#6B7280;}}
+  .tagline{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:13px;color:#8A7340;margin:0 0 8px;font-weight:600;}}
+  .visual{{margin:0 0 14px;}}
+  .vcards{{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 12px;}}
+  .vcard{{background:#EEF2F7;border-radius:12px;padding:10px 12px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}}
+  .vcard span{{display:block;font-size:11px;color:#6B7280;margin-bottom:3px;}}
+  .vcard strong{{display:block;font-size:16px;color:#1A2B4C;font-weight:700;}}
+  .vcard em{{display:block;font-size:11px;color:#8A7340;font-style:normal;margin-top:2px;}}
+  .vtrack{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}}
+  .vstep{{border-radius:14px;padding:10px 8px;min-height:110px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    border:1px solid #E4DFD4;background:#fff;position:relative;}}
+  .vstep.tone-pay{{background:linear-gradient(180deg,#E8EEF7,#fff);}}
+  .vstep.tone-pot{{background:linear-gradient(180deg,#FFF4D6,#fff);border-color:#E6D3A1;}}
+  .vstep.tone-enjoy{{background:linear-gradient(180deg,#E7F6EE,#fff);border-color:#B7DCC6;}}
+  .vstep.tone-roll{{background:linear-gradient(180deg,#F3EEF8,#fff);border-color:#D5C8E6;}}
+  .vphase{{font-size:10px;letter-spacing:.06em;color:#6B7280;margin-bottom:4px;}}
+  .vtitle{{font-size:14px;font-weight:700;color:#1A2B4C;margin-bottom:6px;}}
+  .vbody{{font-size:12px;line-height:1.35;color:#374151;white-space:pre-line;}}
+  @media (max-width:640px){{
+    .vtrack{{grid-template-columns:1fr 1fr;}}
+  }}
   .glabel{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     font-size:12px;font-weight:700;color:#5B4A28;margin-bottom:4px;}}
   ul{{margin:0;padding-left:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
