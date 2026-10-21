@@ -54,10 +54,48 @@ def test_login_guest():
         ]
     )
     with patch.object(d, "read_data", return_value=fake):
-        rows = d.login("guest", "1234")
-        assert rows and rows[0][0] == "guest"
-        assert d.login("Guest", "1234")  # case-insensitive
-        assert not d.login("guest", "wrong")
+        with patch.object(d, "ensure_guest_user", return_value=True):
+            rows = d.login("guest", "1234")
+            assert rows and rows[0][0] == "guest"
+            assert d.login("Guest", "1234")  # case-insensitive
+            assert not d.login("guest", "wrong")
+
+
+def test_login_guest_builtin_without_sheets():
+    """Guest must work even when users sheet/cache is empty."""
+    from tt_core import data as d
+
+    empty = pd.DataFrame(
+        columns=["username", "password", "role", "team", "recruit", "avatar", "last_read"]
+    )
+    with patch.object(d, "read_data", return_value=empty):
+        with patch.object(d, "ensure_guest_user", return_value=True):
+            rows = d.login("guest", "1234")
+            assert rows
+            assert rows[0][0] == "guest"
+            assert rows[0][2] == "Guest"
+            assert d.login("GUEST", "1234")
+            assert not d.login("guest", "9999")
+
+
+def test_login_guest_password_float_cell():
+    from tt_core import data as d
+
+    fake = pd.DataFrame(
+        [
+            {
+                "username": "guest",
+                "password": 1234.0,
+                "role": "Guest",
+                "team": "Tim Team",
+                "recruit": 0,
+                "avatar": "",
+                "last_read": "",
+            },
+        ]
+    )
+    with patch.object(d, "read_data", return_value=fake):
+        assert d.login("guest", "1234")
 
 
 def test_get_data_excludes_guest():

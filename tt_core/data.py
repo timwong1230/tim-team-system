@@ -11,11 +11,13 @@ import streamlit as st
 from PIL import Image
 
 from tt_core.constants import (
+    GUEST_PASSWORD,
     GUEST_ROLE,
     GUEST_USERNAMES,
     INACTIVE_MEMBERS,
     MDRT_TARGET,
     RECRUIT_YEAR_TARGET,
+    SHEET_SCHEMAS,
     WEEKLY_MIN_ACTS,
 )
 from tt_core.db import read_data, run_query_gs, update_user_field
@@ -26,6 +28,31 @@ def is_guest_account(username: str = "", role: str = "") -> bool:
     u = str(username or "").strip().lower()
     r = str(role or "").strip().lower()
     return u in {x.lower() for x in GUEST_USERNAMES} or r == GUEST_ROLE.lower()
+
+
+def _guest_avatar_url() -> str:
+    return "https://ui-avatars.com/api/?name=guest&background=d4af37&color=fff&size=128"
+
+
+def builtin_guest_row() -> list:
+    """Canonical guest row for login when Sheets/cache has not seeded yet."""
+    return [
+        "guest",
+        GUEST_PASSWORD,
+        GUEST_ROLE,
+        "Tim Team",
+        0,
+        _guest_avatar_url(),
+        "",
+    ]
+
+
+def _normalize_password_cell(value) -> str:
+    """Sheets sometimes stores 1234 as float → '1234.0'."""
+    text = str(value if value is not None else "").strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
 
 
 def get_clean_users() -> pd.DataFrame:
@@ -51,18 +78,88 @@ def get_team_users() -> pd.DataFrame:
     return df[~mask].copy()
 
 
+def ensure_guest_user() -> bool:
+    """Make sure ``guest`` exists in Sheets + local users cache. Returns True if present."""
+    try:
+        from tt_core import cache_store
+        from tt_core.db import get_sheet
+    except Exception:
+        cache_store = None  # type: ignore
+        get_sheet = None  # type: ignore
+
+    cols = SHEET_SCHEMAS.get(
+        "users",
+        ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
+    )
+    df = read_data("users")
+    if not df.empty:
+        names = set(df["username"].astype(str).str.strip().str.lower())
+        if "guest" in names:
+            return True
+
+    if get_sheet is not None:
+        try:
+            ws = get_sheet("users")
+            if ws:
+                try:
+                    existing = [str(x).strip().lower() for x in (ws.col_values(1) or [])]
+                except Exception:
+                    existing = []
+                if "guest" not in existing:
+                    if not existing:
+                        ws.append_row(cols, value_input_option="USER_ENTERED")
+                    row = builtin_guest_row()
+                    ws.append_row(row, value_input_option="USER_ENTERED")
+        except Exception:
+            pass
+
+    # Merge guest into cache so subsequent reads see it (even if Sheets lag)
+    try:
+        fresh = read_data("users", force=True)
+    except Exception:
+        fresh = df
+    if fresh is None or getattr(fresh, "empty", True):
+        fresh = pd.DataFrame([builtin_guest_row()], columns=cols)
+    else:
+        names = set(fresh["username"].astype(str).str.strip().str.lower())
+        if "guest" not in names:
+            guest_df = pd.DataFrame([dict(zip(cols, builtin_guest_row()))])
+            for col in fresh.columns:
+                if col not in guest_df.columns:
+                    guest_df[col] = ""
+            guest_df = guest_df.reindex(columns=list(fresh.columns), fill_value="")
+            fresh = pd.concat([fresh, guest_df], ignore_index=True)
+    try:
+        if cache_store is not None:
+            cache_store.invalidate_memory("users")
+            cache_store.save_sheet("users", fresh, source="guest_seed")
+    except Exception:
+        pass
+    return True
+
+
 def login(u: str, p: str):
-    df = get_clean_users()
-    if df.empty:
-        return []
-    df["password"] = df["password"].astype(str)
-    # Case-insensitive username so "Guest" / "guest" both work
     uname = str(u or "").strip()
-    user = df[
-        (df["username"].astype(str).str.strip().str.lower() == uname.lower())
-        & (df["password"] == str(p))
-    ]
-    return user.values.tolist() if not user.empty else []
+    pw = str(p or "")
+    df = get_clean_users()
+    if not df.empty:
+        df = df.copy()
+        df["password"] = df["password"].map(_normalize_password_cell)
+        user = df[
+            (df["username"].astype(str).str.strip().str.lower() == uname.lower())
+            & (df["password"] == pw)
+        ]
+        if not user.empty:
+            return user.values.tolist()
+
+    # Built-in trial account — works even if Sheets/cache never seeded guest
+    if is_guest_account(uname) and pw == GUEST_PASSWORD:
+        try:
+            ensure_guest_user()
+        except Exception:
+            pass
+        return [builtin_guest_row()]
+    return []
 
 
 def proc_img(f):
