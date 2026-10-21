@@ -5749,11 +5749,13 @@ def page_pfin():
         return
 
     s = result["summary"]
-    st.markdown("#### 3. 見客重點")
+    st.markdown("#### 3. 產品重點")
     hl = pfin_mod.key_highlights(result)
     hc = st.columns(len(hl))
-    for col, (lab, val) in zip(hc, hl):
-        col.metric(lab, val)
+    for col, card in zip(hc, hl):
+        col.metric(card["label"], card["value"], help=card.get("hint") or None)
+        if card.get("sub") and card["sub"] != "—":
+            col.caption(f"約 {card['sub']}")
 
     st.markdown("#### 4. 融資摘要")
     m1, m2, m3, m4 = st.columns(4)

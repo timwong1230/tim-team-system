@@ -97,15 +97,19 @@ def test_pfin_pdf_and_whatsapp():
     from tt_core.client_pdf import build_client_pdf, build_pfin_pdf, pdf_filename
 
     r = pfin.compute_financing(400_000, "za-bank", apply_promotion=True)
-    highlights = dict(pfin.key_highlights(r))
-    assert "自己出本金" in highlights
-    assert "保單價值" in highlights
-    assert "產品優惠" in highlights
-    assert "每月利息支出" in highlights
-    assert "10年後退保價值" in highlights
-    assert highlights["保單價值"] == "US$328,000"
-    assert highlights["產品優惠"].startswith("6%")
-    assert "US$624,182" in highlights["10年後退保價值"]
+    cards = pfin.key_highlights(r)
+    by_label = {c["label"]: c for c in cards}
+    assert list(by_label) == [
+        "自己出本金",
+        "保單價值",
+        "產品優惠",
+        "每月利息支出",
+        "10年後退保價值",
+    ]
+    assert by_label["保單價值"]["value"] == "US$328,000"
+    assert by_label["產品優惠"]["value"].startswith("6%")
+    assert "US$624,182" in by_label["10年後退保價值"]["value"]
+    assert by_label["自己出本金"]["sub"].startswith("HK$")
     assert r["summary"]["monthly_interest_usd"] == round(
         r["summary"]["annual_interest_usd"] / 12
     )
@@ -113,14 +117,9 @@ def test_pfin_pdf_and_whatsapp():
     wa = pfin.whatsapp_summary(r, client="陳生")
     assert "保費融資計劃書" in wa
     assert "陳生" in wa
-    assert "見客重點" in wa
-    for label in (
-        "自己出本金",
-        "保單價值",
-        "產品優惠",
-        "每月利息支出",
-        "10年後退保價值",
-    ):
+    assert "產品重點" in wa
+    assert "見客重點" not in wa
+    for label in by_label:
         assert label in wa
 
     pdf = build_pfin_pdf(
@@ -134,10 +133,14 @@ def test_pfin_pdf_and_whatsapp():
     import pymupdf
 
     texts = "\n".join(p.get_text() for p in pymupdf.open(stream=pdf, filetype="pdf"))
-    assert "見客重點" in texts
-    assert "自己出本金" in texts
-    assert "每月利息支出" in texts
-    assert "10年後退保價值" in texts
+    assert "產品重點" in texts
+    assert "見客重點" not in texts
+    assert "Day 1 首期" in texts
+    for label in by_label:
+        assert label in texts
+    assert "US$64,413" in texts
+    assert "US$1,078" in texts or "1,078" in texts
+    assert "US$624,182" in texts
 
     via = build_client_pdf(
         title="保費融資計劃書",
