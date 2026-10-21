@@ -847,7 +847,7 @@ def html_preview(proposal: dict[str, Any]) -> str:
     {''.join(sections_html) or '<p>尚未選擇產品。</p>'}
     {summary_html}
     {gaps_html}
-    <div class="foot">本計劃書由 TIM TEAM M+2 產生，只供內部見客參考。保障、保費、折扣及分紅均以保險公司正式計劃書及條款為準；分紅／特別紅利非保證。</div>
+    <div class="foot">只供內部見客參考。保障、保費、折扣及分紅均以保險公司正式計劃書及條款為準；分紅／特別紅利非保證。</div>
   </div>
 </div>
 </body></html>"""
