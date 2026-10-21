@@ -69,7 +69,7 @@
     let d = Number(input.value || 0);
     if (Number.isNaN(d)) d = 0;
     d = Math.max(0, Math.min(100, d));
-    const discAmt = subtotal * (d / 100); // products only
+    const discAmt = (subtotal + snack) * (d / 100); // products + snacks
     const total = subtotal + snack + service - discAmt;
     document.getElementById('billTotal').textContent = money(total);
     document.getElementById('vTotal').textContent = money(total);
@@ -78,7 +78,7 @@
     const row = document.getElementById('discRow');
     if (d > 0) {
       row.style.display = 'flex';
-      document.getElementById('discLabel').textContent = `Discount ${d}% (products only)`;
+      document.getElementById('discLabel').textContent = `Discount ${d}% (products + snacks)`;
       document.getElementById('vDisc').textContent = '-' + money(discAmt);
     } else {
       row.style.display = 'none';

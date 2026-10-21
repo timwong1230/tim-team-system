@@ -100,7 +100,7 @@ def generate_receipt_pdf(
     row("Subtotal (products)", bill["subtotal"])
     if bill.get("discount_percent"):
         row(
-            f"Discount {int(bill['discount_percent'])}% (products only)",
+            f"Discount {int(bill['discount_percent'])}% (products + snacks)",
             -float(bill["discount_amount"]),
         )
     row(f"Snack charge ({bill['party_size']} × $10)", bill["snack_charge"])
