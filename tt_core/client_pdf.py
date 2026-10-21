@@ -645,6 +645,150 @@ def build_protection_gap_pdf(
     return _pdf_bytes(pdf)
 
 
+def build_pfin_pdf(
+    *,
+    title: str = "保費融資計劃書",
+    client: str = "",
+    agent: str = "",
+    result: dict[str, Any] | None = None,
+    footer: str = "",
+) -> bytes:
+    """Structured Premium Financing proposal PDF (ICON V + bank)."""
+    from tt_core.pfin import format_hkd, format_usd, scenario_label
+
+    result = result or {}
+    s = result.get("summary") or {}
+    bank = result.get("bank") or {}
+    pdf, _note = _make_pdf(footer_note=footer)
+
+    _draw_title(pdf, title or "保費融資計劃書")
+    _section_title(pdf, "客戶資料")
+    info = []
+    if client:
+        info.append(("客戶姓名", client))
+    if agent:
+        info.append(("顧問", agent))
+    info.append(("日期", datetime.now().strftime("%Y-%m-%d %H:%M")))
+    info.append(("產品", str(result.get("product") or "FWD 智盈匯聚 (優越版) V")))
+    info.append(("融資銀行", str(bank.get("name") or "—")))
+    info.append(("紅利情景", scenario_label(str(result.get("scenario") or "expected"))))
+    info.append(("匯率", f"1 USD = {float(result.get('fx') or 7.85):.2f} HKD"))
+    _draw_client_info_box(pdf, info)
+
+    _section_title(pdf, "融資摘要")
+    heroes = [
+        f"首日保證 CV：{format_usd(float(s.get('day1_guaranteed_cv_usd') or 0))}",
+        f"貸款：{format_usd(float(s.get('loan_usd') or 0))}",
+        f"初期自資：{format_usd(float(s.get('initial_outlay_usd') or 0))}",
+        f"槓桿：{float(s.get('leverage_ratio') or 0):.2f}x",
+    ]
+    _draw_hero_metrics(pdf, heroes)
+
+    detail_rows = [
+        ("保費（USD）", format_usd(float(s.get("premium_usd") or 0))),
+        ("保費（約 HKD）", format_hkd(float(s.get("premium_hkd") or 0))),
+        (
+            "保費折扣",
+            (
+                f"{float(s.get('discount_rate') or 0) * 100:.0f}%（"
+                f"{format_usd(float(s.get('discount_usd') or 0))}）"
+                if s.get("apply_promotion")
+                else "未套用"
+            ),
+        ),
+        ("實付保費", format_usd(float(s.get("actual_premium_paid_usd") or 0))),
+        ("LTV 成數", f"{float(s.get('ltv_ratio') or 0) * 100:.0f}%"),
+        ("貸款額（約 HKD）", format_hkd(float(s.get("loan_hkd") or 0))),
+        ("設立費", format_usd(float(s.get("setup_fee_usd") or 0))),
+        ("Levy", format_usd(float(s.get("levy_usd") or 0))),
+        (
+            "預估年息",
+            f"{float(s.get('annual_interest_rate_pct') or 0):.2f}%（約 "
+            f"{format_usd(float(s.get('annual_interest_usd') or 0))}/年）",
+        ),
+    ]
+    _draw_client_info_box(pdf, detail_rows)
+
+    if bank.get("rate_formula") or bank.get("badge"):
+        _section_title(pdf, "銀行條款（快照）")
+        bank_rows = []
+        if bank.get("badge"):
+            bank_rows.append(("標籤", str(bank["badge"])))
+        if bank.get("rate_formula"):
+            bank_rows.append(("利率公式", str(bank["rate_formula"])))
+        if bank.get("ltv_description"):
+            bank_rows.append(("LTV 說明", str(bank["ltv_description"])))
+        if bank.get("setup_fee_description"):
+            bank_rows.append(("設立費", str(bank["setup_fee_description"])))
+        if bank.get("promotion_period"):
+            bank_rows.append(("優惠期", str(bank["promotion_period"])))
+        _draw_client_info_box(pdf, bank_rows)
+
+    focus = list(result.get("focus_years") or [])
+    if focus:
+        _section_title(pdf, "重點年份（示意）")
+        _draw_pfin_year_table(pdf, focus)
+
+    _draw_disclaimer_bar(
+        pdf,
+        footer
+        or str(result.get("disclaimer") or "")
+        or "數字為示意；紅利／利率非保證；實際以正式利益說明及銀行批核為準。",
+    )
+    return _pdf_bytes(pdf)
+
+
+def _draw_pfin_year_table(pdf, rows: list[dict[str, Any]]) -> None:
+    """Compact year projection table for PFin PDF."""
+    from tt_core.pfin import format_usd
+
+    headers = ["年度", "年齡", "退保價值", "扣貸淨值", "累計利息", "淨利潤", "槓桿IRR"]
+    # relative column weights
+    weights = [0.10, 0.10, 0.18, 0.18, 0.16, 0.16, 0.12]
+    col_ws = [pdf.epw * w for w in weights]
+    row_h = 7.2
+
+    def _header():
+        _ensure_space(pdf, row_h + 4)
+        y = pdf.get_y()
+        pdf.set_fill_color(*_INK)
+        pdf.rect(pdf.l_margin, y, pdf.epw, row_h, style="F")
+        x = pdf.l_margin
+        pdf.set_font("ttcjk", size=8)
+        pdf.set_text_color(*_WHITE)
+        for h, w in zip(headers, col_ws):
+            pdf.set_xy(x, y + 1.2)
+            pdf.cell(w, row_h - 2, h, align="C")
+            x += w
+        pdf.set_y(y + row_h)
+
+    _header()
+    for i, r in enumerate(rows):
+        _ensure_space(pdf, row_h + 2)
+        y = pdf.get_y()
+        fill = _SOFT if i % 2 == 0 else _WHITE
+        pdf.set_fill_color(*fill)
+        pdf.rect(pdf.l_margin, y, pdf.epw, row_h, style="F")
+        vals = [
+            f"第 {int(r.get('year') or 0)}",
+            f"{int(r.get('age') or 0)}",
+            format_usd(float(r.get("total_sv_usd") or 0)),
+            format_usd(float(r.get("net_sv_usd") or 0)),
+            format_usd(float(r.get("cumulative_interest_usd") or 0)),
+            format_usd(float(r.get("net_profit_usd") or 0)),
+            f"{float(r.get('leveraged_irr_pct') or 0):.1f}%",
+        ]
+        x = pdf.l_margin
+        pdf.set_font("ttcjk", size=8)
+        pdf.set_text_color(*_TEXT)
+        for v, w in zip(vals, col_ws):
+            pdf.set_xy(x, y + 1.2)
+            pdf.cell(w, row_h - 2, _fit(pdf, v, w - 2), align="C")
+            x += w
+        pdf.set_y(y + row_h)
+    pdf.ln(3)
+
+
 def build_client_pdf(
     *,
     title: str,
@@ -671,6 +815,14 @@ def build_client_pdf(
             total_have=float(data.get("total_have") or 0),
             total_gap=float(data.get("total_gap") or 0),
             total_prem=float(data.get("total_prem") or 0),
+            footer=footer,
+        )
+    if data.get("kind") == "pfin":
+        return build_pfin_pdf(
+            title=title or "保費融資計劃書",
+            client=client,
+            agent=agent,
+            result=data.get("result") or {},
             footer=footer,
         )
 

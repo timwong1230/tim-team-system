@@ -5642,7 +5642,13 @@ def page_pfin():
     bank_by_id = {b["id"]: b for b in banks}
 
     st.markdown("#### 1. 保費同假設")
-    c1, c2, c3 = st.columns(3)
+    c0, c1 = st.columns(2)
+    with c0:
+        client = st.text_input(
+            "客戶名稱（可留空）",
+            key="pfin_client",
+            placeholder="例如：陳生",
+        )
     with c1:
         premium = st.number_input(
             "保費（USD，一次過）",
@@ -5652,6 +5658,7 @@ def page_pfin():
             step=10_000,
             key="pfin_premium",
         )
+    c2, c3 = st.columns(2)
     with c2:
         apply_promo = st.checkbox(
             "套用公司保費折扣（4%／6%／8%）",
@@ -5810,41 +5817,20 @@ def page_pfin():
 
     st.info(result["disclaimer"])
 
-    # WhatsApp / copy-friendly summary
-    lines = [
-        f"*{result['product']} · 保費融資示意*",
-        f"銀行：{result['bank']['name']}",
-        f"保費：{pfin_mod.format_usd(s['premium_usd'])}"
-        + (
-            f"（折扣 {s['discount_rate']*100:.0f}% → 實付 {pfin_mod.format_usd(s['actual_premium_paid_usd'])}）"
-            if s["apply_promotion"] and s["discount_usd"]
-            else ""
-        ),
-        f"貸款：{pfin_mod.format_usd(s['loan_usd'])}（LTV {s['ltv_ratio']*100:.0f}%）",
-        f"初期自資：{pfin_mod.format_usd(s['initial_outlay_usd'])} · 槓桿 {s['leverage_ratio']:.2f}x",
-        f"預估年息：{s['annual_interest_rate_pct']:.2f}%（約 {pfin_mod.format_usd(s['annual_interest_usd'])}/年）",
-        "",
-        "*重點年份（槓桿 IRR）*",
-    ]
-    for y in result["focus_years"]:
-        if y["year"] in (1, 5, 6, 10, 20, 30):
-            lines.append(
-                f"第 {y['year']} 年：淨值 {pfin_mod.format_usd(y['net_sv_usd'])} · "
-                f"IRR {y['leveraged_irr_pct']:.1f}%"
-            )
-    lines.append("")
-    lines.append("_示意數字；紅利／利率非保證；以正式計劃書及銀行批核為準_")
-    wa = "\n".join(lines)
-    st.markdown("#### WhatsApp 摘要")
-    st.code(wa, language=None)
-    st.download_button(
-        "下載摘要（.txt）",
-        data=wa.encode("utf-8"),
-        file_name="pfin-summary.txt",
-        mime="text/plain",
-        use_container_width=True,
-        key="pfin_dl_txt",
-    )
+    try:
+        wa = pfin_mod.whatsapp_summary(result, client=str(client or "").strip())
+        _render_whatsapp_share(
+            wa,
+            key="pfin_wa",
+            caption="可開 WhatsApp 傳摘要，或預覽／下載 PDF 計劃書同客戶講解。",
+            pdf_title="保費融資計劃書",
+            pdf_client=str(client or "").strip(),
+            pdf_tool="保費融資計算機",
+            pdf_footer=str(result.get("disclaimer") or ""),
+            pdf_data={"kind": "pfin", "result": result},
+        )
+    except Exception as e:
+        st.caption(f"WhatsApp／PDF 暫時未能產生：{e}")
 
 
 def page_medical_finance():
