@@ -114,9 +114,30 @@ def test_get_data_excludes_guest():
         assert "Tim" in set(df["username"].astype(str))
 
 
-def test_db_seeds_guest():
+def test_db_seeds_guest_and_kk():
+    from tt_core.constants import SEED_USERS
+
+    assert ("guest", "1234", "Guest") in SEED_USERS
+    assert ("KK", "1234", "Member") in SEED_USERS
     src = (_ROOT / "tt_core" / "db.py").read_text(encoding="utf-8")
-    assert '("guest", "1234", "Guest")' in src
+    assert "SEED_USERS" in src
+
+
+def test_login_kk_member_builtin():
+    """New colleague KK must log in even before Sheets has the row."""
+    from tt_core import data as d
+
+    empty = pd.DataFrame(
+        columns=["username", "password", "role", "team", "recruit", "avatar", "last_read"]
+    )
+    with patch.object(d, "read_data", return_value=empty):
+        with patch.object(d, "ensure_seed_users", return_value=True):
+            rows = d.login("KK", "1234")
+            assert rows
+            assert rows[0][0] == "KK"
+            assert rows[0][2] == "Member"
+            assert d.login("kk", "1234")
+            assert not d.login("KK", "9999")
 
 
 def test_app_hides_ops_menus_for_guest():

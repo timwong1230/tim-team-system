@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-21T12:36Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-21T12:44Z
 
 
 from __future__ import annotations
@@ -968,10 +968,9 @@ if not st.session_state["logged_in"]:
             except Exception:
                 pass
             try:
-                from tt_core.data import ensure_guest_user
+                from tt_core.data import ensure_seed_users
 
-                if str(u or "").strip().lower() in ("guest",):
-                    ensure_guest_user()
+                ensure_seed_users(only=str(u or "").strip() or None)
             except Exception:
                 pass
             d = login(u, p)
