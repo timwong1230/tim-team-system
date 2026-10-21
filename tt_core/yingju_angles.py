@@ -148,31 +148,53 @@ def build_angle_story(
     withdraw_start_year: int | None = None,
     withdraw_years: int | None = None,
     withdraw_usd: float | None = None,
+    illustration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return angle-specific title/goals/highlights + visual + value table."""
+    """Return angle-specific title/goals/highlights + visual + value table.
+
+    When ``illustration`` (parsed official PDF) is provided, all money figures
+    come from that PDF — no calibrated projection.
+    """
     p = str(purpose or "").strip() or "儲蓄錢包"
     if p in {"財富傳承", "其他儲蓄"} or p not in SELLING_ANGLES:
         p = "儲蓄錢包"
 
-    start = (
-        int(withdraw_start_year)
-        if withdraw_start_year is not None
-        else default_withdraw_start_year(p, int(age))
-    )
-    n_wd = (
-        int(withdraw_years)
-        if withdraw_years is not None
-        else default_withdraw_years(p)
-    )
-    scen = project_scenario(
-        annual_usd,
-        age=int(age),
-        withdraw_start_year=start,
-        withdraw_years=n_wd,
-        withdraw_usd=withdraw_usd,
-        fx=float(fx or 7.85),
-    )
+    official = bool(illustration)
+    if official:
+        from tt_core.yingju_proposal_parse import scenario_from_illustration
 
+        meta = illustration.get("meta") or {}
+        age_v = int(meta.get("age") if meta.get("age") is not None else age)
+        scen = scenario_from_illustration(
+            illustration, fx=float(fx or 7.85), age=age_v
+        )
+        start = int(scen.get("withdraw_start_year") or 6)
+        n_wd = int(scen.get("withdraw_years") or 0)
+        num_tag = "官方利益說明"
+        src_caption = "數字來自上載嘅官方利益說明 PDF（紅利非保證）"
+    else:
+        start = (
+            int(withdraw_start_year)
+            if withdraw_start_year is not None
+            else default_withdraw_start_year(p, int(age))
+        )
+        n_wd = (
+            int(withdraw_years)
+            if withdraw_years is not None
+            else default_withdraw_years(p)
+        )
+        scen = project_scenario(
+            annual_usd,
+            age=int(age),
+            withdraw_start_year=start,
+            withdraw_years=n_wd,
+            withdraw_usd=withdraw_usd,
+            fx=float(fx or 7.85),
+        )
+        num_tag = "示意"
+        src_caption = "示意數字（非保證；以正式利益說明為準）"
+
+    age = int(scen.get("age") or age)
     au, ah = scen["annual_usd"], scen["annual_hkd"]
     y6u, y6h = scen["year6_sv_usd"], scen["year6_sv_hkd"]
     wdu, wdh = scen["withdraw_usd"], scen["withdraw_hkd"]
@@ -180,6 +202,9 @@ def build_angle_story(
     after_u = scen.get("av_after_withdrawals_usd")
     after_h = scen.get("av_after_withdrawals_hkd")
     end_wd = scen.get("withdraw_end_year")
+    # Guard display helpers when SV missing
+    y6u = float(y6u or 0)
+    y6h = float(y6h or 0)
 
     common_flex = [
         "分紅壽險：保證現金價值 + 歸原紅利 + 特別紅利（紅利非保證）",
@@ -187,20 +212,21 @@ def build_angle_story(
         "提款會影響其後戶口價值及身故權益；實際以保險公司正式利益說明為準",
     ]
 
-    # 價值表：重點年份（第 6、提款起／止、視野末端）
-    focus_years = {6, start}
-    if end_wd:
-        focus_years.add(int(end_wd))
-    focus_years.add(int(scen["horizon_year"]))
-    value_table = [r for r in scen["rows"] if r["policy_year"] in focus_years]
-    # 保證排序、去重
-    seen: set[int] = set()
-    value_table_u: list[dict[str, Any]] = []
-    for r in sorted(scen["rows"], key=lambda x: x["policy_year"]):
-        yr = int(r["policy_year"])
-        if yr in focus_years and yr not in seen and yr >= 6:
-            value_table_u.append(r)
-            seen.add(yr)
+    if official:
+        value_table_u = list(scen.get("rows") or [])
+    else:
+        # 價值表：重點年份（第 6、提款起／止、視野末端）
+        focus_years = {6, start}
+        if end_wd:
+            focus_years.add(int(end_wd))
+        focus_years.add(int(scen["horizon_year"]))
+        seen: set[int] = set()
+        value_table_u = []
+        for r in sorted(scen["rows"], key=lambda x: x["policy_year"]):
+            yr = int(r["policy_year"])
+            if yr in focus_years and yr not in seen and yr >= 6:
+                value_table_u.append(r)
+                seen.add(yr)
 
     if p == "儲蓄錢包":
         title = "儲蓄錢包計劃書"
@@ -212,10 +238,10 @@ def build_angle_story(
         ]
         highlights = [
             f"每年 {_usd(au)}（約 {_hkd(ah)}）· 供款 5 年",
-            f"第 6 年期末戶口（示意）約 {_usd(y6u)}（約 {_hkd(y6h)}）；對照已繳保費 {_usd(prem_u)}",
+            f"第 6 年期末戶口（{num_tag}）約 {_usd(y6u)}（約 {_hkd(y6h)}）；對照已繳保費 {_usd(prem_u)}",
             f"第 {start} 年示範提款約 {_usd(wdu)}（約 {_hkd(wdh)}）",
             (
-                f"提款後戶口（示意）約 {_usd(after_u)}（約 {_hkd(after_h)}）"
+                f"提款後戶口（{num_tag}）約 {_usd(after_u)}（約 {_hkd(after_h)}）"
                 if after_u is not None
                 else "亦可選擇唔提款，戶口繼續滾存"
             ),
@@ -240,7 +266,7 @@ def build_angle_story(
                 "key": "enjoy",
                 "phase": f"第 {start} 年",
                 "title": "可選擇提款",
-                "body": f"示意 {_usd(wdu)}\n旅行／犒賞",
+                "body": f"{num_tag} {_usd(wdu)}\n旅行／犒賞",
                 "tone": "enjoy",
             },
             {
@@ -258,9 +284,9 @@ def build_angle_story(
         cards = [
             {"label": "每年供款", "value": _usd(au), "sub": f"約 {_hkd(ah)}"},
             {"label": "5 年總供", "value": _usd(prem_u), "sub": f"約 {_hkd(scen['total_prem_hkd'])}"},
-            {"label": "第 6 年戶口（示意）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
+            {"label": f"第 6 年戶口（{num_tag}）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
             {
-                "label": f"第 {start} 年提款（示意）",
+                "label": f"第 {start} 年提款（{num_tag}）",
                 "value": _usd(wdu),
                 "sub": f"其後戶口約 {_usd(after_u) if after_u is not None else '—'}",
             },
@@ -276,11 +302,11 @@ def build_angle_story(
         ]
         highlights = [
             f"每年 {_usd(au)} × 5 年，建立教育儲備",
-            f"第 6 年期末戶口（示意）約 {_usd(y6u)}（約 {_hkd(y6h)}）",
+            f"第 6 年期末戶口（{num_tag}）約 {_usd(y6u)}（約 {_hkd(y6h)}）",
             f"預計約第 {start} 年（受保人約 {int(age) + start} 歲）起，連續 {n_wd} 年提款",
-            f"每年示意提款 {_usd(wdu)}（約 {_hkd(wdh)}）；{n_wd} 年合共約 {_usd(scen['total_withdrawn_usd'])}",
+            f"每年{num_tag}提款 {_usd(wdu)}（約 {_hkd(wdh)}）；{n_wd} 年合共約 {_usd(scen['total_withdrawn_usd'])}",
             (
-                f"提款期結束後戶口尚餘（示意）約 {_usd(after_u)}（約 {_hkd(after_h)}）"
+                f"提款期結束後戶口尚餘（{num_tag}）約 {_usd(after_u)}（約 {_hkd(after_h)}）"
                 if after_u is not None
                 else "提款安排可按實際學費調整"
             ),
@@ -322,14 +348,14 @@ def build_angle_story(
         ]
         cards = [
             {"label": "每年供款", "value": _usd(au), "sub": f"約 {_hkd(ah)}"},
-            {"label": "第 6 年戶口（示意）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
+            {"label": f"第 6 年戶口（{num_tag}）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
             {
                 "label": f"提款期（第 {start} 年起）",
                 "value": f"{n_wd} 年 × {_usd(wdu)}",
                 "sub": f"合共約 {_usd(scen['total_withdrawn_usd'])}",
             },
             {
-                "label": "提款後尚餘（示意）",
+                "label": f"提款後尚餘（{num_tag}）",
                 "value": _usd(after_u) if after_u is not None else "—",
                 "sub": f"約 {_hkd(after_h)}" if after_h is not None else f"而家 {int(age)} 歲",
             },
@@ -346,10 +372,10 @@ def build_angle_story(
         ]
         highlights = [
             f"5 年供 {_usd(au)}／年，其後進入滾存階段",
-            f"第 6 年期末戶口（示意）約 {_usd(y6u)}（約 {_hkd(y6h)}）",
-            f"預計約第 {start} 年（約 {int(age) + start} 歲）起，每年示意提款 {_usd(wdu)}",
+            f"第 6 年期末戶口（{num_tag}）約 {_usd(y6u)}（約 {_hkd(y6h)}）",
+            f"預計約第 {start} 年（約 {int(age) + start} 歲）起，每年{num_tag}提款 {_usd(wdu)}",
             (
-                f"示範提款 {n_wd} 年後，戶口尚餘（示意）約 {_usd(after_u)}"
+                f"示範提款 {n_wd} 年後，戶口尚餘（{num_tag}）約 {_usd(after_u)}"
                 if after_u is not None
                 else "提款開始年份可按退休計劃調整"
             ),
@@ -390,10 +416,10 @@ def build_angle_story(
         ]
         cards = [
             {"label": "每年供款", "value": _usd(au), "sub": f"約 {_hkd(ah)}"},
-            {"label": "第 6 年戶口（示意）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
-            {"label": "每年提款（示意）", "value": _usd(wdu), "sub": f"第 {start} 年起"},
+            {"label": f"第 6 年戶口（{num_tag}）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
+            {"label": f"每年提款（{num_tag}）", "value": _usd(wdu), "sub": f"第 {start} 年起"},
             {
-                "label": "提款後尚餘（示意）",
+                "label": f"提款後尚餘（{num_tag}）",
                 "value": _usd(after_u) if after_u is not None else "—",
                 "sub": f"示範 {n_wd} 年提款",
             },
@@ -408,10 +434,10 @@ def build_angle_story(
         ]
         highlights = [
             f"儲蓄端：盈聚‧天下 II（5 年供），每年 {_usd(au)}",
-            f"第 6 年期末戶口（示意）約 {_usd(y6u)}（約 {_hkd(y6h)}）",
-            f"第 {start} 年起示意每年提款 {_usd(wdu)}，用作支援醫療保費",
+            f"第 6 年期末戶口（{num_tag}）約 {_usd(y6u)}（約 {_hkd(y6h)}）",
+            f"第 {start} 年起{num_tag}每年提款 {_usd(wdu)}，用作支援醫療保費",
             (
-                f"示範 {n_wd} 年提款後，戶口尚餘（示意）約 {_usd(after_u)}"
+                f"示範 {n_wd} 年提款後，戶口尚餘（{num_tag}）約 {_usd(after_u)}"
                 if after_u is not None
                 else "詳細通脹試算請用「醫療融資計算機」"
             ),
@@ -453,10 +479,10 @@ def build_angle_story(
         ]
         cards = [
             {"label": "每年供盈聚", "value": _usd(au), "sub": f"約 {_hkd(ah)}"},
-            {"label": "第 6 年戶口（示意）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
-            {"label": "每年提款（示意）", "value": _usd(wdu), "sub": "支援醫保"},
+            {"label": f"第 6 年戶口（{num_tag}）", "value": _usd(y6u), "sub": f"約 {_hkd(y6h)}"},
+            {"label": f"每年提款（{num_tag}）", "value": _usd(wdu), "sub": "支援醫保"},
             {
-                "label": "提款後尚餘（示意）",
+                "label": f"提款後尚餘（{num_tag}）",
                 "value": _usd(after_u) if after_u is not None else "—",
                 "sub": f"示範 {n_wd} 年",
             },
@@ -472,14 +498,22 @@ def build_angle_story(
         "scenario": scen,
         "visual": {
             "type": "timeline",
-            "caption": "圖像時間線（示意；非保證；以正式利益說明為準）",
+            "caption": src_caption,
             "steps": steps,
             "cards": cards,
             "value_table": value_table_u,
-            "value_table_caption": "重點年份戶口（示意）",
+            "value_table_caption": f"重點年份戶口（{num_tag}）",
         },
         "disclaimer": (
-            "數字按現行利益說明校準模型作示意（第 5 年倍數及之後增長假設），"
-            "紅利／提款非保證；實際以保險公司正式計劃書及條款為準。"
+            (
+                "數字直接取自上載嘅官方利益說明 PDF（當前假設紅利）；"
+                "紅利／提款非保證；實際以保險公司正式計劃書及條款為準。"
+            )
+            if official
+            else (
+                "數字按現行利益說明校準模型作示意（第 5 年倍數及之後增長假設），"
+                "紅利／提款非保證；實際以保險公司正式計劃書及條款為準。"
+                "建議上載官方建議書以使用準確數字。"
+            )
         ),
     }

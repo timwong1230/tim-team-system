@@ -99,16 +99,22 @@ def test_full_protection_ci_requires_manual_premium():
 
 
 def test_saving_proposal_yingju():
-    from tt_core.proposal import build_saving_proposal
+    from pathlib import Path
 
+    from tt_core.proposal import build_saving_proposal
+    from tt_core.yingju_proposal_parse import parse_yingju_illustration_pdf
+
+    fixtures = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "yingju"
+    parsed = parse_yingju_illustration_pdf(fixtures / "yingju_12800_age31.pdf")
     prop = build_saving_proposal(
         client_name="Fai BB",
         age=35,
         gender="男",
         occupation="工程",
         saving_id="yingju5",
-        annual_usd=10000,
+        annual_usd=12800,
         purpose="教育基金",
+        illustration=parsed,
     )
     assert prop["kind"] == "saving"
     assert prop["ready"] is True
@@ -119,7 +125,8 @@ def test_saving_proposal_yingju():
     assert sec["premium_annual_hkd"] > 0
     assert sec.get("illustration")
     assert sec.get("visual") and len(sec["visual"].get("steps") or []) == 4
-    assert sec["illustration"].get("year6_sv_usd") == round(10000 * 2.9727 * 1.1189, 0)
+    assert sec["illustration"].get("year6_sv_usd") == 64000.0
+    assert sec["illustration"].get("source") == "official_illustration"
     assert sec.get("angle_tagline") == "子女教育金規劃方案"
 
 

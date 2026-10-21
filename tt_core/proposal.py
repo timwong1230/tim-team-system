@@ -378,6 +378,7 @@ def build_saving_proposal(
     withdraw_start_year: int | None = None,
     withdraw_years: int | None = None,
     withdraw_usd: float | None = None,
+    illustration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prod = get_product("saving", saving_id)
     gaps: list[str] = []
@@ -397,6 +398,25 @@ def build_saving_proposal(
             "gaps": [f"搵唔到儲蓄產品：{saving_id}"],
             "ready": False,
         }
+
+    # 盈聚：優先用官方 PDF 嘅年齡／性別／年供
+    age_v = int(age)
+    gender_v = str(gender)
+    if saving_id == "yingju5" and illustration:
+        meta = illustration.get("meta") or {}
+        if meta.get("age") is not None:
+            age_v = int(meta["age"])
+        if meta.get("gender"):
+            gender_v = str(meta["gender"])
+        if illustration.get("annual_usd") is not None:
+            annual_usd = float(illustration["annual_usd"])
+        if illustration.get("has_withdrawal_scenario"):
+            if illustration.get("withdraw_start_year") is not None:
+                withdraw_start_year = int(illustration["withdraw_start_year"])
+            if illustration.get("withdraw_years") is not None:
+                withdraw_years = int(illustration["withdraw_years"])
+            if illustration.get("withdraw_usd") is not None:
+                withdraw_usd = float(illustration["withdraw_usd"])
 
     currency = str(prod.get("currency") or "USD").upper()
     pay_years = int(prod.get("pay_years") or 5)
@@ -440,6 +460,9 @@ def build_saving_proposal(
         extract_note = "第 6 年起可按計劃提款（以條款為準）"
         illus = None
 
+    if saving_id == "yingju5" and not illustration:
+        gaps.append("請上載盈聚‧天下 II 官方利益說明 PDF，計劃書先會用準確數字。")
+
     total_hkd = round(float(annual_hkd_v) * pay_years, 0)
     highlights = list(prod.get("highlights") or [])
     goals = list(prod.get("goals") or [])
@@ -448,17 +471,18 @@ def build_saving_proposal(
     title = "儲蓄計劃書"
     purpose_label = str(purpose or "儲蓄計劃")
 
-    if saving_id == "yingju5" and annual_u > 0:
+    if saving_id == "yingju5" and annual_u > 0 and illustration:
         from tt_core.yingju_angles import build_angle_story
 
         angle = build_angle_story(
             purpose_label,
             annual_usd=annual_u,
-            age=int(age),
+            age=age_v,
             fx=float(fx or FX_DEFAULT),
             withdraw_start_year=withdraw_start_year,
             withdraw_years=withdraw_years,
             withdraw_usd=withdraw_usd,
+            illustration=illustration,
         )
         purpose_label = str(angle.get("purpose") or purpose_label)
         title = str(angle.get("title") or title)
@@ -471,17 +495,24 @@ def build_saving_proposal(
             "year6_sv_hkd": m.get("year6_sv_hkd"),
             "withdraw_usd": m.get("withdraw_usd"),
             "av_after_withdrawals_usd": m.get("av_after_withdrawals_usd"),
-            "note": "示意數字（非保證；以正式利益說明為準）",
+            "note": "官方利益說明數字（紅利非保證）",
+            "source": "official_illustration",
         }
         start_y = int(m.get("withdraw_start_year") or 6)
-        extract_note = (
-            f"第 {start_y} 年起示意每年提款約 {format_usd(float(m.get('withdraw_usd') or 0))}；"
-            f"提款後戶口約 {format_usd(float(m.get('av_after_withdrawals_usd') or 0))}"
-        )
+        n_wd = int(m.get("withdraw_years") or 0)
+        if n_wd and float(m.get("withdraw_usd") or 0) > 0:
+            extract_note = (
+                f"第 {start_y} 年起官方示意每年提款約 "
+                f"{format_usd(float(m.get('withdraw_usd') or 0))}（共 {n_wd} 年）；"
+                f"提款後戶口約 {format_usd(float(m.get('av_after_withdrawals_usd') or 0))}"
+            )
+        else:
+            extract_note = "建議書無提款情景；第 6 年起可按條款安排提款"
         options["purpose"] = purpose_label
         options["withdraw_start_year"] = start_y
         options["withdraw_years"] = m.get("withdraw_years")
         options["withdraw_usd"] = m.get("withdraw_usd")
+        options["illustration_source"] = "official_pdf"
 
     sections = [
         {
@@ -519,8 +550,8 @@ def build_saving_proposal(
         "title": title,
         "client": {
             "name": str(client_name or "").strip() or "客戶",
-            "age": int(age),
-            "gender": str(gender),
+            "age": age_v,
+            "gender": gender_v,
             "occupation": str(occupation or "").strip(),
         },
         "sections": sections,
@@ -530,6 +561,7 @@ def build_saving_proposal(
         "gaps": gaps,
         "ready": float(annual_hkd_v or 0) > 0 and not gaps,
         "purpose": purpose_label,
+        "illustration_ok": bool(illustration) if saving_id == "yingju5" else None,
     }
 
 
@@ -636,7 +668,8 @@ def html_preview(proposal: dict[str, Any]) -> str:
                     f"<div class='glabel'>{_esc(visual.get('value_table_caption') or '重點年份')}</div>"
                     "<table class='vt'>"
                     "<thead><tr><th>保單年度</th><th>年齡</th><th>提款</th>"
-                    "<th>期末戶口（示意）</th><th>備註</th></tr></thead>"
+                    f"<th>{_esc(visual.get('value_table_caption') or '期末戶口')}</th>"
+                    "<th>備註</th></tr></thead>"
                     f"<tbody>{rows_html}</tbody></table></div>"
                 )
             visual_html = (
