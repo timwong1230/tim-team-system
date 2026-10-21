@@ -1,4 +1,4 @@
-"""Idle-timeout session (no browser auto-restore)."""
+"""Browser session persist + 30-minute idle logout."""
 
 from __future__ import annotations
 
@@ -12,21 +12,55 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
-def test_idle_expired_after_one_hour():
+def test_default_idle_is_thirty_minutes():
+    from tt_core.auth_persist import IDLE_SECONDS
+
+    assert IDLE_SECONDS == 1800
+
+
+def test_idle_expired_after_thirty_minutes():
     from tt_core import auth_persist as ap
 
-    fake = {"_tt_last_active": time.time() - 3700}
+    fake = {"_tt_last_active": time.time() - 1900}
     with patch.object(ap, "st") as st_mock:
         st_mock.session_state = fake
-        assert ap.idle_expired(idle_seconds=3600) is True
+        assert ap.idle_expired(idle_seconds=1800) is True
 
     fake2 = {"_tt_last_active": time.time() - 60}
     with patch.object(ap, "st") as st_mock:
         st_mock.session_state = fake2
-        assert ap.idle_expired(idle_seconds=3600) is False
+        assert ap.idle_expired(idle_seconds=1800) is False
 
 
-def test_touch_and_force_logout():
+def test_token_roundtrip_and_idle_reject():
+    from tt_core import auth_persist as ap
+
+    with patch.object(ap, "st") as st_mock:
+        st_mock.secrets = {}
+        st_mock.session_state = {}
+        now = time.time()
+        token = ap.make_session_token(
+            user="Tim",
+            role="Leader",
+            avatar="🦁",
+            last_active=now,
+            idle_seconds=1800,
+        )
+        ok = ap.parse_session_token(token, idle_seconds=1800, now=now + 60)
+        assert ok is not None
+        assert ok["user"] == "Tim"
+        assert ok["role"] == "Leader"
+
+        stale = ap.make_session_token(
+            user="Tim",
+            role="Leader",
+            last_active=now - 2000,
+            idle_seconds=1800,
+        )
+        assert ap.parse_session_token(stale, idle_seconds=1800, now=now) is None
+
+
+def test_touch_and_force_logout_clears_browser():
     from tt_core import auth_persist as ap
 
     state = {
@@ -38,30 +72,61 @@ def test_touch_and_force_logout():
     }
     with patch.object(ap, "st") as st_mock:
         st_mock.session_state = state
-        ap.touch_activity()
+        st_mock.secrets = {}
+        st_mock.html = MagicMock()
+        st_mock.query_params = {}
+        ap.touch_activity(persist=True)
         assert state["_tt_last_active"] > 1
         ap.force_logout_idle()
         assert state["logged_in"] is False
         assert "user" not in state
-        assert "_tt_last_active" not in state
+        assert state.get("_tt_logout_block") is True
+        # clear script should run
+        assert st_mock.html.called
 
 
-def test_app_no_longer_auto_restores_browser_session():
+def test_try_restore_respects_logout_block():
+    from tt_core import auth_persist as ap
+
+    state = {"_tt_logout_block": True}
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = state
+        st_mock.context = MagicMock()
+        st_mock.context.cookies = {}
+        st_mock.query_params = {}
+        assert ap.try_restore_session() is False
+
+
+def test_try_restore_from_cookie():
+    from tt_core import auth_persist as ap
+
+    with patch.object(ap, "st") as st_mock:
+        st_mock.secrets = {}
+        st_mock.session_state = {}
+        st_mock.html = MagicMock()
+        st_mock.query_params = {}
+        token = ap.make_session_token(
+            user="Amy", role="Member", last_active=time.time()
+        )
+        st_mock.context = MagicMock()
+        st_mock.context.cookies = {ap._LS_KEY: token}
+        assert ap.try_restore_session() is True
+        assert st_mock.session_state["logged_in"] is True
+        assert st_mock.session_state["user"] == "Amy"
+
+
+def test_app_wires_persist_and_idle():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert "try_restore_session" not in src
-    assert "persist_browser_session" not in src
-    assert "clear_legacy_browser_session" in src
+    assert "try_restore_session" in src
+    assert "persist_browser_session" in src
+    assert "clear_browser_session" in src
     assert "idle_expired" in src
     assert "touch_activity" in src
     assert "force_logout_idle" in src
+    assert "30 分鐘" in src
 
     auth = (_ROOT / "tt_core" / "auth_persist.py").read_text(encoding="utf-8")
     assert "IDLE_SECONDS" in auth
-    assert "localStorage.setItem" not in auth  # no more persist-on-login
-    assert "tt_sess_v1" in auth  # still clears legacy key
-
-
-def test_default_idle_is_one_hour():
-    from tt_core.auth_persist import IDLE_SECONDS
-
-    assert IDLE_SECONDS == 3600
+    assert "localStorage.setItem" in auth
+    assert "tt_sess_v2" in auth
+    assert "tt_logout" in auth

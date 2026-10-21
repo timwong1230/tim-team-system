@@ -1,43 +1,233 @@
-"""Simple in-memory idle timeout — no browser auto-restore.
+"""Persist login across Streamlit reconnects, with idle auto-logout.
 
-Previous localStorage/cookie persistence made logout unreliable. We only track
-last activity in ``st.session_state`` and expire after ``IDLE_SECONDS`` of no
-interaction (default 1 hour).
+Streamlit ``session_state`` dies when the websocket drops (common on iPhone /
+backgrounded PWA). A signed token in cookie + localStorage restores the user
+after wake — but only if last activity is within ``IDLE_SECONDS`` (default
+30 minutes). Manual logout clears the token and sets a short logout block so
+restore cannot bounce the user back in.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import os
 import time
+from typing import Any
 
 import streamlit as st
 
-# 1 hour idle → auto logout (override with TIM_TEAM_IDLE_SECONDS)
-IDLE_SECONDS = int(os.environ.get("TIM_TEAM_IDLE_SECONDS", str(60 * 60)))
+# Idle window before auto logout (override with TIM_TEAM_IDLE_SECONDS)
+IDLE_SECONDS = int(os.environ.get("TIM_TEAM_IDLE_SECONDS", str(30 * 60)))
+# Hard cap even if somehow kept "active" (override with TIM_TEAM_SESSION_DAYS)
+_TTL_DAYS = int(os.environ.get("TIM_TEAM_SESSION_DAYS", "7"))
+_LS_KEY = "tt_sess_v2"
+_LEGACY_LS_KEY = "tt_sess_v1"
+_LOGOUT_COOKIE = "tt_logout"
 _LAST_ACTIVE_KEY = "_tt_last_active"
-_CLEARED_LEGACY_KEY = "_tt_cleared_legacy_sess"
+_LOGOUT_BLOCK_KEY = "_tt_logout_block"
+_BRIDGE_DONE_KEY = "_tt_sess_bridge_done"
 
 
-def clear_legacy_browser_session() -> None:
-    """One-shot: wipe old 14-day localStorage/cookie tokens so logout works again."""
-    if st.session_state.get(_CLEARED_LEGACY_KEY):
-        return
-    st.session_state[_CLEARED_LEGACY_KEY] = True
-    script = """
-<script>
-(function () {
-  try {
-    localStorage.removeItem('tt_sess_v1');
-    document.cookie = 'tt_sess_v1=; Max-Age=0; Path=/; SameSite=Lax';
-  } catch (e) {}
-  try {
-    var url = new URL(window.location.href);
-    if (url.searchParams.has('tt_sess')) {
-      url.searchParams.delete('tt_sess');
-      window.history.replaceState({}, '', url.toString());
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(text: str) -> bytes:
+    pad = "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode((text or "") + pad)
+
+
+def _secret() -> str:
+    try:
+        sec = st.secrets.get("TT_SESSION_SECRET") or st.secrets.get("session_secret")
+        if sec:
+            return str(sec)
+    except Exception:
+        pass
+    env = os.environ.get("TIM_TEAM_SESSION_SECRET")
+    if env:
+        return env
+    # Internal team app fallback — override via secrets when possible
+    return "tim-team-sess-v2-rotate-me"
+
+
+def make_session_token(
+    *,
+    user: str,
+    role: str,
+    avatar: str = "",
+    last_active: float | None = None,
+    ttl_days: int | None = None,
+    idle_seconds: int | None = None,
+) -> str:
+    """Return signed token ``payload.sig`` including last-active for idle checks."""
+    days = int(ttl_days if ttl_days is not None else _TTL_DAYS)
+    la = float(last_active if last_active is not None else time.time())
+    # Encode idle limit so older tokens stay compatible if env changes
+    idle = int(idle_seconds if idle_seconds is not None else IDLE_SECONDS)
+    payload = {
+        "u": str(user or "").strip(),
+        "r": str(role or "Member").strip() or "Member",
+        "a": str(avatar or "")[:500],
+        "la": int(la),
+        "idle": max(60, idle),
+        "e": int(time.time()) + max(1, days) * 86400,
+        "v": 2,
     }
-  } catch (e) {}
-})();
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    body = _b64url(raw)
+    sig = _b64url(
+        hmac.new(_secret().encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest()
+    )
+    return f"{body}.{sig}"
+
+
+def parse_session_token(
+    token: str | None,
+    *,
+    idle_seconds: int | None = None,
+    now: float | None = None,
+) -> dict[str, Any] | None:
+    """Validate token; return ``{user, role, avatar, last_active}`` or None."""
+    if not token or "." not in token:
+        return None
+    ts = float(now if now is not None else time.time())
+    try:
+        body, sig = token.split(".", 1)
+        expect = _b64url(
+            hmac.new(_secret().encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(sig, expect):
+            return None
+        payload = json.loads(_b64url_decode(body).decode("utf-8"))
+        if int(payload.get("e") or 0) < int(ts):
+            return None
+        user = str(payload.get("u") or "").strip()
+        if not user:
+            return None
+        la = float(payload.get("la") or 0)
+        if la <= 0:
+            return None
+        # Prefer token's encoded idle, then caller override, then module default
+        limit = int(
+            idle_seconds
+            if idle_seconds is not None
+            else payload.get("idle")
+            if payload.get("idle") is not None
+            else IDLE_SECONDS
+        )
+        if (ts - la) > max(60, limit):
+            return None
+        return {
+            "user": user,
+            "role": str(payload.get("r") or "Member").strip() or "Member",
+            "avatar": str(payload.get("a") or ""),
+            "last_active": la,
+        }
+    except Exception:
+        return None
+
+
+def _apply_session(data: dict[str, Any]) -> None:
+    st.session_state["logged_in"] = True
+    st.session_state["user"] = data["user"]
+    st.session_state["role"] = data["role"]
+    st.session_state["avatar"] = data.get("avatar") or ""
+    st.session_state[_LAST_ACTIVE_KEY] = float(
+        data.get("last_active") or time.time()
+    )
+    st.session_state.pop(_LOGOUT_BLOCK_KEY, None)
+
+
+def _logout_blocked() -> bool:
+    if st.session_state.get(_LOGOUT_BLOCK_KEY):
+        return True
+    try:
+        cookies = st.context.cookies
+        if cookies is not None and cookies.get(_LOGOUT_COOKIE):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def persist_browser_session(
+    *,
+    user: str,
+    role: str,
+    avatar: str = "",
+    last_active: float | None = None,
+) -> str:
+    """Save signed session to localStorage + cookie; clear logout block."""
+    la = float(last_active if last_active is not None else time.time())
+    token = make_session_token(
+        user=user, role=role, avatar=avatar, last_active=la
+    )
+    st.session_state[_LAST_ACTIVE_KEY] = la
+    st.session_state.pop(_LOGOUT_BLOCK_KEY, None)
+    token_js = json.dumps(token)
+    key_js = json.dumps(_LS_KEY)
+    legacy_js = json.dumps(_LEGACY_LS_KEY)
+    logout_js = json.dumps(_LOGOUT_COOKIE)
+    # Cookie lives a bit longer than idle; idle is enforced via token ``la``
+    max_age = max(IDLE_SECONDS * 2, 3600)
+    script = f"""
+<script>
+(function () {{
+  try {{
+    var key = {key_js};
+    var legacy = {legacy_js};
+    var token = {token_js};
+    localStorage.setItem(key, token);
+    localStorage.removeItem(legacy);
+    var maxAge = {int(max_age)};
+    document.cookie = key + "=" + encodeURIComponent(token)
+      + "; Max-Age=" + maxAge + "; Path=/; SameSite=Lax";
+    document.cookie = legacy + "=; Max-Age=0; Path=/; SameSite=Lax";
+    document.cookie = {logout_js} + "=; Max-Age=0; Path=/; SameSite=Lax";
+  }} catch (e) {{}}
+}})();
+</script>
+"""
+    try:
+        st.html(script, unsafe_allow_javascript=True)
+    except Exception:
+        pass
+    return token
+
+
+def clear_browser_session() -> None:
+    """Drop persisted session and block restore until next successful login."""
+    st.session_state[_LOGOUT_BLOCK_KEY] = True
+    st.session_state.pop(_LAST_ACTIVE_KEY, None)
+    st.session_state.pop(_BRIDGE_DONE_KEY, None)
+    key_js = json.dumps(_LS_KEY)
+    legacy_js = json.dumps(_LEGACY_LS_KEY)
+    logout_js = json.dumps(_LOGOUT_COOKIE)
+    script = f"""
+<script>
+(function () {{
+  try {{
+    var key = {key_js};
+    var legacy = {legacy_js};
+    localStorage.removeItem(key);
+    localStorage.removeItem(legacy);
+    document.cookie = key + "=; Max-Age=0; Path=/; SameSite=Lax";
+    document.cookie = legacy + "=; Max-Age=0; Path=/; SameSite=Lax";
+    // Blocks restore across websocket reconnect until next login
+    document.cookie = {logout_js} + "=1; Max-Age=86400; Path=/; SameSite=Lax";
+  }} catch (e) {{}}
+  try {{
+    var url = new URL(window.location.href);
+    if (url.searchParams.has('tt_sess')) {{
+      url.searchParams.delete('tt_sess');
+      window.history.replaceState({{}}, '', url.toString());
+    }}
+  }} catch (e) {{}}
+}})();
 </script>
 """
     try:
@@ -52,13 +242,41 @@ def clear_legacy_browser_session() -> None:
         pass
 
 
-def touch_activity() -> None:
-    """Record that the user interacted this run."""
-    st.session_state[_LAST_ACTIVE_KEY] = time.time()
+# Back-compat alias used by older app paths
+def clear_legacy_browser_session() -> None:
+    clear_browser_session()
+
+
+def touch_activity(*, persist: bool = False) -> None:
+    """Record that the user interacted this run.
+
+    When ``persist`` is True (or every ~2 minutes while logged in), refresh the
+    browser token so idle countdown survives phone sleeps / reconnects.
+    """
+    now = time.time()
+    st.session_state[_LAST_ACTIVE_KEY] = now
+    if not persist:
+        last_persist = float(st.session_state.get("_tt_last_persist") or 0)
+        # Refresh cookie at least every 2 minutes of active use
+        if now - last_persist < 120:
+            return
+    user = str(st.session_state.get("user") or "").strip()
+    if not user:
+        return
+    try:
+        persist_browser_session(
+            user=user,
+            role=str(st.session_state.get("role") or "Member"),
+            avatar=str(st.session_state.get("avatar") or ""),
+            last_active=now,
+        )
+        st.session_state["_tt_last_persist"] = now
+    except Exception:
+        pass
 
 
 def idle_expired(*, idle_seconds: int | None = None) -> bool:
-    """True if last activity is older than idle window."""
+    """True if last activity is older than idle window (session_state clock)."""
     limit = int(idle_seconds if idle_seconds is not None else IDLE_SECONDS)
     last = st.session_state.get(_LAST_ACTIVE_KEY)
     if last is None:
@@ -70,9 +288,93 @@ def idle_expired(*, idle_seconds: int | None = None) -> bool:
 
 
 def force_logout_idle() -> None:
-    """Clear login flags after idle expiry."""
+    """Clear login flags after idle expiry (and wipe browser token)."""
     st.session_state["logged_in"] = False
     st.session_state.pop("user", None)
     st.session_state.pop("role", None)
     st.session_state.pop("avatar", None)
     st.session_state.pop(_LAST_ACTIVE_KEY, None)
+    try:
+        clear_browser_session()
+    except Exception:
+        st.session_state[_LOGOUT_BLOCK_KEY] = True
+
+
+def try_restore_session() -> bool:
+    """If not logged in, restore from cookie / query / localStorage bridge.
+
+    Returns True when a restore applied (caller should ``st.rerun()``).
+    """
+    if st.session_state.get("logged_in") and st.session_state.get("user"):
+        return False
+    if _logout_blocked():
+        return False
+
+    token = None
+    try:
+        token = st.query_params.get("tt_sess")
+        if isinstance(token, (list, tuple)):
+            token = token[0] if token else None
+    except Exception:
+        token = None
+
+    if not token:
+        try:
+            cookies = st.context.cookies
+            if cookies is not None:
+                token = cookies.get(_LS_KEY) or cookies.get(_LEGACY_LS_KEY)
+        except Exception:
+            token = None
+
+    if token:
+        data = parse_session_token(str(token))
+        if data:
+            _apply_session(data)
+            # Sliding idle window — refresh last_active on successful wake
+            try:
+                persist_browser_session(
+                    user=data["user"],
+                    role=data["role"],
+                    avatar=data.get("avatar") or "",
+                    last_active=time.time(),
+                )
+            except Exception:
+                pass
+            # Drop bridge query param after consume
+            try:
+                qp = st.query_params
+                if "tt_sess" in qp:
+                    del qp["tt_sess"]
+            except Exception:
+                pass
+            return True
+        clear_browser_session()
+        return False
+
+    # Bridge: pull localStorage into ?tt_sess= once (phone tab wake)
+    if st.session_state.get(_BRIDGE_DONE_KEY):
+        return False
+    st.session_state[_BRIDGE_DONE_KEY] = True
+    key_js = json.dumps(_LS_KEY)
+    legacy_js = json.dumps(_LEGACY_LS_KEY)
+    script = f"""
+<script>
+(function () {{
+  try {{
+    var key = {key_js};
+    var legacy = {legacy_js};
+    var token = localStorage.getItem(key) || localStorage.getItem(legacy);
+    if (!token) return;
+    var url = new URL(window.location.href);
+    if (url.searchParams.get('tt_sess')) return;
+    url.searchParams.set('tt_sess', token);
+    window.location.replace(url.toString());
+  }} catch (e) {{}}
+}})();
+</script>
+"""
+    try:
+        st.html(script, unsafe_allow_javascript=True)
+    except Exception:
+        pass
+    return False
