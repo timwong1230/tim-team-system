@@ -218,6 +218,20 @@ def test_no_duplicate_premium_meta_and_rich_highlights():
     assert "保費折扣" in html
 
 
+def test_short_summary_term_balances_parens():
+    from tt_core.proposal_pdf import _short_summary_term
+
+    assert (
+        _short_summary_term("保證續保至 100 歲（實際年齡；以條款為準）")
+        == "保證續保至 100 歲（實際年齡）"
+    )
+    assert (
+        _short_summary_term("至 65 歲（下次生日年齡；以附約條款為準）")
+        == "至 65 歲（下次生日年齡）"
+    )
+    assert _short_summary_term("供款 20 年") == "供款 20 年"
+
+
 def test_html_and_whatsapp_and_pdf():
     from tt_core.proposal import (
         build_protection_proposal,

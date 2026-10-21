@@ -229,7 +229,10 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
             pdf.set_font("TT", "", 8)
             pdf.set_text_color(*_MUTED)
             pdf.multi_cell(170, 4, note, align="L")
-        y = y + box_h + 4
+            yy = pdf.get_y()
+        # Tracked y must clear the painted box — get_y() alone sits inside it
+        y = max(float(y) + box_h, float(yy)) + 6
+        pdf.set_y(y)
 
     tagline = str(section.get("angle_tagline") or "")
     if tagline:
@@ -258,8 +261,11 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         for g in section.get("goals") or []:
             _draw_bullet_line(pdf, str(g), x=16, width=178, line_h=5.5)
             pdf.ln(1)
+        y = pdf.get_y() + 2
 
-    pdf.set_xy(16, pdf.get_y() + 2)
+    # Always continue from tracked y (meta/promo leave get_y() mid-card)
+    y = max(float(y), float(pdf.get_y())) + 3
+    pdf.set_xy(16, y)
     pdf.set_font("TT", "B", 11)
     pdf.set_text_color(*_INK)
     pdf.cell(0, 7, "計劃重點", ln=1)
@@ -418,6 +424,22 @@ def _draw_visual_timeline(pdf, visual: dict[str, Any], y: float) -> float:
     return y
 
 
+def _short_summary_term(term_raw: str) -> str:
+    """Keep Summary term tidy without chopping mid-parenthesis.
+
+    Catalog notes look like ``保證續保至 100 歲（實際年齡；以條款為準）``.
+    Splitting on ``；`` alone left a dangling ``（``.
+    """
+    text = str(term_raw or "").strip()
+    if not text:
+        return ""
+    head = text.split("；")[0].strip()
+    for open_c, close_c in (("（", "）"), ("(", ")")):
+        if open_c in head and close_c not in head[head.rfind(open_c) :]:
+            head = head + close_c
+    return head
+
+
 def _summary_kv_height(pdf, value: str, *, value_w: float, line_h: float) -> float:
     pdf.set_font("TT", "", 10)
     return float(
@@ -465,9 +487,8 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
         product = str(row.get("產品名稱") or "")
         premium = str(row.get("年供保費") or "")
         cover = str(row.get("保障摘要") or "")
-        # Keep term short on Summary so cards stay tidy
-        term_raw = str(row.get("供款／年期") or "").strip()
-        term = term_raw.split("；")[0].strip() if term_raw else ""
+        # Keep term short on Summary so cards stay tidy (balance parentheses)
+        term = _short_summary_term(str(row.get("供款／年期") or ""))
 
         pdf.set_font("TT", "B", 11)
         title_h = float(
