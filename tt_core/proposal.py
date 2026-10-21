@@ -136,9 +136,9 @@ def build_protection_proposal(
                 gaps.append(f"醫療「{prod.get('short')}」呢個年齡／選項暫時查唔到保費。")
             else:
                 total_annual += annual
-            cover = "每年保障額內全包"
+            cover = str(prod.get("cover_summary_default") or "每年保障額內全包")
             if medical_id == "vbooster" and int(prem.get("deductible") or 0) == 0:
-                cover = "每年約 800 萬內全包"
+                cover = "每年約 800 萬全數保障"
             sections.append(
                 {
                     "category": "醫療保險",

@@ -16,10 +16,15 @@ def test_catalog_loads():
     cat = load_catalog()
     assert plan_types()
     assert len(products_in("medical")) >= 4
-    assert len(products_in("critical_illness")) >= 3
-    assert len(products_in("accident")) >= 1
+    assert len(products_in("critical_illness")) >= 7  # 全應援3 + 應援保2 + 緻尚保2 + 好易揀
+    assert len(products_in("accident")) >= 2
     assert len(products_in("saving")) >= 1
     assert any("危疾" in n for n in missing_data_notes())
+    # Drive-sourced highlights should be substantive
+    fam = next(p for p in products_in("medical") if p["id"] == "vfamily")
+    assert any("55" in h for h in fam["highlights"])
+    assert len(fam["highlights"]) >= 6
+    assert cat.get("source_note")
 
 
 def test_full_protection_medical_auto_premium():
@@ -132,7 +137,11 @@ def test_no_duplicate_premium_meta_and_rich_highlights():
         assert "約" not in prem
 
     fam = get_product("medical", "vfamily")
-    assert fam and len(fam.get("highlights") or []) >= 5
+    assert fam and len(fam.get("highlights") or []) >= 6
+    # New CI lines from Drive leaflets are selectable
+    assert get_product("critical_illness", "ci_zhishang_plus")
+    assert get_product("critical_illness", "ci_easy")
+    assert get_product("accident", "life_accident_rider")["short"] == "人身意外附約"
 
 
 def test_html_and_whatsapp_and_pdf():
