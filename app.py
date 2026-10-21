@@ -5749,7 +5749,13 @@ def page_pfin():
         return
 
     s = result["summary"]
-    st.markdown("#### 3. 融資摘要")
+    st.markdown("#### 3. 見客重點")
+    hl = pfin_mod.key_highlights(result)
+    hc = st.columns(len(hl))
+    for col, (lab, val) in zip(hc, hl):
+        col.metric(lab, val)
+
+    st.markdown("#### 4. 融資摘要")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("首日保證 CV", pfin_mod.format_usd(s["day1_guaranteed_cv_usd"]))
     m2.metric(
@@ -5758,7 +5764,7 @@ def page_pfin():
         help=pfin_mod.format_hkd(s["loan_hkd"]),
     )
     m3.metric(
-        "初期自資（Outlay）",
+        "自己出本金",
         pfin_mod.format_usd(s["initial_outlay_usd"]),
         help=pfin_mod.format_hkd(s["initial_outlay_hkd"]),
     )
@@ -5773,9 +5779,9 @@ def page_pfin():
     d2.metric("設立費", pfin_mod.format_usd(s["setup_fee_usd"]))
     d3.metric("Levy", pfin_mod.format_usd(s["levy_usd"]))
     d4.metric(
-        "每年利息（示意）",
-        pfin_mod.format_usd(s["annual_interest_usd"]),
-        help=f"{s['annual_interest_rate_pct']:.2f}%",
+        "每月利息支出",
+        pfin_mod.format_usd(s.get("monthly_interest_usd") or (s["annual_interest_usd"] / 12)),
+        help=f"年息 {s['annual_interest_rate_pct']:.2f}% · 約 {pfin_mod.format_usd(s['annual_interest_usd'])}/年",
     )
 
     st.caption(
@@ -5783,7 +5789,7 @@ def page_pfin():
         f"示範表基準保費 {pfin_mod.format_usd(meta['base_premium_usd'])}"
     )
 
-    st.markdown("#### 4. 重點年份")
+    st.markdown("#### 5. 重點年份")
     focus_rows = []
     for y in result["focus_years"]:
         focus_rows.append(
