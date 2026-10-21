@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">QR CODES</div>
+    <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
+  </div>
+  <div class="hero">
+    <h1>Table QR codes</h1>
+    <p>Print and place on each table. Guests scan to order.</p>
+  </div>
+  <div class="qr-grid">
+    {% for t in tables %}
+    <div class="qr-card">
+      <strong>{{ t.label }}</strong>
+      <div><img src="/qr/{{ t.code }}.png" alt="{{ t.code }}" /></div>
+      <small>{{ base }}/t/{{ t.code }}</small>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

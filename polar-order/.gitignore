@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+data/polar_order.db
+data/*.db
+docs/*.pdf
+docs/menu-pages/
+docs/DOWNLOAD-REPORT.md
+.DS_Store

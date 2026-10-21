@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">POLAR STAFF</div>
+    <div class="pill" id="livePill">Live</div>
+  </div>
+  <div class="hero">
+    <h1>Order board</h1>
+    <p>New guest orders appear here instantly.</p>
+  </div>
+  <div class="actions" style="margin-bottom:16px">
+    <a class="primary" style="display:inline-block;width:auto;text-align:center" href="/staff/tables?pin={{ pin }}">Tables / Bill</a>
+    <a class="ghost" style="display:inline-block;width:auto;text-align:center" href="/staff/qrs?pin={{ pin }}">Table QR codes</a>
+  </div>
+  <div id="orders"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>window.POLAR_PIN = {{ pin|tojson }};</script>
+<script src="/static/js/staff.js"></script>
+{% endblock %}

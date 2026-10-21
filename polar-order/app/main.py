@@ -1,0 +1,504 @@
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import os
+import sqlite3
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+import qrcode
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
+
+from .db import (
+    connect,
+    ensure_session,
+    get_open_session,
+    get_table_by_code,
+    init_db,
+    load_menu_meta,
+    publish_event,
+    utc_now,
+)
+from .pricing import compute_bill, current_promo, price_item
+
+ROOT = Path(__file__).resolve().parents[1]
+templates = Jinja2Templates(directory=str(ROOT / "templates"))
+
+STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
+_subscribers: list[asyncio.Queue] = []
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Polar Lounge Order", version="0.1.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+
+
+class CartItemIn(BaseModel):
+    item_id: str
+    qty: int = Field(ge=1, le=50)
+    note: str | None = None
+
+
+class OrderIn(BaseModel):
+    party_size: int = Field(default=1, ge=1, le=30)
+    note: str | None = None
+    items: list[CartItemIn]
+
+
+def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    promo = current_promo()
+    cats = conn.execute(
+        "SELECT * FROM menu_categories ORDER BY sort_order ASC"
+    ).fetchall()
+    out = []
+    for cat in cats:
+        items = conn.execute(
+            "SELECT * FROM menu_items WHERE category_id = ? AND available = 1 ORDER BY name ASC",
+            (cat["id"],),
+        ).fetchall()
+        row_items = []
+        for item in items:
+            final, tag = price_item(float(item["price"]), cat["promo"], promo)
+            # Meditation shisha price only for Regular Shisha
+            if item["id"] != "shisha-regular" and cat["promo"] == "shisha":
+                final, tag = float(item["price"]), None
+            row_items.append(
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "price": float(item["price"]),
+                    "display_price": final,
+                    "unit": item["unit"],
+                    "note": item["note"],
+                    "allow_note": bool(item["allow_note"]),
+                    "promo_tag": tag,
+                }
+            )
+        out.append(
+            {
+                "id": cat["id"],
+                "name": cat["name"],
+                "promo": cat["promo"],
+                "items": row_items,
+            }
+        )
+    return out
+
+
+async def _broadcast(event: dict[str, Any]) -> None:
+    dead = []
+    for q in _subscribers:
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            dead.append(q)
+    for q in dead:
+        if q in _subscribers:
+            _subscribers.remove(q)
+
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request, "title": "Polar Lounge Order"},
+    )
+
+
+@app.get("/t/{table_code}", response_class=HTMLResponse)
+def guest_table(request: Request, table_code: str):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    menu = _menu_payload(conn)
+    promo = current_promo()
+    conn.close()
+    return templates.TemplateResponse(
+        "guest.html",
+        {
+            "request": request,
+            "table": table,
+            "session": session,
+            "menu": menu,
+            "promo": promo,
+            "title": f"Polar · {table['label']}",
+        },
+    )
+
+
+@app.post("/api/t/{table_code}/orders")
+async def place_order(table_code: str, body: OrderIn):
+    if not body.items:
+        raise HTTPException(400, "Cart is empty")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+
+    session = ensure_session(conn, table["id"], body.party_size)
+    promo = current_promo()
+    now = utc_now()
+
+    cur = conn.execute(
+        """
+        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at)
+        VALUES (?, ?, 'new', ?, ?, ?)
+        """,
+        (session["id"], table["id"], body.note, now, now),
+    )
+    order_id = cur.lastrowid
+    lines = []
+
+    for entry in body.items:
+        item = conn.execute(
+            """
+            SELECT mi.*, mc.promo AS promo
+            FROM menu_items mi
+            JOIN menu_categories mc ON mc.id = mi.category_id
+            WHERE mi.id = ? AND mi.available = 1
+            """,
+            (entry.item_id,),
+        ).fetchone()
+        if not item:
+            conn.rollback()
+            conn.close()
+            raise HTTPException(400, f"Unknown item: {entry.item_id}")
+
+        unit, tag = price_item(float(item["price"]), item["promo"], promo)
+        if item["id"] != "shisha-regular" and item["promo"] == "shisha":
+            unit, tag = float(item["price"]), None
+        line_total = round(unit * entry.qty, 1)
+        note = entry.note
+        if tag:
+            note = f"[{tag}] {note or ''}".strip()
+        conn.execute(
+            """
+            INSERT INTO order_items
+            (order_id, item_id, item_name, category_id, promo, qty, unit_price, line_total, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order_id,
+                item["id"],
+                item["name"],
+                item["category_id"],
+                item["promo"],
+                entry.qty,
+                unit,
+                line_total,
+                note,
+            ),
+        )
+        lines.append({"name": item["name"], "qty": entry.qty, "line_total": line_total})
+
+    payload = {
+        "order_id": order_id,
+        "table_code": table["code"],
+        "table_label": table["label"],
+        "items": lines,
+        "created_at": now,
+    }
+    publish_event(conn, "order.new", payload)
+    conn.commit()
+    conn.close()
+    await _broadcast({"type": "order.new", "data": payload})
+    return {"ok": True, "order_id": order_id}
+
+
+@app.get("/staff", response_class=HTMLResponse)
+def staff_login_page(request: Request):
+    return templates.TemplateResponse(
+        "staff_login.html",
+        {"request": request, "title": "Staff Login"},
+    )
+
+
+@app.post("/staff")
+def staff_login(request: Request, pin: str = Form(...)):
+    if pin.strip() != STAFF_PIN:
+        return templates.TemplateResponse(
+            "staff_login.html",
+            {"request": request, "title": "Staff Login", "error": "Wrong PIN"},
+            status_code=401,
+        )
+    return RedirectResponse(url=f"/staff/board?pin={STAFF_PIN}", status_code=303)
+
+
+@app.get("/staff/board", response_class=HTMLResponse)
+def staff_board(request: Request, pin: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    return templates.TemplateResponse(
+        "staff.html",
+        {"request": request, "title": "Staff · Orders", "pin": pin},
+    )
+
+
+@app.get("/api/staff/orders")
+def staff_orders(pin: str = ""):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    orders = conn.execute(
+        """
+        SELECT o.*, t.code AS table_code, t.label AS table_label
+        FROM orders o
+        JOIN tables t ON t.id = o.table_id
+        WHERE o.status IN ('new', 'preparing', 'ready')
+        ORDER BY
+          CASE o.status WHEN 'new' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END,
+          o.id ASC
+        """
+    ).fetchall()
+    result = []
+    for o in orders:
+        items = conn.execute(
+            "SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC",
+            (o["id"],),
+        ).fetchall()
+        result.append(
+            {
+                "id": o["id"],
+                "status": o["status"],
+                "table_code": o["table_code"],
+                "table_label": o["table_label"],
+                "note": o["note"],
+                "created_at": o["created_at"],
+                "items": [dict(i) for i in items],
+            }
+        )
+    conn.close()
+    return result
+
+
+@app.post("/api/staff/orders/{order_id}/status")
+async def update_order_status(order_id: int, status: str = Form(...), pin: str = Form(...)):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if status not in {"new", "preparing", "ready", "served", "cancelled"}:
+        raise HTTPException(400, "Invalid status")
+    conn = connect()
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        conn.close()
+        raise HTTPException(404, "Order not found")
+    now = utc_now()
+    conn.execute(
+        "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?",
+        (status, now, order_id),
+    )
+    table = conn.execute("SELECT * FROM tables WHERE id = ?", (order["table_id"],)).fetchone()
+    payload = {
+        "order_id": order_id,
+        "status": status,
+        "table_code": table["code"] if table else None,
+    }
+    publish_event(conn, "order.status", payload)
+    conn.commit()
+    conn.close()
+    await _broadcast({"type": "order.status", "data": payload})
+    return {"ok": True}
+
+
+@app.get("/staff/tables", response_class=HTMLResponse)
+def staff_tables(request: Request, pin: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized — open from Staff board", status_code=401)
+    conn = connect()
+    tables = conn.execute("SELECT * FROM tables WHERE active = 1 ORDER BY id ASC").fetchall()
+    rows = []
+    meta = load_menu_meta()
+    for t in tables:
+        session = get_open_session(conn, t["id"])
+        bill = None
+        open_orders = 0
+        if session:
+            lines = conn.execute(
+                """
+                SELECT oi.*
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.session_id = ? AND o.status != 'cancelled'
+                """,
+                (session["id"],),
+            ).fetchall()
+            open_orders = conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM orders
+                WHERE session_id = ? AND status IN ('new','preparing','ready')
+                """,
+                (session["id"],),
+            ).fetchone()["c"]
+            bill = compute_bill(
+                [dict(x) for x in lines],
+                session["party_size"],
+                meta["service_charge_rate"],
+                meta["snack_charge_per_head"],
+            )
+        rows.append(
+            {
+                "table": t,
+                "session": session,
+                "bill": bill,
+                "open_orders": open_orders,
+            }
+        )
+    conn.close()
+    return templates.TemplateResponse(
+        "staff_tables.html",
+        {"request": request, "title": "Staff · Tables", "rows": rows, "pin": pin},
+    )
+
+
+@app.get("/staff/bill/{table_code}", response_class=HTMLResponse)
+def staff_bill(request: Request, table_code: str, pin: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    meta = load_menu_meta()
+    lines: list[dict] = []
+    bill = None
+    if session:
+        lines = [
+            dict(x)
+            for x in conn.execute(
+                """
+                SELECT oi.*, o.id AS order_id, o.created_at
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.session_id = ? AND o.status != 'cancelled'
+                ORDER BY o.id ASC, oi.id ASC
+                """,
+                (session["id"],),
+            ).fetchall()
+        ]
+        bill = compute_bill(
+            lines,
+            session["party_size"],
+            meta["service_charge_rate"],
+            meta["snack_charge_per_head"],
+        )
+    conn.close()
+    return templates.TemplateResponse(
+        "staff_bill.html",
+        {
+            "request": request,
+            "title": f"Bill · {table['label']}",
+            "table": table,
+            "session": session,
+            "lines": lines,
+            "bill": bill,
+            "pin": pin,
+        },
+    )
+
+
+@app.post("/api/staff/bill/{table_code}/close")
+def close_bill(table_code: str, pin: str = Form(...)):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        return {"ok": True, "message": "No open session"}
+    now = utc_now()
+    conn.execute(
+        "UPDATE sessions SET status = 'closed', closed_at = ? WHERE id = ?",
+        (now, session["id"]),
+    )
+    conn.execute(
+        "UPDATE orders SET status = 'served', updated_at = ? WHERE session_id = ? AND status != 'cancelled'",
+        (now, session["id"]),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.get("/staff/qrs", response_class=HTMLResponse)
+def staff_qrs(request: Request, pin: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    conn = connect()
+    tables = conn.execute("SELECT * FROM tables ORDER BY id").fetchall()
+    conn.close()
+    base = str(request.base_url).rstrip("/")
+    return templates.TemplateResponse(
+        "staff_qrs.html",
+        {
+            "request": request,
+            "title": "Table QR Codes",
+            "tables": tables,
+            "base": base,
+            "pin": pin,
+        },
+    )
+
+
+@app.get("/qr/{table_code}.png")
+def qr_png(request: Request, table_code: str):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    conn.close()
+    if not table:
+        raise HTTPException(404, "Table not found")
+    url = str(request.base_url).rstrip("/") + f"/t/{table['code']}"
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
+@app.get("/api/events")
+async def sse_events(pin: str = ""):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    _subscribers.append(queue)
+
+    async def gen():
+        try:
+            yield f"data: {json.dumps({'type': 'hello'})}\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=20)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        finally:
+            if queue in _subscribers:
+                _subscribers.remove(queue)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "promo": current_promo()}
