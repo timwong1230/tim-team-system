@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">TABLES</div>
+    <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
+  </div>
+  <div class="hero">
+    <h1>Open tables</h1>
+    <p>Tap a table to see amount due. Payment is handled outside this system.</p>
+  </div>
+  <div class="table-grid">
+    {% for row in rows %}
+    <a class="table-tile" href="/staff/bill/{{ row.table.code }}?pin={{ pin }}">
+      <strong>{{ row.table.label }}</strong>
+      {% if row.bill %}
+        <div class="amt">${{ '%.0f'|format(row.bill.total) }}</div>
+        <div class="muted">{{ row.open_orders }} open · party {{ row.session.party_size }}</div>
+      {% else %}
+        <div class="muted">No open session</div>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

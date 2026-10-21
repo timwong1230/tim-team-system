@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">BILL</div>
+    <a class="pill" href="/staff/tables?pin={{ pin }}">← Tables</a>
+  </div>
+  <div class="hero">
+    <h1>{{ table.label }}</h1>
+    {% if session %}
+    <p>Session open · party {{ session.party_size }}</p>
+    {% else %}
+    <p>No open session</p>
+    {% endif %}
+  </div>
+
+  {% if bill %}
+  <div class="bill-total">${{ '%.0f'|format(bill.total) }}</div>
+  <div class="card">
+    <div class="row"><span>Subtotal</span><span>${{ '%.0f'|format(bill.subtotal) }}</span></div>
+    <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span>${{ '%.0f'|format(bill.snack_charge) }}</span></div>
+    <div class="row"><span>Service {{ (bill.service_charge_rate * 100)|int }}%</span><span>${{ '%.0f'|format(bill.service_charge) }}</span></div>
+    <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span>${{ '%.0f'|format(bill.total) }}</span></div>
+  </div>
+  <p class="muted">Collect payment with your third-party POS / terminal, then mark paid.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">Items</h3>
+    {% for line in lines %}
+    <div class="cart-line">
+      <div>
+        <strong>{{ line.qty }}× {{ line.item_name }}</strong>
+        {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
+      </div>
+      <div>${{ '%.0f'|format(line.line_total) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <form method="post" action="/api/staff/bill/{{ table.code }}/close" id="closeForm">
+    <input type="hidden" name="pin" value="{{ pin }}" />
+    <button class="primary" type="submit">Mark paid & close table</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!confirm('Close table after payment collected?')) return;
+    const fd = new FormData(e.target);
+    const res = await fetch(e.target.action, { method: 'POST', body: fd });
+    if (res.ok) location.href = '/staff/tables?pin={{ pin }}';
+    else alert('Failed to close');
+  });
+</script>
+{% endblock %}

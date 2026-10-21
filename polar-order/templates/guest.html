@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">POLAR</div>
+    <div class="pill">{{ table.label }}</div>
+  </div>
+
+  <div class="hero">
+    <h1>{{ table.label }}</h1>
+    <p>Order from your phone. Pay at the end with staff.</p>
+  </div>
+
+  {% if promo.label %}
+  <div class="promo">
+    <strong>{{ promo.label }}</strong>
+    <div class="muted">{{ promo.window }}
+      {% if promo.drinks_off %} · Drinks {{ (promo.drinks_off * 100)|int }}% off{% endif %}
+      {% if promo.shisha_price %} · Shisha ${{ '%.0f'|format(promo.shisha_price) }}{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <label class="muted">Party size</label>
+  <input class="field" id="partySize" type="number" min="1" max="30" value="{{ session.party_size if session else 2 }}" />
+
+  <div class="cats" id="cats">
+    {% for cat in menu %}
+    <button class="cat-btn {% if loop.first %}active{% endif %}" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
+    {% endfor %}
+  </div>
+
+  {% for cat in menu %}
+  <section class="section" id="cat-{{ cat.id }}">
+    <h2>{{ cat.name }}</h2>
+    {% for item in cat['items'] %}
+    <article class="item" data-id="{{ item['id'] }}" data-name="{{ item['name'] }}" data-price="{{ item['display_price'] }}" data-allow-note="{{ 1 if item['allow_note'] else 0 }}">
+      <div>
+        <h3>{{ item['name'] }}</h3>
+        {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
+        {% if item['unit'] %}<p class="note">{{ item['unit'] }}</p>{% endif %}
+      </div>
+      <div class="price">
+        <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
+        {% if item['display_price'] < item['price'] %}
+        <div class="was">${{ '%.0f'|format(item['price']) }}</div>
+        {% endif %}
+        <button class="add-btn" type="button">Add</button>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+
+<div class="cart-bar" id="cartBar" style="display:none">
+  <div>
+    <div id="cartCount">0 items</div>
+    <strong id="cartTotal">$0</strong>
+  </div>
+  <button type="button" id="openCart">View cart</button>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-panel">
+    <div class="row">
+      <h2 style="margin:0">Your order</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeCart" type="button">Close</button>
+    </div>
+    <div id="cartLines"></div>
+    <label class="muted">Note for staff</label>
+    <textarea class="field" id="orderNote" rows="2" placeholder="e.g. less ice / flavour notes"></textarea>
+    <button class="primary" id="submitOrder" type="button">Send to bar</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.POLAR_TABLE = {{ table.code|tojson }};
+</script>
+<script src="/static/js/guest.js"></script>
+{% endblock %}

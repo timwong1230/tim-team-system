@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar"><div class="brand">POLAR STAFF</div></div>
+  <div class="hero">
+    <h1>Staff login</h1>
+    <p>Enter PIN to open the live order board.</p>
+  </div>
+  {% if error %}<div class="promo" style="border-color:rgba(255,107,107,.5)">{{ error }}</div>{% endif %}
+  <form method="post" action="/staff">
+    <input class="field" type="password" name="pin" placeholder="PIN" required autofocus />
+    <button class="primary" type="submit">Enter</button>
+  </form>
+</div>
+{% endblock %}
