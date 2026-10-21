@@ -5437,6 +5437,54 @@ def page_proposal():
                 )
                 annual_hkd = None
         st.caption(str(sav_meta.get("term_note") or ""))
+
+        wd_start = wd_years = wd_usd = None
+        if sav_id == "yingju5" and annual_usd is not None:
+            try:
+                from tt_core.yingju_angles import (
+                    default_withdraw_start_year,
+                    default_withdraw_years,
+                    default_withdraw_usd,
+                )
+
+                _ds = default_withdraw_start_year(purpose, int(age))
+                _dy = default_withdraw_years(purpose)
+                _du = int(default_withdraw_usd(float(annual_usd or 0)))
+            except Exception:
+                _ds, _dy, _du = 6, 4, int(float(annual_usd or 0) * 0.35)
+            st.markdown("#### 提款示意（見客用）")
+            st.caption(
+                "輸入邊幾年提、每年提幾多，系統會計示意戶口同提款後尚餘。"
+                "預設約等於總保費 7%／年（可改）。數字非保證。"
+            )
+            w1, w2, w3 = st.columns(3)
+            with w1:
+                wd_start = st.number_input(
+                    "提款開始（保單年度）",
+                    min_value=6,
+                    max_value=80,
+                    value=int(_ds),
+                    step=1,
+                    key="prop_sav_wd_start",
+                )
+            with w2:
+                wd_years = st.number_input(
+                    "連續提款年數",
+                    min_value=0,
+                    max_value=40,
+                    value=int(_dy),
+                    step=1,
+                    key="prop_sav_wd_years",
+                )
+            with w3:
+                wd_usd = st.number_input(
+                    "每年提款（USD）",
+                    min_value=0,
+                    value=int(_du),
+                    step=100,
+                    key="prop_sav_wd_usd",
+                )
+
         if st.button("產生計劃書", type="primary", use_container_width=True, key="prop_gen_sv"):
             proposal = prop.build_saving_proposal(
                 client_name=client_name,
@@ -5447,6 +5495,9 @@ def page_proposal():
                 annual_usd=float(annual_usd) if annual_usd is not None else None,
                 annual_hkd=float(annual_hkd) if annual_hkd is not None else None,
                 purpose=purpose,
+                withdraw_start_year=int(wd_start) if wd_start is not None else None,
+                withdraw_years=int(wd_years) if wd_years is not None else None,
+                withdraw_usd=float(wd_usd) if wd_usd is not None else None,
             )
             st.session_state["prop_last"] = proposal
 

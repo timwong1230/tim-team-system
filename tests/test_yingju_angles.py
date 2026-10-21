@@ -6,40 +6,71 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tt_core.yingju_angles import SELLING_ANGLES, angle_metrics, build_angle_story  # noqa: E402
+from tt_core.yingju_angles import (  # noqa: E402
+    SELLING_ANGLES,
+    build_angle_story,
+    project_scenario,
+)
 from tt_core.proposal import build_saving_proposal, html_preview  # noqa: E402
 from tt_core.proposal_pdf import build_proposal_pdf  # noqa: E402
 
 
-def test_four_angles_and_wallet_numbers():
+def test_four_angles_and_year6_projection():
     assert SELLING_ANGLES == ["儲蓄錢包", "教育基金", "退休儲備", "醫療融資"]
-    m = angle_metrics(7700)
-    assert m["year5_sv_usd"] == 22890  # 7700 * 2.9727
-    assert m["year6_wd_usd"] == 2695  # 7700 * 0.35
+    scen = project_scenario(20000, age=2, withdraw_start_year=16, withdraw_years=4)
+    assert scen["year5_sv_usd"] == 59454
+    assert scen["year6_sv_usd"] == round(59454 * 1.1189, 0)
+    assert scen["withdraw_usd"] == 7000
+    assert scen["av_after_withdrawals_usd"] is not None
+    assert scen["av_after_withdrawals_usd"] > 0
 
-    wallet = build_angle_story("儲蓄錢包", annual_usd=7700, age=30)
-    assert wallet["title"] == "儲蓄錢包計劃書"
-    assert len(wallet["visual"]["steps"]) == 4
-    assert "第一桶金" in wallet["visual"]["steps"][1]["title"]
-    assert wallet["metrics"]["year6_wd_usd"] == 2695
-
-
-def test_proposal_differs_by_angle():
-    common = dict(
-        client_name="BB",
-        age=30,
-        gender="男",
-        saving_id="yingju5",
-        annual_usd=7700,
+    edu = build_angle_story(
+        "教育基金",
+        annual_usd=20000,
+        age=2,
+        withdraw_start_year=16,
+        withdraw_years=4,
+        withdraw_usd=7000,
     )
-    w = build_saving_proposal(**common, purpose="儲蓄錢包")
-    e = build_saving_proposal(**common, purpose="教育基金")
-    assert w["title"] != e["title"]
-    assert w["sections"][0]["category"] == "儲蓄錢包"
-    assert e["sections"][0]["category"] == "教育基金"
-    assert w["sections"][0].get("visual")
-    assert "vtrack" in html_preview(w)
-    assert "強制儲錢" in html_preview(w) or "第一桶金" in html_preview(w)
-    pdf = build_proposal_pdf(w, agent="Tim")
+    assert edu["title"] == "教育基金計劃書"
+    assert edu["tagline"] == "子女教育金規劃方案"
+    assert "着落" not in edu["tagline"]
+    assert "開始儲" not in edu["tagline"]
+    assert "Yr5" not in str(edu["visual"]["cards"])
+    assert any("第 6 年" in str(c.get("label")) for c in edu["visual"]["cards"])
+    assert edu["visual"]["value_table"]
+
+
+def test_proposal_no_summary_and_tc():
+    prop = build_saving_proposal(
+        client_name="BB",
+        age=2,
+        gender="男",
+        occupation="Child",
+        saving_id="yingju5",
+        annual_usd=20000,
+        purpose="教育基金",
+        withdraw_start_year=16,
+        withdraw_years=4,
+        withdraw_usd=7000,
+    )
+    assert prop["skip_summary"] is True
+    assert prop["summary_rows"] == []
+    assert prop["title"] == "教育基金計劃書"
+    html = html_preview(prop)
+    assert "SUMMARY" not in html
+    assert "着落" not in html
+    assert "保险公司" not in html
+    assert "保險公司" in html
+    assert "第 6 年" in html
+    assert "期末戶口" in html
+    pdf = build_proposal_pdf(prop, agent="Tim")
     assert pdf[:4] == b"%PDF"
-    assert len(pdf) > 2000
+    # Saving proposal should be cover + section pages, no dedicated summary
+    import fitz
+
+    doc = fitz.open(stream=pdf, filetype="pdf")
+    texts = "\n".join(p.get_text() for p in doc)
+    assert "SUMMARY" not in texts
+    assert "子女教育金規劃方案" in texts
+    assert "保险公司" not in texts

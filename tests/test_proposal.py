@@ -113,12 +113,14 @@ def test_saving_proposal_yingju():
     assert prop["kind"] == "saving"
     assert prop["ready"] is True
     assert prop["title"] == "教育基金計劃書"
+    assert prop.get("skip_summary") is True
     sec = prop["sections"][0]
     assert "盈聚" in sec["product_name"]
     assert sec["premium_annual_hkd"] > 0
     assert sec.get("illustration")
     assert sec.get("visual") and len(sec["visual"].get("steps") or []) == 4
-    assert sec["illustration"].get("year5_sv_usd") == 29727
+    assert sec["illustration"].get("year6_sv_usd") == round(10000 * 2.9727 * 1.1189, 0)
+    assert sec.get("angle_tagline") == "子女教育金規劃方案"
 
 
 def test_life_and_manual_medical_and_hkd_saving():
