@@ -675,36 +675,40 @@ def build_pfin_pdf(
     info.append(("匯率", f"1 USD = {float(result.get('fx') or 7.85):.2f} HKD"))
     _draw_client_info_box(pdf, info)
 
+    from tt_core.pfin import key_highlights
+
+    highlights = key_highlights(result)
+    _section_title(pdf, "見客重點")
+    # Two hero strips so all five labels stay readable
+    _draw_hero_metrics(
+        pdf,
+        [f"{lab}：{val}" for lab, val in highlights[:3]],
+    )
+    _draw_hero_metrics(
+        pdf,
+        [f"{lab}：{val}" for lab, val in highlights[3:]],
+    )
+    _draw_client_info_box(pdf, highlights)
+
     _section_title(pdf, "融資摘要")
     heroes = [
-        f"首日保證 CV：{format_usd(float(s.get('day1_guaranteed_cv_usd') or 0))}",
         f"貸款：{format_usd(float(s.get('loan_usd') or 0))}",
-        f"初期自資：{format_usd(float(s.get('initial_outlay_usd') or 0))}",
         f"槓桿：{float(s.get('leverage_ratio') or 0):.2f}x",
+        f"年息：{float(s.get('annual_interest_rate_pct') or 0):.2f}%",
     ]
     _draw_hero_metrics(pdf, heroes)
 
     detail_rows = [
         ("保費（USD）", format_usd(float(s.get("premium_usd") or 0))),
         ("保費（約 HKD）", format_hkd(float(s.get("premium_hkd") or 0))),
-        (
-            "保費折扣",
-            (
-                f"{float(s.get('discount_rate') or 0) * 100:.0f}%（"
-                f"{format_usd(float(s.get('discount_usd') or 0))}）"
-                if s.get("apply_promotion")
-                else "未套用"
-            ),
-        ),
         ("實付保費", format_usd(float(s.get("actual_premium_paid_usd") or 0))),
         ("LTV 成數", f"{float(s.get('ltv_ratio') or 0) * 100:.0f}%"),
         ("貸款額（約 HKD）", format_hkd(float(s.get("loan_hkd") or 0))),
         ("設立費", format_usd(float(s.get("setup_fee_usd") or 0))),
         ("Levy", format_usd(float(s.get("levy_usd") or 0))),
         (
-            "預估年息",
-            f"{float(s.get('annual_interest_rate_pct') or 0):.2f}%（約 "
-            f"{format_usd(float(s.get('annual_interest_usd') or 0))}/年）",
+            "每年利息（示意）",
+            format_usd(float(s.get("annual_interest_usd") or 0)),
         ),
     ]
     _draw_client_info_box(pdf, detail_rows)

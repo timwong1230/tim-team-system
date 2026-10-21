@@ -97,10 +97,31 @@ def test_pfin_pdf_and_whatsapp():
     from tt_core.client_pdf import build_client_pdf, build_pfin_pdf, pdf_filename
 
     r = pfin.compute_financing(400_000, "za-bank", apply_promotion=True)
+    highlights = dict(pfin.key_highlights(r))
+    assert "自己出本金" in highlights
+    assert "保單價值" in highlights
+    assert "產品優惠" in highlights
+    assert "每月利息支出" in highlights
+    assert "10年後退保價值" in highlights
+    assert highlights["保單價值"] == "US$328,000"
+    assert highlights["產品優惠"].startswith("6%")
+    assert "US$624,182" in highlights["10年後退保價值"]
+    assert r["summary"]["monthly_interest_usd"] == round(
+        r["summary"]["annual_interest_usd"] / 12
+    )
+
     wa = pfin.whatsapp_summary(r, client="陳生")
     assert "保費融資計劃書" in wa
     assert "陳生" in wa
-    assert "象象銀行" in wa or "銀行" in wa
+    assert "見客重點" in wa
+    for label in (
+        "自己出本金",
+        "保單價值",
+        "產品優惠",
+        "每月利息支出",
+        "10年後退保價值",
+    ):
+        assert label in wa
 
     pdf = build_pfin_pdf(
         title="保費融資計劃書",
@@ -110,6 +131,13 @@ def test_pfin_pdf_and_whatsapp():
     )
     assert pdf[:4] == b"%PDF"
     assert len(pdf) > 2000
+    import pymupdf
+
+    texts = "\n".join(p.get_text() for p in pymupdf.open(stream=pdf, filetype="pdf"))
+    assert "見客重點" in texts
+    assert "自己出本金" in texts
+    assert "每月利息支出" in texts
+    assert "10年後退保價值" in texts
 
     via = build_client_pdf(
         title="保費融資計劃書",
@@ -122,4 +150,3 @@ def test_pfin_pdf_and_whatsapp():
     assert via[:4] == b"%PDF"
     fname = pdf_filename(title="保費融資計劃書", client="陳生", tool="保費融資計算機")
     assert fname.endswith(".pdf")
-    assert "保費" in fname or "pfin" in fname.lower() or "陳" in fname or True

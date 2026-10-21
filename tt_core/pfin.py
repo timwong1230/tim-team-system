@@ -314,6 +314,8 @@ def compute_financing(
             "annual_interest_rate_pct": rate,
             "annual_interest_usd": annual_int_usd,
             "annual_interest_hkd": annual_int_hkd,
+            "monthly_interest_usd": round(annual_int_usd / 12.0),
+            "monthly_interest_hkd": round(annual_int_hkd / 12.0),
         },
         "years": years_out,
         "focus_years": focus,
@@ -349,6 +351,40 @@ def scenario_label(scenario: str) -> str:
     return _SCENARIO_LABELS.get(str(scenario or ""), str(scenario or "—"))
 
 
+def year_row(result: dict[str, Any], year: int) -> dict[str, Any] | None:
+    for y in result.get("years") or result.get("focus_years") or []:
+        if int(y.get("year") or 0) == int(year):
+            return y
+    return None
+
+
+def key_highlights(result: dict[str, Any]) -> list[tuple[str, str]]:
+    """Five talk-track figures for WhatsApp / PDF 見客重點."""
+    s = result.get("summary") or {}
+    y10 = year_row(result, 10) or {}
+    monthly = float(
+        s.get("monthly_interest_usd")
+        if s.get("monthly_interest_usd") is not None
+        else (float(s.get("annual_interest_usd") or 0) / 12.0)
+    )
+    promo = (
+        f"{float(s.get('discount_rate') or 0) * 100:.0f}%（"
+        f"{format_usd(float(s.get('discount_usd') or 0))}）"
+        if s.get("apply_promotion") and float(s.get("discount_usd") or 0) > 0
+        else "未套用"
+    )
+    return [
+        ("自己出本金", format_usd(float(s.get("initial_outlay_usd") or 0))),
+        ("保單價值", format_usd(float(s.get("day1_guaranteed_cv_usd") or 0))),
+        ("產品優惠", promo),
+        ("每月利息支出", format_usd(monthly)),
+        (
+            "10年後退保價值",
+            format_usd(float(y10.get("total_sv_usd") or 0)),
+        ),
+    ]
+
+
 def whatsapp_summary(result: dict[str, Any], *, client: str = "") -> str:
     """Client-facing WhatsApp summary from a compute_financing() result."""
     s = result.get("summary") or {}
@@ -358,22 +394,24 @@ def whatsapp_summary(result: dict[str, Any], *, client: str = "") -> str:
     ]
     if client:
         lines.append(f"客戶：{client}")
+    lines.append(f"銀行：{bank.get('name') or '—'}")
+    lines.append("")
+    lines.append("*見客重點*")
+    for label, value in key_highlights(result):
+        lines.append(f"{label}：{value}")
     lines.extend(
         [
-            f"銀行：{bank.get('name') or '—'}",
+            "",
             f"保費：{format_usd(float(s.get('premium_usd') or 0))}"
             + (
-                f"（折扣 {float(s.get('discount_rate') or 0) * 100:.0f}% → "
-                f"實付 {format_usd(float(s.get('actual_premium_paid_usd') or 0))}）"
+                f"（實付 {format_usd(float(s.get('actual_premium_paid_usd') or 0))}）"
                 if s.get("apply_promotion") and float(s.get("discount_usd") or 0)
                 else ""
             ),
             f"貸款：{format_usd(float(s.get('loan_usd') or 0))}"
             f"（LTV {float(s.get('ltv_ratio') or 0) * 100:.0f}%）",
-            f"初期自資：{format_usd(float(s.get('initial_outlay_usd') or 0))} · "
-            f"槓桿 {float(s.get('leverage_ratio') or 0):.2f}x",
-            f"預估年息：{float(s.get('annual_interest_rate_pct') or 0):.2f}%"
-            f"（約 {format_usd(float(s.get('annual_interest_usd') or 0))}/年）",
+            f"槓桿：{float(s.get('leverage_ratio') or 0):.2f}x · "
+            f"年息 {float(s.get('annual_interest_rate_pct') or 0):.2f}%",
             f"紅利情景：{scenario_label(str(result.get('scenario') or 'expected'))}",
             "",
             "*重點年份（槓桿 IRR）*",
