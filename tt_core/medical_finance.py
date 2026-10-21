@@ -81,6 +81,20 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
         "csv": "veasy_premiums.csv",
         "note": "標準／特等保障級別；男女分價；無自付費選項（VHIS F00051）",
     },
+    "gba_op": {
+        "id": "gba_op",
+        "name": "大灣區智通行門診計劃",
+        "short": "大灣區門診",
+        "gendered": False,
+        "levels": ["計劃1", "計劃2", "計劃3", "家庭計劃A", "家庭計劃B"],
+        "default_level": "計劃1",
+        "deductibles": [0],
+        "default_deductible": 0,
+        "csv": "gba_op_premiums.csv",
+        # 家庭計劃無 1–18 歲列；超齡唔好 clamp 去最近有價年齡
+        "strict_age": True,
+        "note": "男女同價；按下次生日年齡段；家庭計劃不適用於 1–18 歲；77–80 歲只適用續保（2025-04-14 保費表）",
+    },
 }
 
 DEFAULT_PLAN_ID = "vfamily"
@@ -104,7 +118,7 @@ def load_calibration() -> dict[str, Any]:
 def list_plans() -> list[dict[str, Any]]:
     return [
         PLAN_CATALOG[k]
-        for k in ("vfamily", "vprime", "vbooster", "vtheone", "veasy")
+        for k in ("vfamily", "vprime", "vbooster", "vtheone", "veasy", "gba_op")
     ]
 
 
@@ -181,6 +195,16 @@ def _clamp_age(age: int, ages: list[int]) -> int:
     return min(max(int(age), ages[0]), ages[-1])
 
 
+def _resolve_table_age(age: int, ages: list[int], *, strict: bool) -> int | None:
+    """Return lookup age, or None when strict and outside published ages."""
+    if not ages:
+        return None
+    a = int(age)
+    if strict:
+        return a if a in ages else None
+    return _clamp_age(a, ages)
+
+
 def medical_annual_hkd(
     age: int,
     gender: str,
@@ -192,6 +216,7 @@ def medical_annual_hkd(
     meta = get_plan(plan_id)
     pid = meta["id"]
     sex = "female" if str(gender).strip().startswith("女") else "male"
+    strict = bool(meta.get("strict_age"))
 
     if meta.get("gendered"):
         # Multi-level gendered table (e.g. 易衛您) vs single CSV (醫家保)
@@ -206,13 +231,17 @@ def medical_annual_hkd(
                     ded = sorted({d for (l, d, a) in table if l == lv})[0]
             if not ages:
                 return 0.0
-            age = _clamp_age(age, ages)
-            return float(table.get((lv, ded, age), {}).get(sex, 0.0))
+            resolved = _resolve_table_age(age, ages, strict=strict)
+            if resolved is None:
+                return 0.0
+            return float(table.get((lv, ded, resolved), {}).get(sex, 0.0))
 
         table_vf = load_vfamily_premiums()
         ages = sorted(table_vf)
-        age = _clamp_age(age, ages)
-        return float(table_vf[age][sex])
+        resolved = _resolve_table_age(age, ages, strict=strict)
+        if resolved is None:
+            return 0.0
+        return float(table_vf[resolved][sex])
 
     lv = level or meta["default_level"]
     ded = int(meta["default_deductible"] if deductible is None else deductible)
@@ -225,8 +254,10 @@ def medical_annual_hkd(
             ded = sorted({d for (l, d, a) in table if l == lv})[0]
     if not ages:
         return 0.0
-    age = _clamp_age(age, ages)
-    return float(table.get((lv, ded, age), 0.0))
+    resolved = _resolve_table_age(age, ages, strict=strict)
+    if resolved is None:
+        return 0.0
+    return float(table.get((lv, ded, resolved), 0.0))
 
 
 def plan_label(

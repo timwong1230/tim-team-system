@@ -129,8 +129,8 @@ def test_life_and_manual_medical_and_hkd_saving():
         include_ci=False,
         include_accident=False,
         include_life=True,
-        medical_id="gba_op",
-        medical_level="計劃2",
+        medical_id="vsmartstaff",
+        medical_level="智．升計劃",
         medical_annual_hkd=4800,
         life_id="chengyu_term",
         life_sa_hkd=2000000,
@@ -256,3 +256,53 @@ def test_veasy_auto_premium():
     assert prop["sections"][0]["premium_annual_hkd"] == 5745
     assert prop["sections"][0]["premium_source"] == "table"
     assert not prop["gaps"]
+
+
+def test_gba_op_auto_premium():
+    from tt_core.proposal import build_protection_proposal, get_product, load_catalog
+
+    load_catalog.cache_clear()
+    gba = get_product("medical", "gba_op")
+    assert gba and gba.get("premium_source") == "table"
+    assert gba.get("finance_plan_id") == "gba_op"
+
+    prop = build_protection_proposal(
+        client_name="Tim",
+        age=30,
+        gender="男",
+        include_medical=True,
+        include_ci=False,
+        include_accident=False,
+        medical_id="gba_op",
+        medical_level="計劃1",
+    )
+    assert prop["sections"][0]["premium_ok"] is True
+    assert prop["sections"][0]["premium_annual_hkd"] == 2480
+    assert prop["sections"][0]["premium_source"] == "table"
+    assert not prop["gaps"]
+
+    fam = build_protection_proposal(
+        client_name="Tim",
+        age=30,
+        gender="女",
+        include_medical=True,
+        include_ci=False,
+        include_accident=False,
+        medical_id="gba_op",
+        medical_level="家庭計劃A",
+    )
+    assert fam["sections"][0]["premium_annual_hkd"] == 4800
+
+    # 家庭計劃唔適用細路 — 應提示缺口而唔亂報成人價
+    kid = build_protection_proposal(
+        client_name="Kid",
+        age=10,
+        gender="男",
+        include_medical=True,
+        include_ci=False,
+        include_accident=False,
+        medical_id="gba_op",
+        medical_level="家庭計劃A",
+    )
+    assert kid["sections"][0]["premium_ok"] is False
+    assert kid["gaps"]
