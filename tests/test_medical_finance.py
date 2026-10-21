@@ -102,7 +102,10 @@ def test_new_medical_plans_loaded():
     from tt_core.medical_finance import list_plans, medical_annual_hkd, plan_label
 
     ids = {p["id"] for p in list_plans()}
-    assert ids >= {"vfamily", "vprime", "vbooster", "vtheone"}
+    assert ids >= {"vfamily", "vprime", "vbooster", "vtheone", "veasy"}
+    assert medical_annual_hkd(30, "男", plan_id="veasy", level="標準") == 5745
+    assert medical_annual_hkd(30, "女", plan_id="veasy", level="標準") == 7552
+    assert medical_annual_hkd(30, "男", plan_id="veasy", level="特等") == 10707
     # 尊衛您 標準 age30 ded0 = 12058 from brochure
     assert medical_annual_hkd(30, "男", plan_id="vprime", level="標準", deductible=0) == 12058
     assert medical_annual_hkd(30, "女", plan_id="vprime", level="標準", deductible=0) == 12058  # unisex

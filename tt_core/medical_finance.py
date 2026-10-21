@@ -69,6 +69,18 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
         "csv": "vtheone_premiums.csv",
         "note": "標準／標準優越版／特等／優等保障級別；男女同價",
     },
+    "veasy": {
+        "id": "veasy",
+        "name": "易衛您醫療計劃（獨立保單）",
+        "short": "易衛您",
+        "gendered": True,
+        "levels": ["標準", "特等"],
+        "default_level": "標準",
+        "deductibles": [0],
+        "default_deductible": 0,
+        "csv": "veasy_premiums.csv",
+        "note": "標準／特等保障級別；男女分價；無自付費選項（VHIS F00051）",
+    },
 }
 
 DEFAULT_PLAN_ID = "vfamily"
@@ -90,7 +102,10 @@ def load_calibration() -> dict[str, Any]:
 
 
 def list_plans() -> list[dict[str, Any]]:
-    return [PLAN_CATALOG[k] for k in ("vfamily", "vprime", "vbooster", "vtheone")]
+    return [
+        PLAN_CATALOG[k]
+        for k in ("vfamily", "vprime", "vbooster", "vtheone", "veasy")
+    ]
 
 
 def get_plan(plan_id: str) -> dict[str, Any]:
@@ -122,12 +137,41 @@ def load_plan_premiums(plan_id: str) -> dict[tuple[str, int, int], float]:
     out: dict[tuple[str, int, int], float] = {}
     with open(path, encoding="utf-8") as f:
         for row in csv.DictReader(f):
+            if "annual_hkd" not in row:
+                continue
             key = (
                 str(row["level"]),
                 int(float(row["deductible"])),
                 int(row["attained_age"]),
             )
             out[key] = float(row["annual_hkd"])
+    return out
+
+
+@lru_cache(maxsize=8)
+def load_gendered_plan_premiums(
+    plan_id: str,
+) -> dict[tuple[str, int, int], dict[str, float]]:
+    """(level, deductible, attained_age) -> {male, female} annual HKD."""
+    meta = get_plan(plan_id)
+    csv_name = meta.get("csv")
+    if not csv_name:
+        return {}
+    path = DATA_DIR / str(csv_name)
+    out: dict[tuple[str, int, int], dict[str, float]] = {}
+    with open(path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if "annual_male" not in row:
+                continue
+            key = (
+                str(row["level"]),
+                int(float(row.get("deductible") or 0)),
+                int(row["attained_age"]),
+            )
+            out[key] = {
+                "male": float(row["annual_male"]),
+                "female": float(row["annual_female"]),
+            }
     return out
 
 
@@ -147,12 +191,28 @@ def medical_annual_hkd(
 ) -> float:
     meta = get_plan(plan_id)
     pid = meta["id"]
-    if pid == "vfamily" or meta.get("gendered"):
-        table = load_vfamily_premiums()
-        ages = sorted(table)
+    sex = "female" if str(gender).strip().startswith("女") else "male"
+
+    if meta.get("gendered"):
+        # Multi-level gendered table (e.g. 易衛您) vs single CSV (醫家保)
+        if meta.get("csv"):
+            table = load_gendered_plan_premiums(pid)
+            lv = level or meta["default_level"]
+            ded = int(meta["default_deductible"] if deductible is None else deductible)
+            ages = sorted({a for (l, d, a) in table if l == lv and d == ded})
+            if not ages:
+                ages = sorted({a for (l, d, a) in table if l == lv})
+                if ages:
+                    ded = sorted({d for (l, d, a) in table if l == lv})[0]
+            if not ages:
+                return 0.0
+            age = _clamp_age(age, ages)
+            return float(table.get((lv, ded, age), {}).get(sex, 0.0))
+
+        table_vf = load_vfamily_premiums()
+        ages = sorted(table_vf)
         age = _clamp_age(age, ages)
-        key = "female" if str(gender).strip().startswith("女") else "male"
-        return float(table[age][key])
+        return float(table_vf[age][sex])
 
     lv = level or meta["default_level"]
     ded = int(meta["default_deductible"] if deductible is None else deductible)
@@ -177,13 +237,12 @@ def plan_label(
 ) -> str:
     meta = get_plan(plan_id)
     parts = [meta["name"]]
-    if not meta.get("gendered"):
-        lv = level or meta["default_level"]
-        if len(meta.get("levels") or []) > 1:
-            parts.append(f"{lv}保障級別")
-        ded = int(meta["default_deductible"] if deductible is None else deductible)
-        if ded > 0 or len(meta.get("deductibles") or []) > 1:
-            parts.append(f"自付費 ${ded:,}")
+    lv = level or meta["default_level"]
+    if len(meta.get("levels") or []) > 1:
+        parts.append(f"{lv}保障級別")
+    ded = int(meta["default_deductible"] if deductible is None else deductible)
+    if ded > 0 or len(meta.get("deductibles") or []) > 1:
+        parts.append(f"自付費 ${ded:,}")
     return " · ".join(parts)
 
 
