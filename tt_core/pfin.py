@@ -358,8 +358,8 @@ def year_row(result: dict[str, Any], year: int) -> dict[str, Any] | None:
     return None
 
 
-def key_highlights(result: dict[str, Any]) -> list[tuple[str, str]]:
-    """Five talk-track figures for WhatsApp / PDF 見客重點."""
+def key_highlights(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Five product-picture figures for WhatsApp / PDF 產品重點."""
     s = result.get("summary") or {}
     y10 = year_row(result, 10) or {}
     monthly = float(
@@ -367,21 +367,51 @@ def key_highlights(result: dict[str, Any]) -> list[tuple[str, str]]:
         if s.get("monthly_interest_usd") is not None
         else (float(s.get("annual_interest_usd") or 0) / 12.0)
     )
-    promo = (
+    monthly_hkd = float(
+        s.get("monthly_interest_hkd")
+        if s.get("monthly_interest_hkd") is not None
+        else (float(s.get("annual_interest_hkd") or 0) / 12.0)
+    )
+    promo_on = bool(s.get("apply_promotion") and float(s.get("discount_usd") or 0) > 0)
+    promo_value = (
         f"{float(s.get('discount_rate') or 0) * 100:.0f}%（"
         f"{format_usd(float(s.get('discount_usd') or 0))}）"
-        if s.get("apply_promotion") and float(s.get("discount_usd") or 0) > 0
+        if promo_on
         else "未套用"
     )
     return [
-        ("自己出本金", format_usd(float(s.get("initial_outlay_usd") or 0))),
-        ("保單價值", format_usd(float(s.get("day1_guaranteed_cv_usd") or 0))),
-        ("產品優惠", promo),
-        ("每月利息支出", format_usd(monthly)),
-        (
-            "10年後退保價值",
-            format_usd(float(y10.get("total_sv_usd") or 0)),
-        ),
+        {
+            "label": "自己出本金",
+            "hint": "Day 1 首期要出幾錢",
+            "value": format_usd(float(s.get("initial_outlay_usd") or 0)),
+            "sub": format_hkd(float(s.get("initial_outlay_hkd") or 0)),
+        },
+        {
+            "label": "保單價值",
+            "hint": "首日保證現金價值（可作融資抵押）",
+            "value": format_usd(float(s.get("day1_guaranteed_cv_usd") or 0)),
+            "sub": format_hkd(float(s.get("day1_guaranteed_cv_hkd") or 0)),
+        },
+        {
+            "label": "產品優惠",
+            "hint": "保費折扣（示意檔位）",
+            "value": promo_value,
+            "sub": (
+                format_hkd(float(s.get("discount_hkd") or 0)) if promo_on else "—"
+            ),
+        },
+        {
+            "label": "每月利息支出",
+            "hint": "銀行融資利息（示意）",
+            "value": format_usd(monthly),
+            "sub": format_hkd(monthly_hkd),
+        },
+        {
+            "label": "10年後退保價值",
+            "hint": "第 10 年示意退保價值（未扣貸）",
+            "value": format_usd(float(y10.get("total_sv_usd") or 0)),
+            "sub": format_hkd(float(y10.get("total_sv_hkd") or 0)),
+        },
     ]
 
 
@@ -396,9 +426,13 @@ def whatsapp_summary(result: dict[str, Any], *, client: str = "") -> str:
         lines.append(f"客戶：{client}")
     lines.append(f"銀行：{bank.get('name') or '—'}")
     lines.append("")
-    lines.append("*見客重點*")
-    for label, value in key_highlights(result):
-        lines.append(f"{label}：{value}")
+    lines.append("*產品重點*")
+    for h in key_highlights(result):
+        # Keep WA tight: label + main figure (+ HKD when useful)
+        line = f"{h['label']}：{h['value']}"
+        if h.get("sub") and h["sub"] != "—" and "US$" in str(h["value"]):
+            line += f"（約 {h['sub']}）"
+        lines.append(line)
     lines.extend(
         [
             "",

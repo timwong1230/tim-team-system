@@ -654,7 +654,7 @@ def build_pfin_pdf(
     footer: str = "",
 ) -> bytes:
     """Structured Premium Financing proposal PDF (ICON V + bank)."""
-    from tt_core.pfin import format_hkd, format_usd, scenario_label
+    from tt_core.pfin import format_hkd, format_usd, key_highlights, scenario_label
 
     result = result or {}
     s = result.get("summary") or {}
@@ -662,33 +662,32 @@ def build_pfin_pdf(
     pdf, _note = _make_pdf(footer_note=footer)
 
     _draw_title(pdf, title or "保費融資計劃書")
-    _section_title(pdf, "客戶資料")
-    info = []
+    # Compact identity line — keep page 1 for the product picture
+    bits = [
+        str(result.get("product") or "FWD 智盈匯聚 (優越版) V"),
+        str(bank.get("name") or ""),
+    ]
     if client:
-        info.append(("客戶姓名", client))
+        bits.insert(0, client)
     if agent:
-        info.append(("顧問", agent))
-    info.append(("日期", datetime.now().strftime("%Y-%m-%d %H:%M")))
-    info.append(("產品", str(result.get("product") or "FWD 智盈匯聚 (優越版) V")))
-    info.append(("融資銀行", str(bank.get("name") or "—")))
-    info.append(("紅利情景", scenario_label(str(result.get("scenario") or "expected"))))
-    info.append(("匯率", f"1 USD = {float(result.get('fx') or 7.85):.2f} HKD"))
-    _draw_client_info_box(pdf, info)
-
-    from tt_core.pfin import key_highlights
+        bits.append(f"顧問 {agent}")
+    bits.append(datetime.now().strftime("%Y-%m-%d"))
+    pdf.set_font("ttcjk", size=9)
+    pdf.set_text_color(*_MUTED)
+    pdf.multi_cell(pdf.epw, 5, "  ·  ".join(b for b in bits if b))
+    pdf.ln(2)
 
     highlights = key_highlights(result)
-    _section_title(pdf, "見客重點")
-    # Two hero strips so all five labels stay readable
-    _draw_hero_metrics(
-        pdf,
-        [f"{lab}：{val}" for lab, val in highlights[:3]],
+    _section_title(pdf, "產品重點")
+    pdf.set_font("ttcjk", size=8.5)
+    pdf.set_text_color(*_MUTED)
+    pdf.multi_cell(
+        pdf.epw,
+        4.5,
+        "一眼睇晒：Day 1 首期、保單價值、產品優惠、每月利息、十年後退保價值（示意）。",
     )
-    _draw_hero_metrics(
-        pdf,
-        [f"{lab}：{val}" for lab, val in highlights[3:]],
-    )
-    _draw_client_info_box(pdf, highlights)
+    pdf.ln(1)
+    _draw_pfin_product_cards(pdf, highlights)
 
     _section_title(pdf, "融資摘要")
     heroes = [
@@ -710,6 +709,8 @@ def build_pfin_pdf(
             "每年利息（示意）",
             format_usd(float(s.get("annual_interest_usd") or 0)),
         ),
+        ("紅利情景", scenario_label(str(result.get("scenario") or "expected"))),
+        ("匯率", f"1 USD = {float(result.get('fx') or 7.85):.2f} HKD"),
     ]
     _draw_client_info_box(pdf, detail_rows)
 
@@ -740,6 +741,53 @@ def build_pfin_pdf(
         or "數字為示意；紅利／利率非保證；實際以正式利益說明及銀行批核為準。",
     )
     return _pdf_bytes(pdf)
+
+
+def _draw_pfin_product_cards(pdf, highlights: list[dict[str, Any]]) -> None:
+    """Large stacked cards — one figure per row so clients see the full picture."""
+    gap = 3.0
+    card_h = 18.5
+    for i, h in enumerate(highlights):
+        _ensure_space(pdf, card_h + gap + 2)
+        y = pdf.get_y()
+        # Card shell
+        _rrect(pdf, pdf.l_margin, y, pdf.epw, card_h, fill=_WHITE, draw=_LINE, radius=3)
+        # Gold index rail
+        pdf.set_fill_color(*_GOLD)
+        pdf.rect(pdf.l_margin, y + 2, 2.2, card_h - 4, style="F")
+        # Step number
+        pdf.set_xy(pdf.l_margin + 5, y + 4)
+        pdf.set_font("ttcjk", size=9)
+        pdf.set_text_color(*_GOLD)
+        pdf.cell(10, 5, f"{i + 1}", align="L")
+        # Label + hint
+        pdf.set_xy(pdf.l_margin + 14, y + 3)
+        pdf.set_font("ttcjk", size=11)
+        pdf.set_text_color(*_INK)
+        pdf.cell(pdf.epw * 0.42, 6, str(h.get("label") or ""), align="L")
+        pdf.set_xy(pdf.l_margin + 14, y + 10)
+        pdf.set_font("ttcjk", size=8)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(
+            pdf.epw * 0.42,
+            5,
+            _fit(pdf, str(h.get("hint") or ""), pdf.epw * 0.42),
+            align="L",
+        )
+        # Big value (right)
+        val_w = pdf.epw * 0.48
+        pdf.set_xy(pdf.l_margin + pdf.epw - val_w - 4, y + 2.5)
+        pdf.set_font("ttcjk", size=14)
+        pdf.set_text_color(*_TEXT)
+        pdf.cell(val_w, 7, _fit(pdf, str(h.get("value") or ""), val_w), align="R")
+        sub = str(h.get("sub") or "")
+        if sub and sub != "—":
+            pdf.set_xy(pdf.l_margin + pdf.epw - val_w - 4, y + 10.5)
+            pdf.set_font("ttcjk", size=8.5)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(val_w, 5, f"約 {sub}", align="R")
+        pdf.set_y(y + card_h + gap)
+    pdf.ln(1)
 
 
 def _draw_pfin_year_table(pdf, rows: list[dict[str, Any]]) -> None:
