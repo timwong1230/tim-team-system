@@ -32,7 +32,11 @@ def build_proposal_pdf(proposal: dict[str, Any], *, agent: str = "") -> bytes:
     _cover_page(pdf, proposal, client, agent=agent)
     for section in proposal.get("sections") or []:
         _section_page(pdf, section, client_name=str(client.get("name") or ""))
-    _summary_page(pdf, proposal)
+    skip_summary = bool(proposal.get("skip_summary")) or not (
+        proposal.get("summary_rows") or []
+    )
+    if not skip_summary:
+        _summary_page(pdf, proposal)
 
     out = pdf.output()
     if isinstance(out, (bytes, bytearray)):
@@ -93,7 +97,7 @@ def _cover_page(pdf, proposal: dict[str, Any], client: dict[str, Any], *, agent:
     agent_bit = f"  ·  顧問 {agent}" if agent else ""
     pdf.cell(0, 6, f"製表日期 {stamp}{agent_bit}", ln=1)
     pdf.set_x(20)
-    pdf.cell(0, 6, "保障及保費以保险公司正式計劃書為準", ln=1)
+    pdf.cell(0, 6, "保障及保費以保險公司正式計劃書為準", ln=1)
 
 
 def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
@@ -337,6 +341,59 @@ def _draw_visual_timeline(pdf, visual: dict[str, Any], y: float) -> float:
             pdf.set_text_color(*_TEXT)
             pdf.multi_cell(w - 4, 3.5, str(st.get("body") or ""))
         y = y + step_h + 6
+
+    # Focus-year value table
+    vtable = list(visual.get("value_table") or [])
+    if vtable:
+        if y > 230:
+            pdf.add_page()
+            pdf.set_fill_color(*_SOFT)
+            pdf.rect(0, 0, 210, 297, "F")
+            y = 40
+        pdf.set_xy(16, y)
+        pdf.set_font("TT", "B", 10)
+        pdf.set_text_color(*_INK)
+        pdf.cell(0, 6, str(visual.get("value_table_caption") or "重點年份戶口（示意）"), ln=1)
+        y = pdf.get_y() + 1
+        cols = [22, 22, 40, 50, 44]
+        headers = ["年度", "年齡", "提款", "期末戶口", "備註"]
+        x0 = 16
+        pdf.set_fill_color(26, 43, 76)
+        pdf.rect(x0, y, 178, 8, "F")
+        pdf.set_text_color(*_WHITE)
+        pdf.set_font("TT", "B", 8)
+        x = x0
+        for h, cw in zip(headers, cols):
+            pdf.set_xy(x + 1, y + 1.5)
+            pdf.cell(cw - 2, 5, h)
+            x += cw
+        y += 8
+        pdf.set_font("TT", "", 8)
+        for i, r in enumerate(vtable):
+            if y > 275:
+                pdf.add_page()
+                pdf.set_fill_color(*_SOFT)
+                pdf.rect(0, 0, 210, 297, "F")
+                y = 40
+            bg = (255, 255, 255) if i % 2 == 0 else (238, 242, 247)
+            pdf.set_fill_color(*bg)
+            pdf.rect(x0, y, 178, 8, "F")
+            wd = float(r.get("withdraw_usd") or 0)
+            vals = [
+                f"第 {r.get('policy_year')} 年",
+                f"{r.get('age')} 歲",
+                format_usd(wd) if wd else "—",
+                format_usd(float(r.get("av_end_usd") or 0)),
+                str(r.get("note") or ""),
+            ]
+            pdf.set_text_color(*_TEXT)
+            x = x0
+            for v, cw in zip(vals, cols):
+                pdf.set_xy(x + 1, y + 1.5)
+                pdf.cell(cw - 2, 5, v)
+                x += cw
+            y += 8
+        y += 4
     return y
 
 
@@ -465,5 +522,5 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
         178,
         4,
         "本文件由 TIM TEAM M+2 產生，只供內部見客參考。"
-        "保障、保費、折扣、分紅及特別紅利均以保险公司正式計劃書及條款為準；非保證利益並非承諾。",
+        "保障、保費、折扣、分紅及特別紅利均以保險公司正式計劃書及條款為準；非保證利益並非承諾。",
     )

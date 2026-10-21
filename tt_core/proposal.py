@@ -375,6 +375,9 @@ def build_saving_proposal(
     annual_hkd: float | None = None,
     purpose: str = "教育基金",
     fx: float = FX_DEFAULT,
+    withdraw_start_year: int | None = None,
+    withdraw_years: int | None = None,
+    withdraw_usd: float | None = None,
 ) -> dict[str, Any]:
     prod = get_product("saving", saving_id)
     gaps: list[str] = []
@@ -449,7 +452,13 @@ def build_saving_proposal(
         from tt_core.yingju_angles import build_angle_story
 
         angle = build_angle_story(
-            purpose_label, annual_usd=annual_u, age=int(age), fx=float(fx or FX_DEFAULT)
+            purpose_label,
+            annual_usd=annual_u,
+            age=int(age),
+            fx=float(fx or FX_DEFAULT),
+            withdraw_start_year=withdraw_start_year,
+            withdraw_years=withdraw_years,
+            withdraw_usd=withdraw_usd,
         )
         purpose_label = str(angle.get("purpose") or purpose_label)
         title = str(angle.get("title") or title)
@@ -458,17 +467,21 @@ def build_saving_proposal(
         cover = str(angle.get("tagline") or cover)
         m = angle.get("metrics") or {}
         illus = {
-            "year5_sv_usd": m.get("year5_sv_usd"),
-            "year5_sv_hkd": m.get("year5_sv_hkd"),
-            "year6_wd_usd": m.get("year6_wd_usd"),
-            "year6_wd_hkd": m.get("year6_wd_hkd"),
+            "year6_sv_usd": m.get("year6_sv_usd"),
+            "year6_sv_hkd": m.get("year6_sv_hkd"),
+            "withdraw_usd": m.get("withdraw_usd"),
+            "av_after_withdrawals_usd": m.get("av_after_withdrawals_usd"),
             "note": "示意數字（非保證；以正式利益說明為準）",
         }
+        start_y = int(m.get("withdraw_start_year") or 6)
         extract_note = (
-            f"第 6 年起示意可提約 {format_usd(float(m.get('year6_wd_usd') or 0))}／年"
-            "（約總保費 7%）；亦可唔提繼續滾存"
+            f"第 {start_y} 年起示意每年提款約 {format_usd(float(m.get('withdraw_usd') or 0))}；"
+            f"提款後戶口約 {format_usd(float(m.get('av_after_withdrawals_usd') or 0))}"
         )
         options["purpose"] = purpose_label
+        options["withdraw_start_year"] = start_y
+        options["withdraw_years"] = m.get("withdraw_years")
+        options["withdraw_usd"] = m.get("withdraw_usd")
 
     sections = [
         {
@@ -486,7 +499,7 @@ def build_saving_proposal(
             "meta_rows": [
                 ("供款年期", f"{pay_years} 年"),
                 ("總供款（未計折扣）", format_hkd(total_hkd)),
-                ("提取", extract_note),
+                ("提款安排", extract_note),
                 ("保障期", str(prod.get("term_note") or "—")),
             ],
             "highlights": highlights,
@@ -501,15 +514,6 @@ def build_saving_proposal(
     from tt_core.proposal_offers import attach_offer_to_section
 
     attach_offer_to_section(sections[0])
-    summary_rows = [
-        {
-            "保險類別": purpose_label,
-            "產品名稱": prod.get("short") or prod.get("name"),
-            "年供保費": summary_prem,
-            "保障摘要": sections[0]["cover_summary"],
-            "供款／年期": f"{pay_years} 年",
-        }
-    ]
     return {
         "kind": "saving",
         "title": title,
@@ -520,7 +524,8 @@ def build_saving_proposal(
             "occupation": str(occupation or "").strip(),
         },
         "sections": sections,
-        "summary_rows": summary_rows,
+        "summary_rows": [],
+        "skip_summary": True,
         "total_annual_hkd": annual_hkd_v,
         "gaps": gaps,
         "ready": float(annual_hkd_v or 0) > 0 and not gaps,
@@ -595,7 +600,7 @@ def html_preview(proposal: dict[str, Any]) -> str:
             )
         visual = s.get("visual") or {}
         visual_html = ""
-        if visual.get("steps"):
+        if visual.get("steps") or visual.get("value_table"):
             cards = visual.get("cards") or []
             cards_html = "".join(
                 "<div class='vcard'>"
@@ -613,11 +618,33 @@ def html_preview(proposal: dict[str, Any]) -> str:
                 "</div>"
                 for st in visual.get("steps") or []
             )
+            vtable = visual.get("value_table") or []
+            vtable_html = ""
+            if vtable:
+                rows_html = "".join(
+                    "<tr>"
+                    f"<td>第 {_esc(r.get('policy_year'))} 年</td>"
+                    f"<td>{_esc(r.get('age'))} 歲</td>"
+                    f"<td>{_esc(format_usd(float(r.get('withdraw_usd') or 0))) if float(r.get('withdraw_usd') or 0) else '—'}</td>"
+                    f"<td>{_esc(format_usd(float(r.get('av_end_usd') or 0)))}</td>"
+                    f"<td>{_esc(r.get('note') or '')}</td>"
+                    "</tr>"
+                    for r in vtable
+                )
+                vtable_html = (
+                    "<div class='vtable'>"
+                    f"<div class='glabel'>{_esc(visual.get('value_table_caption') or '重點年份')}</div>"
+                    "<table class='vt'>"
+                    "<thead><tr><th>保單年度</th><th>年齡</th><th>提款</th>"
+                    "<th>期末戶口（示意）</th><th>備註</th></tr></thead>"
+                    f"<tbody>{rows_html}</tbody></table></div>"
+                )
             visual_html = (
                 "<div class='visual'>"
                 f"<div class='glabel'>{_esc(visual.get('caption') or '時間線')}</div>"
                 f"<div class='vcards'>{cards_html}</div>"
                 f"<div class='vtrack'>{steps_html}</div>"
+                f"{vtable_html}"
                 "</div>"
             )
         tagline = s.get("angle_tagline") or ""
@@ -652,6 +679,7 @@ def html_preview(proposal: dict[str, Any]) -> str:
         )
 
     summary_rows = proposal.get("summary_rows") or []
+    skip_summary = bool(proposal.get("skip_summary")) or not summary_rows
     trs = "".join(
         "<tr>"
         f"<td>{_esc(r.get('保險類別'))}</td>"
@@ -670,6 +698,17 @@ def html_preview(proposal: dict[str, Any]) -> str:
             + "".join(f"<li>{_esc(g)}</li>" for g in gaps)
             + "</ul></div>"
         )
+    summary_html = ""
+    if not skip_summary:
+        summary_html = f"""
+    <div class="sum">
+      <div class="glabel">SUMMARY</div>
+      <table>
+        <thead><tr><th>保險類別</th><th>產品</th><th>年供保費</th><th>保障摘要</th></tr></thead>
+        <tbody>{trs}</tbody>
+      </table>
+      <div class="total">合計年供約 {_esc(format_hkd(total))}</div>
+    </div>"""
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -730,6 +769,11 @@ def html_preview(proposal: dict[str, Any]) -> str:
   .vphase{{font-size:10px;letter-spacing:.06em;color:#6B7280;margin-bottom:4px;}}
   .vtitle{{font-size:14px;font-weight:700;color:#1A2B4C;margin-bottom:6px;}}
   .vbody{{font-size:12px;line-height:1.35;color:#374151;white-space:pre-line;}}
+  .vtable{{margin-top:12px;}}
+  table.vt{{width:100%;border-collapse:collapse;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;}}
+  table.vt th{{text-align:left;padding:8px 6px;border-bottom:2px solid #1A2B4C;color:#1A2B4C;}}
+  table.vt td{{padding:8px 6px;border-bottom:1px solid #E8E4DA;}}
   @media (max-width:640px){{
     .vtrack{{grid-template-columns:1fr 1fr;}}
   }}
@@ -768,16 +812,9 @@ def html_preview(proposal: dict[str, Any]) -> str:
   </div>
   <div class="body">
     {''.join(sections_html) or '<p>尚未選擇產品。</p>'}
-    <div class="sum">
-      <div class="glabel">SUMMARY</div>
-      <table>
-        <thead><tr><th>保險類別</th><th>產品</th><th>年供保費</th><th>保障摘要</th></tr></thead>
-        <tbody>{trs}</tbody>
-      </table>
-      <div class="total">合計年供約 { _esc(format_hkd(total)) }</div>
-    </div>
+    {summary_html}
     {gaps_html}
-    <div class="foot">本計劃書由 TIM TEAM M+2 產生，只供內部見客參考。保障、保費、折扣及分紅均以保险公司正式計劃書及條款為準；分紅／特別紅利非保證。</div>
+    <div class="foot">本計劃書由 TIM TEAM M+2 產生，只供內部見客參考。保障、保費、折扣及分紅均以保險公司正式計劃書及條款為準；分紅／特別紅利非保證。</div>
   </div>
 </div>
 </body></html>"""
