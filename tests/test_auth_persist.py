@@ -115,6 +115,44 @@ def test_try_restore_from_cookie():
         assert st_mock.session_state["user"] == "Amy"
 
 
+def test_guest_session_not_persisted_or_restored():
+    from tt_core import auth_persist as ap
+
+    state = {}
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = state
+        st_mock.secrets = {}
+        st_mock.html = MagicMock()
+        st_mock.query_params = {}
+        st_mock.context = MagicMock()
+        token = ap.persist_browser_session(user="guest", role="Guest")
+        assert token == ""
+        assert not st_mock.html.called  # no localStorage write for guest
+
+        # Even an old guest cookie must not restore
+        guest_tok = ap.make_session_token(
+            user="guest", role="Guest", last_active=time.time()
+        )
+        st_mock.context.cookies = {ap._LS_KEY: guest_tok}
+        assert ap.try_restore_session() is False
+        assert not state.get("logged_in")
+
+
+def test_logout_sets_sync_tt_out_query():
+    from tt_core import auth_persist as ap
+
+    state = {"logged_in": True, "user": "guest"}
+    qp: dict = {}
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = state
+        st_mock.html = MagicMock()
+        st_mock.query_params = qp
+        ap.clear_browser_session()
+        assert state.get("_tt_logout_block") is True
+        assert qp.get("tt_out") == "1"
+        assert ap._logout_blocked() is True
+
+
 def test_app_wires_persist_and_idle():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "try_restore_session" in src

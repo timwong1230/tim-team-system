@@ -154,3 +154,10 @@ def test_app_hides_ops_menus_for_guest():
     assert "團隊 Dashboard" not in guest_block
     assert "RECRUIT_TOOLS_MENU" not in guest_block
     assert "CLIENT_TOOLS_MENU" in guest_block
+
+
+def test_app_guest_has_logout_path():
+    src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "def _do_logout" in src
+    assert "guest_home_logout" in src
+    assert "flush_pending_logout_clear" in src
