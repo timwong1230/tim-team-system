@@ -190,6 +190,26 @@ def _section_page(pdf, section: dict[str, Any], *, client_name: str) -> None:
         )
 
 
+def _summary_kv_height(pdf, value: str, *, value_w: float, line_h: float) -> float:
+    pdf.set_font("TT", "", 10)
+    return float(pdf.multi_cell(value_w, line_h, value, dry_run=True, output="HEIGHT") or line_h)
+
+
+def _draw_summary_kv(
+    pdf, x: float, y: float, label: str, value: str, *, label_w: float, value_w: float, line_h: float
+) -> float:
+    """Draw a label/value row; return height used."""
+    pdf.set_xy(x, y)
+    pdf.set_font("TT", "", 9)
+    pdf.set_text_color(*_MUTED)
+    pdf.cell(label_w, line_h, label)
+    pdf.set_xy(x + label_w, y)
+    pdf.set_font("TT", "", 10)
+    pdf.set_text_color(*_TEXT)
+    pdf.multi_cell(value_w, line_h, value)
+    return max(line_h, float(pdf.get_y() - y))
+
+
 def _summary_page(pdf, proposal: dict[str, Any]) -> None:
     pdf.add_page()
     pdf.set_fill_color(*_SOFT)
@@ -201,33 +221,31 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
     pdf.set_xy(16, 9)
     pdf.cell(0, 8, "SUMMARY")
 
-    # Card rows avoid fixed-height table cells that jump when text wraps.
+    # Card rows with fixed label column — avoids old table cell jump.
     y = 40.0
-    line_h = 5.0
-    pad = 4.0
+    line_h = 5.2
+    pad = 5.0
+    label_w = 28.0
+    value_w = 140.0
     for i, row in enumerate(proposal.get("summary_rows") or []):
         category = str(row.get("保險類別") or "")
         product = str(row.get("產品名稱") or "")
         premium = str(row.get("年供保費") or "")
         cover = str(row.get("保障摘要") or "")
-        term = str(row.get("供款／年期") or "").strip()
+        # Keep term short on Summary so cards stay tidy
+        term_raw = str(row.get("供款／年期") or "").strip()
+        term = term_raw.split("；")[0].strip() if term_raw else ""
 
         pdf.set_font("TT", "B", 11)
         title_h = float(
             pdf.multi_cell(170, 6, f"{category}  ·  {product}", dry_run=True, output="HEIGHT")
             or 6
         )
-        pdf.set_font("TT", "", 10)
-        prem_h = float(pdf.multi_cell(170, line_h, f"年供保費  {premium}", dry_run=True, output="HEIGHT") or line_h)
-        cover_h = float(
-            pdf.multi_cell(170, line_h, f"保障摘要  {cover}", dry_run=True, output="HEIGHT") or line_h
-        )
-        term_h = 0.0
-        if term:
-            term_h = float(
-                pdf.multi_cell(170, line_h, f"年期  {term}", dry_run=True, output="HEIGHT") or line_h
-            )
-        card_h = pad + title_h + 2 + prem_h + cover_h + (term_h + 1 if term else 0) + pad
+        prem_h = _summary_kv_height(pdf, premium, value_w=value_w, line_h=line_h)
+        cover_h = _summary_kv_height(pdf, cover, value_w=value_w, line_h=line_h)
+        term_h = _summary_kv_height(pdf, term, value_w=value_w, line_h=line_h) if term else 0.0
+        card_h = pad + title_h + 3 + prem_h + 1.5 + cover_h + (1.5 + term_h if term else 0) + pad
+
         if y + card_h > 255:
             pdf.add_page()
             pdf.set_fill_color(*_SOFT)
@@ -250,22 +268,20 @@ def _summary_page(pdf, proposal: dict[str, Any]) -> None:
         pdf.set_font("TT", "B", 11)
         pdf.set_text_color(*_INK)
         pdf.multi_cell(170, 6, f"{category}  ·  {product}")
-        cy = pdf.get_y() + 2
+        cy = pdf.get_y() + 3
 
-        pdf.set_xy(20, cy)
-        pdf.set_font("TT", "", 10)
-        pdf.set_text_color(*_TEXT)
-        pdf.multi_cell(170, line_h, f"年供保費  {premium}")
-        cy = pdf.get_y()
-
-        pdf.set_xy(20, cy)
-        pdf.multi_cell(170, line_h, f"保障摘要  {cover}")
-        cy = pdf.get_y()
-
+        cy += _draw_summary_kv(
+            pdf, 20, cy, "年供保費", premium, label_w=label_w, value_w=value_w, line_h=line_h
+        )
+        cy += 1.5
+        cy += _draw_summary_kv(
+            pdf, 20, cy, "保障摘要", cover, label_w=label_w, value_w=value_w, line_h=line_h
+        )
         if term:
-            pdf.set_xy(20, cy + 1)
-            pdf.set_text_color(*_MUTED)
-            pdf.multi_cell(170, line_h, f"年期  {term}")
+            cy += 1.5
+            _draw_summary_kv(
+                pdf, 20, cy, "年期", term, label_w=label_w, value_w=value_w, line_h=line_h
+            )
 
         y += card_h + 6
 

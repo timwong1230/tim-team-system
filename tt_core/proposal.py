@@ -169,7 +169,7 @@ def build_protection_proposal(
                             else format_hkd(prem.get("deductible") or 0),
                         ),
                         ("保障期", str(prod.get("term_note") or "—")),
-                        ("保費來源", "系統保費表（見客參考）"),
+                        ("參考來源", "系統保費表"),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {
@@ -256,7 +256,7 @@ def build_protection_proposal(
                         ("保障額", format_hkd(sa) if sa else "—"),
                         ("保障期", str(prod.get("term_note") or "—")),
                         ("形式", "可附於主保單／獨立（以條款為準）"),
-                        ("計費", "同事輸入報價年保費"),
+                        ("報價", "見客時以正式報價為準"),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {"sa_hkd": sa},
