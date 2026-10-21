@@ -84,14 +84,16 @@ button, .cat-btn, .add-btn {
   border: 1px solid var(--line);
   background: linear-gradient(160deg, rgba(212,192,140,0.14), rgba(80,100,180,0.06));
   border-radius: 18px;
-  padding: 14px 14px 12px;
+  padding: 16px;
   margin-bottom: 18px;
 }
 .promo-now {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 12px;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(212,192,140,0.18);
 }
 .promo-kicker {
   font-size: 0.68rem;
@@ -101,41 +103,28 @@ button, .cat-btn, .add-btn {
   font-weight: 700;
 }
 .promo-now strong {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--text);
+  line-height: 1.2;
 }
-.promo-window {
-  color: var(--muted);
-  font-size: 0.86rem;
+.promo-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.promo-slots {
-  list-style: none;
+.promo-lines p {
   margin: 0;
-  padding: 10px 0;
-  border-top: 1px solid rgba(212,192,140,0.18);
-  border-bottom: 1px solid rgba(212,192,140,0.18);
-  display: grid;
-  gap: 8px;
-}
-.promo-slots li {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 8px;
-  align-items: baseline;
-  font-size: 0.82rem;
-}
-.promo-slots span {
-  color: var(--gold);
-  font-weight: 650;
-}
-.promo-slots em {
-  font-style: normal;
-  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text);
 }
 .promo-combo {
-  margin-top: 10px;
-  font-size: 0.88rem;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(212,192,140,0.18);
+  font-size: 0.9rem;
+  line-height: 1.4;
   color: var(--text);
 }
 .promo-combo strong { color: var(--gold-strong); }
