@@ -99,9 +99,9 @@ def generate_receipt_pdf(
 
     row("Subtotal", bill["subtotal"])
     row(f"Snack charge ({bill['party_size']} × $10)", bill["snack_charge"])
-    row(f"Service {int(bill['service_charge_rate'] * 100)}%", bill["service_charge"])
     if bill.get("discount_percent"):
         row(f"Discount {int(bill['discount_percent'])}%", -float(bill["discount_amount"]))
+    row(f"Service {int(bill['service_charge_rate'] * 100)}%", bill["service_charge"])
     row("Amount due", bill["total"], bold=True)
 
     y -= 8 * mm
