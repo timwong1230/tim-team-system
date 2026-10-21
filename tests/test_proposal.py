@@ -11,15 +11,31 @@ if str(_ROOT) not in sys.path:
 
 
 def test_catalog_loads():
-    from tt_core.proposal import load_catalog, missing_data_notes, plan_types, products_in
+    from tt_core.proposal import (
+        get_product,
+        load_catalog,
+        missing_data_notes,
+        plan_types,
+        products_in,
+    )
 
+    load_catalog.cache_clear()
     cat = load_catalog()
     assert plan_types()
-    assert len(products_in("medical")) >= 4
-    assert len(products_in("critical_illness")) >= 3
-    assert len(products_in("accident")) >= 1
-    assert len(products_in("saving")) >= 1
+    assert len(products_in("medical")) >= 7  # +易衛您／智員善／大灣區門診
+    assert len(products_in("critical_illness")) >= 7  # 全應援3 + 應援保2 + 緻尚保2 + 好易揀
+    assert len(products_in("accident")) >= 2
+    assert len(products_in("life")) >= 3  # 承譽／自主保／享悅人生
+    assert len(products_in("saving")) >= 3  # 盈聚／盈歲悅／智盈匯聚
     assert any("危疾" in n for n in missing_data_notes())
+    # Drive-sourced highlights should be substantive
+    fam = next(p for p in products_in("medical") if p["id"] == "vfamily")
+    assert any("55" in h for h in fam["highlights"])
+    assert len(fam["highlights"]) >= 6
+    assert cat.get("source_note")
+    assert get_product("medical", "gba_op")
+    assert get_product("life", "chengyu_term")
+    assert get_product("saving", "yingshuoyue")
 
 
 def test_full_protection_medical_auto_premium():
@@ -102,6 +118,43 @@ def test_saving_proposal_yingju():
     assert sec.get("illustration")
 
 
+def test_life_and_manual_medical_and_hkd_saving():
+    from tt_core.proposal import build_protection_proposal, build_saving_proposal
+
+    prop = build_protection_proposal(
+        client_name="Tim",
+        age=40,
+        gender="男",
+        include_medical=True,
+        include_ci=False,
+        include_accident=False,
+        include_life=True,
+        medical_id="gba_op",
+        medical_level="計劃2",
+        medical_annual_hkd=4800,
+        life_id="chengyu_term",
+        life_sa_hkd=2000000,
+        life_pay_term=20,
+        life_annual_hkd=12000,
+    )
+    assert len(prop["sections"]) == 2
+    assert prop["sections"][0]["category"] == "醫療保險"
+    assert prop["sections"][0]["premium_source"] == "manual"
+    assert prop["sections"][1]["category"] == "人壽保險"
+    assert prop["ready"] is True
+
+    sav = build_saving_proposal(
+        client_name="Tim",
+        age=40,
+        gender="男",
+        saving_id="yingshuoyue",
+        annual_hkd=60000,
+        purpose="退休儲備",
+    )
+    assert sav["ready"] is True
+    assert "HK$" in sav["sections"][0]["premium_display"]
+
+
 def test_no_duplicate_premium_meta_and_rich_highlights():
     from tt_core.proposal import build_protection_proposal, get_product
 
@@ -132,7 +185,11 @@ def test_no_duplicate_premium_meta_and_rich_highlights():
         assert "約" not in prem
 
     fam = get_product("medical", "vfamily")
-    assert fam and len(fam.get("highlights") or []) >= 5
+    assert fam and len(fam.get("highlights") or []) >= 6
+    # New CI lines from Drive leaflets are selectable
+    assert get_product("critical_illness", "ci_zhishang_plus")
+    assert get_product("critical_illness", "ci_easy")
+    assert get_product("accident", "life_accident_rider")["short"] == "人身意外附約"
 
 
 def test_html_and_whatsapp_and_pdf():

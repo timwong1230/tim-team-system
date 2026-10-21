@@ -102,9 +102,11 @@ def build_protection_proposal(
     include_medical: bool = True,
     include_ci: bool = True,
     include_accident: bool = True,
+    include_life: bool = False,
     medical_id: str | None = None,
     medical_level: str | None = None,
     medical_deductible: int | None = None,
+    medical_annual_hkd: float | None = None,
     ci_id: str | None = None,
     ci_sa_usd: float | None = None,
     ci_pay_term: int | None = None,
@@ -112,6 +114,10 @@ def build_protection_proposal(
     accident_id: str | None = None,
     accident_sa_hkd: float | None = None,
     accident_annual_hkd: float | None = None,
+    life_id: str | None = None,
+    life_sa_hkd: float | None = None,
+    life_pay_term: int | None = None,
+    life_annual_hkd: float | None = None,
     fx: float = FX_DEFAULT,
 ) -> dict[str, Any]:
     """Assemble a Full Protection proposal payload."""
@@ -124,21 +130,46 @@ def build_protection_proposal(
         if not prod:
             gaps.append(f"搵唔到醫療產品：{medical_id}")
         else:
-            prem = medical_premium_hkd(
-                product_id=medical_id,
-                age=age,
-                gender=gender,
-                level=medical_level,
-                deductible=medical_deductible,
+            use_table = str(prod.get("premium_source") or "") == "table" and bool(
+                prod.get("finance_plan_id")
             )
-            annual = float(prem.get("annual_hkd") or 0)
-            if annual <= 0:
-                gaps.append(f"醫療「{prod.get('short')}」呢個年齡／選項暫時查唔到保費。")
+            if use_table:
+                prem = medical_premium_hkd(
+                    product_id=medical_id,
+                    age=age,
+                    gender=gender,
+                    level=medical_level,
+                    deductible=medical_deductible,
+                )
+                annual = float(prem.get("annual_hkd") or 0)
+                level_label = str(prem.get("level") or prod.get("short") or "標準")
+                ded_val = int(prem.get("deductible") or 0)
+                source_label = "系統保費表"
+                if annual <= 0:
+                    gaps.append(
+                        f"醫療「{prod.get('short')}」呢個年齡／選項暫時查唔到保費。"
+                    )
+                else:
+                    total_annual += annual
             else:
-                total_annual += annual
-            cover = "每年保障額內全包"
-            if medical_id == "vbooster" and int(prem.get("deductible") or 0) == 0:
-                cover = "每年約 800 萬內全包"
+                annual = float(medical_annual_hkd or 0)
+                level_label = str(
+                    medical_level
+                    or (prod.get("levels") or ["標準"])[0]
+                    or prod.get("short")
+                    or "標準"
+                )
+                ded_val = int(medical_deductible or 0)
+                source_label = "同事輸入報價"
+                if annual <= 0:
+                    gaps.append(
+                        f"醫療「{prod.get('short')}」未接保費表——請手動輸入年保費（港元）。"
+                    )
+                else:
+                    total_annual += annual
+            cover = str(prod.get("cover_summary_default") or "每年保障額內全包")
+            if medical_id == "vbooster" and ded_val == 0:
+                cover = "每年約 800 萬全數保障"
             sections.append(
                 {
                     "category": "醫療保險",
@@ -154,27 +185,22 @@ def build_protection_proposal(
                         else "（待輸入）"
                     ),
                     "premium_ok": annual > 0,
-                    "premium_source": "table",
+                    "premium_source": "table" if use_table else "manual",
                     "cover_summary": cover,
                     "term": prod.get("term_note") or "",
                     "meta_rows": [
-                        (
-                            "保障級別",
-                            str(prem.get("level") or prod.get("short") or "標準"),
-                        ),
+                        ("保障級別", level_label),
                         (
                             "自付費",
-                            "無自付費"
-                            if int(prem.get("deductible") or 0) == 0
-                            else format_hkd(prem.get("deductible") or 0),
+                            "無自付費" if ded_val == 0 else format_hkd(ded_val),
                         ),
                         ("保障期", str(prod.get("term_note") or "—")),
-                        ("參考來源", "系統保費表"),
+                        ("參考來源", source_label),
                     ],
                     "highlights": list(prod.get("highlights") or []),
                     "options": {
-                        "level": prem.get("level"),
-                        "deductible": prem.get("deductible"),
+                        "level": level_label,
+                        "deductible": ded_val,
                     },
                 }
             )
@@ -263,6 +289,51 @@ def build_protection_proposal(
                 }
             )
 
+    if include_life and life_id:
+        prod = get_product("life", life_id)
+        if not prod:
+            gaps.append(f"搵唔到人壽產品：{life_id}")
+        else:
+            sa = float(
+                life_sa_hkd
+                if life_sa_hkd is not None
+                else prod.get("default_sa_hkd")
+                or 0
+            )
+            pay = int(life_pay_term or prod.get("default_pay_term") or 20)
+            annual = float(life_annual_hkd or 0)
+            if annual <= 0:
+                gaps.append(
+                    f"人壽「{prod.get('short')}」未有保費表——請手動輸入年保費（港元）。"
+                )
+            else:
+                total_annual += annual
+            sections.append(
+                {
+                    "category": "人壽保險",
+                    "category_key": "life",
+                    "product_id": life_id,
+                    "product_name": prod.get("name"),
+                    "short": prod.get("short"),
+                    "premium_annual_hkd": annual,
+                    "premium_display": f"{format_hkd(annual)}／年"
+                    if annual
+                    else "待輸入年保費",
+                    "premium_ok": annual > 0,
+                    "premium_source": "manual",
+                    "cover_summary": f"保額 {format_hkd(sa)}" if sa else "保額待定",
+                    "term": f"供款／平衡年期 {pay} 年；{prod.get('term_note') or ''}",
+                    "meta_rows": [
+                        ("保額", format_hkd(sa) if sa else "—"),
+                        ("供款年期", f"{pay} 年"),
+                        ("保障期", str(prod.get("term_note") or "—")),
+                        ("報價", "見客時以正式報價為準"),
+                    ],
+                    "highlights": list(prod.get("highlights") or []),
+                    "options": {"sa_hkd": sa, "pay_term": pay},
+                }
+            )
+
     summary_rows = []
     for s in sections:
         annual = float(s.get("premium_annual_hkd") or 0)
@@ -301,6 +372,7 @@ def build_saving_proposal(
     occupation: str = "",
     saving_id: str = "yingju5",
     annual_usd: float | None = None,
+    annual_hkd: float | None = None,
     purpose: str = "教育基金",
     fx: float = FX_DEFAULT,
 ) -> dict[str, Any]:
@@ -323,34 +395,67 @@ def build_saving_proposal(
             "ready": False,
         }
 
-    annual_u = float(
-        annual_usd if annual_usd is not None else prod.get("default_annual_usd") or 0
-    )
-    if annual_u <= 0:
-        gaps.append("請輸入年供金額（美元）。")
+    currency = str(prod.get("currency") or "USD").upper()
     pay_years = int(prod.get("pay_years") or 5)
-    annual_hkd = round(annual_u * float(fx or FX_DEFAULT), 0)
-    total_hkd = round(annual_hkd * pay_years, 0)
-
-    # Illustrative CV multiple from yingju calibration (non-guaranteed)
-    illus = None
-    try:
-        from tt_core.medical_finance import load_calibration
-
-        cal = load_calibration()
-        k5 = float(cal.get("k5_sv_per_annual_prem") or 0)
-        if k5 > 0 and annual_u > 0:
-            year5_sv = round(annual_u * k5, 0)
-            illus = {
-                "year5_sv_usd": year5_sv,
-                "year5_sv_hkd": round(year5_sv * fx, 0),
-                "note": "示意：第 5 年名義退保價值約數（非保證；以正式計劃書為準）",
-            }
-    except Exception:
+    annual_u = 0.0
+    if currency == "HKD" or str(prod.get("premium_source")) == "manual_hkd":
+        annual_hkd_v = float(
+            annual_hkd
+            if annual_hkd is not None
+            else prod.get("default_annual_hkd")
+            or 0
+        )
+        if annual_hkd_v <= 0:
+            gaps.append("請輸入年供金額（港元）。")
+        premium_display = (
+            f"{format_hkd(annual_hkd_v)}／年" if annual_hkd_v else "待輸入年保費"
+        )
+        premium_source = "manual_hkd"
+        summary_prem = premium_display if annual_hkd_v else "待輸入"
+        options: dict[str, Any] = {
+            "annual_hkd": annual_hkd_v,
+            "pay_years": pay_years,
+            "currency": "HKD",
+        }
+        extract_note = str(prod.get("extract_note") or "按計劃條款安排年金／提取")
         illus = None
+    else:
+        annual_u = float(
+            annual_usd if annual_usd is not None else prod.get("default_annual_usd") or 0
+        )
+        if annual_u <= 0:
+            gaps.append("請輸入年供金額（美元）。")
+        annual_hkd_v = round(annual_u * float(fx or FX_DEFAULT), 0)
+        premium_display = (
+            f"{format_usd(annual_u)}／年（約 {format_hkd(annual_hkd_v)}）"
+            if annual_u
+            else "待輸入年保費"
+        )
+        premium_source = "manual_usd"
+        summary_prem = f"{format_usd(annual_u)}／年" if annual_u else "待輸入"
+        options = {"annual_usd": annual_u, "pay_years": pay_years, "fx": fx}
+        extract_note = "第 6 年起可按計劃提款（以條款為準）"
+        illus = None
+        if saving_id == "yingju5":
+            try:
+                from tt_core.medical_finance import load_calibration
 
+                cal = load_calibration()
+                k5 = float(cal.get("k5_sv_per_annual_prem") or 0)
+                if k5 > 0 and annual_u > 0:
+                    year5_sv = round(annual_u * k5, 0)
+                    illus = {
+                        "year5_sv_usd": year5_sv,
+                        "year5_sv_hkd": round(year5_sv * fx, 0),
+                        "note": "示意：第 5 年名義退保價值約數（非保證；以正式計劃書為準）",
+                    }
+            except Exception:
+                illus = None
+
+    total_hkd = round(float(annual_hkd_v) * pay_years, 0)
     highlights = list(prod.get("highlights") or [])
     goals = list(prod.get("goals") or [])
+    cover = str(prod.get("cover_summary_default") or f"{pay_years} 年供；可滾存長線")
     sections = [
         {
             "category": purpose or "儲蓄計劃",
@@ -358,31 +463,29 @@ def build_saving_proposal(
             "product_id": saving_id,
             "product_name": prod.get("name"),
             "short": prod.get("short"),
-            "premium_annual_hkd": annual_hkd,
-            "premium_display": f"{format_usd(annual_u)}／年（約 {format_hkd(annual_hkd)}）",
-            "premium_ok": annual_u > 0,
-            "premium_source": "manual_usd",
-            "cover_summary": f"{pay_years} 年供；可滾存長線",
+            "premium_annual_hkd": annual_hkd_v,
+            "premium_display": premium_display,
+            "premium_ok": float(annual_hkd_v or 0) > 0,
+            "premium_source": premium_source,
+            "cover_summary": cover,
             "term": str(prod.get("term_note") or ""),
             "meta_rows": [
                 ("供款年期", f"{pay_years} 年"),
                 ("總供款（未計折扣）", format_hkd(total_hkd)),
-                ("提取", "第 6 年起可按計劃提款（以條款為準）"),
+                ("提取", extract_note),
                 ("保障期", str(prod.get("term_note") or "—")),
             ],
             "highlights": highlights,
             "goals": goals,
             "illustration": illus,
-            "options": {"annual_usd": annual_u, "pay_years": pay_years, "fx": fx},
+            "options": options,
         }
     ]
     summary_rows = [
         {
             "保險類別": purpose or "儲蓄",
             "產品名稱": prod.get("short") or prod.get("name"),
-            "年供保費": f"{format_usd(annual_u)}／年"
-            if annual_u
-            else "待輸入",
+            "年供保費": summary_prem,
             "保障摘要": sections[0]["cover_summary"],
             "供款／年期": f"{pay_years} 年",
         }
@@ -398,9 +501,9 @@ def build_saving_proposal(
         },
         "sections": sections,
         "summary_rows": summary_rows,
-        "total_annual_hkd": annual_hkd,
+        "total_annual_hkd": annual_hkd_v,
         "gaps": gaps,
-        "ready": annual_u > 0 and not gaps,
+        "ready": float(annual_hkd_v or 0) > 0 and not gaps,
         "purpose": purpose,
     }
 
