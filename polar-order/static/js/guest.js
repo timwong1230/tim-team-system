@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   const table = window.POLAR_TABLE;
-  const cart = new Map(); // itemId -> {id,name,price,qty,note}
+  const cart = new Map(); // itemId -> line
 
   const cartBar = document.getElementById("cartBar");
   const cartCount = document.getElementById("cartCount");
@@ -20,12 +20,46 @@ document.addEventListener("DOMContentLoaded", () => {
     return `$${Math.round(n)}`;
   }
 
+  /** Estimate line prices with Shisha → $40 snack combo (server is source of truth). */
+  function pricedCart() {
+    let shishaSlots = 0;
+    for (const line of cart.values()) {
+      if (line.id === "shisha-regular") shishaSlots += line.qty;
+    }
+    const out = [];
+    for (const line of cart.values()) {
+      if (line.promoType !== "snacks") {
+        out.push({
+          ...line,
+          unitPrice: line.price,
+          lineTotal: line.qty * line.price,
+          comboQty: 0,
+        });
+        continue;
+      }
+      const comboPrice = Number(line.comboPrice || 40);
+      const comboQty = Math.min(line.qty, shishaSlots);
+      shishaSlots -= comboQty;
+      const fullQty = line.qty - comboQty;
+      const listPrice = Number(line.listPrice || line.price);
+      const lineTotal = comboQty * comboPrice + fullQty * listPrice;
+      out.push({
+        ...line,
+        unitPrice: comboQty === line.qty ? comboPrice : listPrice,
+        lineTotal,
+        comboQty,
+      });
+    }
+    return out;
+  }
+
   function renderCartBar() {
+    const lines = pricedCart();
     let qty = 0;
     let total = 0;
-    for (const line of cart.values()) {
+    for (const line of lines) {
       qty += line.qty;
-      total += line.qty * line.price;
+      total += line.lineTotal;
     }
     if (!qty) {
       cartBar.style.display = "none";
@@ -38,16 +72,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderCartLines() {
     cartLines.innerHTML = "";
-    if (!cart.size) {
+    const lines = pricedCart();
+    if (!lines.length) {
       cartLines.innerHTML = `<p class="muted">Cart is empty.</p>`;
       return;
     }
-    for (const line of cart.values()) {
+    for (const line of lines) {
       const row = document.createElement("div");
       row.className = "cart-line";
+      const comboNote =
+        line.comboQty > 0
+          ? `<div class="muted">${line.comboQty}× Shisha combo $40</div>`
+          : "";
       row.innerHTML = `
         <div>
           <strong>${line.name}</strong>
+          ${comboNote}
           <div class="qty">
             <button type="button" data-act="dec" data-id="${line.id}">−</button>
             <span>${line.qty}</span>
@@ -59,7 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
               : ""
           }
         </div>
-        <div>${money(line.qty * line.price)}</div>
+        <div>${money(line.lineTotal)}</div>
       `;
       cartLines.appendChild(row);
     }
@@ -85,6 +125,9 @@ document.addEventListener("DOMContentLoaded", () => {
           id,
           name: card.dataset.name,
           price: Number(card.dataset.price),
+          listPrice: Number(card.dataset.listPrice || card.dataset.price),
+          promoType: card.dataset.promoType || "",
+          comboPrice: card.dataset.comboPrice ? Number(card.dataset.comboPrice) : null,
           qty: 1,
           note: "",
           allowNote: card.dataset.allowNote === "1",

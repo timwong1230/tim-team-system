@@ -11,15 +11,22 @@
     <p>Order from your phone. Pay at the end with staff.</p>
   </div>
 
-  {% if promo.label %}
   <div class="promo">
-    <strong>{{ promo.label }}</strong>
+    <strong>Now: {{ promo.label }}</strong>
     <div class="muted">{{ promo.window }}
-      {% if promo.drinks_off %} · Drinks {{ (promo.drinks_off * 100)|int }}% off{% endif %}
-      {% if promo.shisha_price %} · Shisha ${{ '%.0f'|format(promo.shisha_price) }}{% endif %}
+      {% if promo.id == 'meditation' %}
+      · Shisha $250 · Drinks 7折
+      {% elif promo.id == 'happy_hour' %}
+      · Drinks 8折 · Shisha regular
+      {% else %}
+      · Full price
+      {% endif %}
+    </div>
+    <div class="muted" style="margin-top:6px">
+      2–5pm Meditation · 5–8pm Happy Hour · after 8pm regular<br />
+      With any Regular Shisha: add a bar snack for $40
     </div>
   </div>
-  {% endif %}
 
   <label class="muted">Party size</label>
   <input class="field" id="partySize" type="number" min="1" max="30" value="{{ session.party_size if session else 2 }}" />
@@ -34,7 +41,16 @@
   <section class="section" id="cat-{{ cat.id }}">
     <h2>{{ cat.name }}</h2>
     {% for item in cat['items'] %}
-    <article class="item" data-id="{{ item['id'] }}" data-name="{{ item['name'] }}" data-price="{{ item['display_price'] }}" data-allow-note="{{ 1 if item['allow_note'] else 0 }}">
+    <article
+      class="item"
+      data-id="{{ item['id'] }}"
+      data-name="{{ item['name'] }}"
+      data-price="{{ item['display_price'] }}"
+      data-list-price="{{ item['price'] }}"
+      data-promo-type="{{ item['promo_type'] }}"
+      data-combo-price="{{ item['combo_price'] if item['combo_price'] is not none else '' }}"
+      data-allow-note="{{ 1 if item['allow_note'] else 0 }}"
+    >
       {% if item['image'] %}
       <div class="item-photo"><img src="{{ item['image'] }}" alt="{{ item['name'] }}" loading="lazy" /></div>
       {% endif %}
@@ -43,12 +59,16 @@
           <h3>{{ item['name'] }}</h3>
           {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
           {% if item['unit'] %}<p class="note">{{ item['unit'] }}</p>{% endif %}
+          {% if item['combo_price'] is not none %}
+          <p class="note">With Shisha: ${{ '%.0f'|format(item['combo_price']) }}</p>
+          {% endif %}
         </div>
         <div class="price">
           <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
           {% if item['display_price'] < item['price'] %}
           <div class="was">${{ '%.0f'|format(item['price']) }}</div>
           {% endif %}
+          {% if item['promo_tag'] %}<div class="note">{{ item['promo_tag'] }}</div>{% endif %}
           <button class="add-btn" type="button">Add</button>
         </div>
       </div>

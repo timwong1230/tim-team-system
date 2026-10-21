@@ -5,46 +5,157 @@ from zoneinfo import ZoneInfo
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
+SHISHA_COMBO_SNACK_PRICE = 40.0
+SHISHA_REGULAR_ID = "shisha-regular"
+
 
 def current_promo(now: datetime | None = None) -> dict:
-    """Return active promo window for Polar Lounge (HK time)."""
+    """
+    Polar time-based pricing (HK):
+    - 2pm–5pm Meditation: Shisha $250, drinks 30% off (7折)
+    - 5pm–8pm Happy Hour: drinks 20% off (8折)
+    - after 8pm (and before 2pm): regular price
+    """
     now = now or datetime.now(HK)
     minutes = now.hour * 60 + now.minute
-    # Meditation 14:00-17:00
     if 14 * 60 <= minutes < 17 * 60:
         return {
             "id": "meditation",
             "label": "Meditation Hour",
             "window": "2pm–5pm",
             "drinks_off": 0.30,
+            "drinks_label": "7折",
             "shisha_price": 250.0,
+            "snack_combo_price": SHISHA_COMBO_SNACK_PRICE,
         }
-    # Happy Hour 17:00-20:00
     if 17 * 60 <= minutes < 20 * 60:
         return {
             "id": "happy_hour",
             "label": "Happy Hour",
             "window": "5pm–8pm",
             "drinks_off": 0.20,
+            "drinks_label": "8折",
             "shisha_price": None,
+            "snack_combo_price": SHISHA_COMBO_SNACK_PRICE,
         }
     return {
-        "id": "none",
-        "label": None,
-        "window": None,
+        "id": "regular",
+        "label": "Regular pricing",
+        "window": "after 8pm",
         "drinks_off": 0.0,
+        "drinks_label": None,
         "shisha_price": None,
+        "snack_combo_price": SHISHA_COMBO_SNACK_PRICE,
     }
 
 
-def price_item(base_price: float, promo_type: str, promo: dict) -> tuple[float, str | None]:
-    """Return (final_price, promo_tag)."""
-    if promo_type == "shisha" and promo.get("shisha_price") is not None:
-        return float(promo["shisha_price"]), promo["label"]
+def price_item(
+    base_price: float,
+    promo_type: str,
+    promo: dict,
+    *,
+    item_id: str | None = None,
+) -> tuple[float, str | None]:
+    """Return (final_price, promo_tag) for a single item (no snack-combo logic)."""
+    if promo_type == "shisha":
+        # Meditation special only for Regular Shisha
+        if item_id == SHISHA_REGULAR_ID and promo.get("shisha_price") is not None:
+            return float(promo["shisha_price"]), promo["label"]
+        return float(base_price), None
     if promo_type == "drinks" and promo.get("drinks_off"):
         discounted = round(base_price * (1 - float(promo["drinks_off"])), 1)
-        return discounted, promo["label"]
+        tag = promo.get("drinks_label") or promo.get("label")
+        return discounted, tag
     return float(base_price), None
+
+
+def price_order_lines(
+    entries: list[dict],
+    *,
+    promo: dict | None = None,
+    extra_shisha_slots: int = 0,
+) -> list[dict]:
+    """
+    Price a list of cart entries.
+
+    each entry: {
+      item_id, name, category_id, promo, base_price, qty, note?
+    }
+
+    Shisha combo: each Regular Shisha unlocks one bar snack at $40
+    (slots from this cart + extra_shisha_slots from open session).
+    """
+    promo = promo or current_promo()
+    combo_price = float(promo.get("snack_combo_price") or SHISHA_COMBO_SNACK_PRICE)
+
+    cart_shisha = sum(
+        int(e["qty"])
+        for e in entries
+        if e["item_id"] == SHISHA_REGULAR_ID
+    )
+    slots = max(0, int(extra_shisha_slots) + cart_shisha)
+
+    # Expand snacks into unit slots so we can apply combo per portion
+    priced: list[dict] = []
+    snack_queue: list[dict] = []
+
+    for e in entries:
+        promo_type = e.get("promo") or "none"
+        unit, tag = price_item(
+            float(e["base_price"]),
+            promo_type,
+            promo,
+            item_id=e["item_id"],
+        )
+        row = {
+            "item_id": e["item_id"],
+            "item_name": e["name"],
+            "category_id": e["category_id"],
+            "promo": promo_type,
+            "qty": int(e["qty"]),
+            "unit_price": float(unit),
+            "note": e.get("note"),
+            "promo_tag": tag,
+        }
+        if promo_type == "snacks":
+            snack_queue.append({**row, "list_price": float(e["base_price"])})
+        else:
+            if tag:
+                note = f"[{tag}] {row['note'] or ''}".strip()
+                row["note"] = note
+            row["line_total"] = round(row["unit_price"] * row["qty"], 1)
+            priced.append(row)
+
+    # Apply $40 combo to as many snack units as shisha slots allow
+    for snack in snack_queue:
+        qty = snack["qty"]
+        combo_qty = min(qty, slots)
+        slots -= combo_qty
+        full_qty = qty - combo_qty
+        if combo_qty:
+            note = f"[Shisha combo $40] {snack['note'] or ''}".strip()
+            priced.append(
+                {
+                    **snack,
+                    "qty": combo_qty,
+                    "unit_price": combo_price,
+                    "line_total": round(combo_price * combo_qty, 1),
+                    "note": note,
+                    "promo_tag": "Shisha combo",
+                }
+            )
+        if full_qty:
+            priced.append(
+                {
+                    **snack,
+                    "qty": full_qty,
+                    "unit_price": float(snack["list_price"]),
+                    "line_total": round(float(snack["list_price"]) * full_qty, 1),
+                    "promo_tag": None,
+                }
+            )
+
+    return priced
 
 
 def compute_bill(

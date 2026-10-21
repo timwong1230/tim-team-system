@@ -29,7 +29,15 @@ from .db import (
     publish_event,
     utc_now,
 )
-from .pricing import business_date, compute_bill, current_promo, price_item
+from .pricing import (
+    SHISHA_COMBO_SNACK_PRICE,
+    SHISHA_REGULAR_ID,
+    business_date,
+    compute_bill,
+    current_promo,
+    price_item,
+    price_order_lines,
+)
 from .receipt import generate_receipt_pdf
 from .reports import daily_sales_report, item_purchase_report, monthly_sales_report
 
@@ -64,6 +72,32 @@ class OrderIn(BaseModel):
     items: list[CartItemIn]
 
 
+def _session_shisha_combo_slots(conn: sqlite3.Connection, session_id: int) -> int:
+    """Unused shisha→$40 snack slots already earned in this open session."""
+    shisha = conn.execute(
+        """
+        SELECT COALESCE(SUM(oi.qty), 0) AS c
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.session_id = ? AND o.status != 'cancelled'
+          AND oi.item_id = ?
+        """,
+        (session_id, SHISHA_REGULAR_ID),
+    ).fetchone()["c"]
+    combo_snacks = conn.execute(
+        """
+        SELECT COALESCE(SUM(oi.qty), 0) AS c
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.session_id = ? AND o.status != 'cancelled'
+          AND oi.category_id = 'snacks'
+          AND oi.unit_price <= ?
+        """,
+        (session_id, SHISHA_COMBO_SNACK_PRICE),
+    ).fetchone()["c"]
+    return max(0, int(shisha) - int(combo_snacks))
+
+
 def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     promo = current_promo()
     cats = conn.execute(
@@ -77,23 +111,28 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         ).fetchall()
         row_items = []
         for item in items:
-            final, tag = price_item(float(item["price"]), cat["promo"], promo)
-            # Meditation shisha price only for Regular Shisha
-            if item["id"] != "shisha-regular" and cat["promo"] == "shisha":
-                final, tag = float(item["price"]), None
-            row_items.append(
-                {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "price": float(item["price"]),
-                    "display_price": final,
-                    "unit": item["unit"],
-                    "note": item["note"],
-                    "allow_note": bool(item["allow_note"]),
-                    "promo_tag": tag,
-                    "image": item["image"],
-                }
+            final, tag = price_item(
+                float(item["price"]),
+                cat["promo"],
+                promo,
+                item_id=item["id"],
             )
+            row = {
+                "id": item["id"],
+                "name": item["name"],
+                "price": float(item["price"]),
+                "display_price": final,
+                "unit": item["unit"],
+                "note": item["note"],
+                "allow_note": bool(item["allow_note"]),
+                "promo_tag": tag,
+                "image": item["image"],
+                "promo_type": cat["promo"],
+                "combo_price": None,
+            }
+            if cat["promo"] == "snacks":
+                row["combo_price"] = SHISHA_COMBO_SNACK_PRICE
+            row_items.append(row)
         out.append(
             {
                 "id": cat["id"],
@@ -163,16 +202,7 @@ async def place_order(table_code: str, body: OrderIn):
     promo = current_promo()
     now = utc_now()
 
-    cur = conn.execute(
-        """
-        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at)
-        VALUES (?, ?, 'new', ?, ?, ?)
-        """,
-        (session["id"], table["id"], body.note, now, now),
-    )
-    order_id = cur.lastrowid
-    lines = []
-
+    raw_entries = []
     for entry in body.items:
         item = conn.execute(
             """
@@ -184,17 +214,35 @@ async def place_order(table_code: str, body: OrderIn):
             (entry.item_id,),
         ).fetchone()
         if not item:
-            conn.rollback()
             conn.close()
             raise HTTPException(400, f"Unknown item: {entry.item_id}")
+        raw_entries.append(
+            {
+                "item_id": item["id"],
+                "name": item["name"],
+                "category_id": item["category_id"],
+                "promo": item["promo"],
+                "base_price": float(item["price"]),
+                "qty": entry.qty,
+                "note": entry.note,
+            }
+        )
 
-        unit, tag = price_item(float(item["price"]), item["promo"], promo)
-        if item["id"] != "shisha-regular" and item["promo"] == "shisha":
-            unit, tag = float(item["price"]), None
-        line_total = round(unit * entry.qty, 1)
-        note = entry.note
-        if tag:
-            note = f"[{tag}] {note or ''}".strip()
+    extra_slots = _session_shisha_combo_slots(conn, session["id"])
+    priced_lines = price_order_lines(
+        raw_entries, promo=promo, extra_shisha_slots=extra_slots
+    )
+
+    cur = conn.execute(
+        """
+        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at)
+        VALUES (?, ?, 'new', ?, ?, ?)
+        """,
+        (session["id"], table["id"], body.note, now, now),
+    )
+    order_id = cur.lastrowid
+    lines = []
+    for row in priced_lines:
         conn.execute(
             """
             INSERT INTO order_items
@@ -203,17 +251,23 @@ async def place_order(table_code: str, body: OrderIn):
             """,
             (
                 order_id,
-                item["id"],
-                item["name"],
-                item["category_id"],
-                item["promo"],
-                entry.qty,
-                unit,
-                line_total,
-                note,
+                row["item_id"],
+                row["item_name"],
+                row["category_id"],
+                row["promo"],
+                row["qty"],
+                row["unit_price"],
+                row["line_total"],
+                row.get("note"),
             ),
         )
-        lines.append({"name": item["name"], "qty": entry.qty, "line_total": line_total})
+        lines.append(
+            {
+                "name": row["item_name"],
+                "qty": row["qty"],
+                "line_total": row["line_total"],
+            }
+        )
 
     payload = {
         "order_id": order_id,
