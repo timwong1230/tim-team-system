@@ -407,10 +407,10 @@ def key_highlights(result: dict[str, Any]) -> list[dict[str, Any]]:
             "sub": format_hkd(monthly_hkd),
         },
         {
-            "label": "10年後退保價值",
-            "hint": "第 10 年示意退保價值（未扣貸）",
-            "value": format_usd(float(y10.get("total_sv_usd") or 0)),
-            "sub": format_hkd(float(y10.get("total_sv_hkd") or 0)),
+            "label": "10年後退保價值（已扣貸款）",
+            "hint": "第 10 年退保後、扣貸可袋落袋（示意）",
+            "value": format_usd(float(y10.get("net_sv_usd") or 0)),
+            "sub": format_hkd(float(y10.get("net_sv_hkd") or 0)),
         },
     ]
 

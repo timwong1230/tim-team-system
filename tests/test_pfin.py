@@ -104,11 +104,15 @@ def test_pfin_pdf_and_whatsapp():
         "保單價值",
         "產品優惠",
         "每月利息支出",
-        "10年後退保價值",
+        "10年後退保價值（已扣貸款）",
     ]
     assert by_label["保單價值"]["value"] == "US$328,000"
     assert by_label["產品優惠"]["value"].startswith("6%")
-    assert "US$624,182" in by_label["10年後退保價值"]["value"]
+    y10 = next(y for y in r["years"] if y["year"] == 10)
+    assert by_label["10年後退保價值（已扣貸款）"]["value"] == pfin.format_usd(
+        y10["net_sv_usd"]
+    )
+    assert y10["net_sv_usd"] == y10["total_sv_usd"] - r["summary"]["loan_usd"]
     assert by_label["自己出本金"]["sub"].startswith("HK$")
     assert r["summary"]["monthly_interest_usd"] == round(
         r["summary"]["annual_interest_usd"] / 12
@@ -119,6 +123,7 @@ def test_pfin_pdf_and_whatsapp():
     assert "陳生" in wa
     assert "產品重點" in wa
     assert "見客重點" not in wa
+    assert "已扣貸款" in wa
     for label in by_label:
         assert label in wa
 
@@ -136,11 +141,12 @@ def test_pfin_pdf_and_whatsapp():
     assert "產品重點" in texts
     assert "見客重點" not in texts
     assert "Day 1 首期" in texts
+    assert "已扣貸款" in texts
     for label in by_label:
         assert label in texts
     assert "US$64,413" in texts
     assert "US$1,078" in texts or "1,078" in texts
-    assert "US$624,182" in texts
+    assert pfin.format_usd(y10["net_sv_usd"]) in texts
 
     via = build_client_pdf(
         title="保費融資計劃書",

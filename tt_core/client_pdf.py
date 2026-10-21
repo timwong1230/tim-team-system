@@ -684,7 +684,7 @@ def build_pfin_pdf(
     pdf.multi_cell(
         pdf.epw,
         4.5,
-        "一眼睇晒：Day 1 首期、保單價值、產品優惠、每月利息、十年後退保價值（示意）。",
+        "一眼睇晒：Day 1 首期、保單價值、產品優惠、每月利息、十年後扣貸可袋落袋（示意）。",
     )
     pdf.ln(1)
     _draw_pfin_product_cards(pdf, highlights)
