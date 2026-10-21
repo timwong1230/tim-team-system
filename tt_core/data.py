@@ -17,6 +17,7 @@ from tt_core.constants import (
     INACTIVE_MEMBERS,
     MDRT_TARGET,
     RECRUIT_YEAR_TARGET,
+    SEED_USERS,
     SHEET_SCHEMAS,
     WEEKLY_MIN_ACTS,
 )
@@ -78,8 +79,16 @@ def get_team_users() -> pd.DataFrame:
     return df[~mask].copy()
 
 
-def ensure_guest_user() -> bool:
-    """Make sure ``guest`` exists in Sheets + local users cache. Returns True if present."""
+def _seed_user_row(username: str, password: str, role: str) -> list:
+    url = (
+        f"https://ui-avatars.com/api/?name={username}"
+        f"&background=d4af37&color=fff&size=128"
+    )
+    return [username, password, role, "Tim Team", 0, url, ""]
+
+
+def ensure_seed_users(*, only: str | None = None) -> bool:
+    """Append missing SEED_USERS (e.g. KK) to Sheets + local users cache."""
     try:
         from tt_core import cache_store
         from tt_core.db import get_sheet
@@ -91,11 +100,26 @@ def ensure_guest_user() -> bool:
         "users",
         ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
     )
+    want = list(SEED_USERS)
+    if only:
+        key = str(only).strip().lower()
+        want = [u for u in want if u[0].lower() == key]
+        if not want:
+            return False
+
     df = read_data("users")
-    if not df.empty:
-        names = set(df["username"].astype(str).str.strip().str.lower())
-        if "guest" in names:
+    have = (
+        set(df["username"].astype(str).str.strip().str.lower())
+        if df is not None and not df.empty
+        else set()
+    )
+    missing = [u for u in want if u[0].lower() not in have]
+    if not missing and want:
+        # Still present in cache — done
+        if only:
             return True
+        # Fall through only if we still need to sync Sheets for some
+        pass
 
     if get_sheet is not None:
         try:
@@ -105,59 +129,93 @@ def ensure_guest_user() -> bool:
                     existing = [str(x).strip().lower() for x in (ws.col_values(1) or [])]
                 except Exception:
                     existing = []
-                if "guest" not in existing:
-                    if not existing:
-                        ws.append_row(cols, value_input_option="USER_ENTERED")
-                    row = builtin_guest_row()
-                    ws.append_row(row, value_input_option="USER_ENTERED")
+                if not existing:
+                    ws.append_row(cols, value_input_option="USER_ENTERED")
+                    existing = ["username"]
+                for username, password, role in want:
+                    if username.lower() in existing:
+                        continue
+                    ws.append_row(
+                        _seed_user_row(username, password, role),
+                        value_input_option="USER_ENTERED",
+                    )
+                    existing.append(username.lower())
         except Exception:
             pass
 
-    # Merge guest into cache so subsequent reads see it (even if Sheets lag)
     try:
         fresh = read_data("users", force=True)
     except Exception:
         fresh = df
     if fresh is None or getattr(fresh, "empty", True):
-        fresh = pd.DataFrame([builtin_guest_row()], columns=cols)
+        fresh = pd.DataFrame(
+            [_seed_user_row(u, p, r) for u, p, r in want],
+            columns=cols,
+        )
     else:
         names = set(fresh["username"].astype(str).str.strip().str.lower())
-        if "guest" not in names:
-            guest_df = pd.DataFrame([dict(zip(cols, builtin_guest_row()))])
+        extras = []
+        for username, password, role in want:
+            if username.lower() in names:
+                continue
+            extras.append(dict(zip(cols, _seed_user_row(username, password, role))))
+        if extras:
+            extra_df = pd.DataFrame(extras)
             for col in fresh.columns:
-                if col not in guest_df.columns:
-                    guest_df[col] = ""
-            guest_df = guest_df.reindex(columns=list(fresh.columns), fill_value="")
-            fresh = pd.concat([fresh, guest_df], ignore_index=True)
+                if col not in extra_df.columns:
+                    extra_df[col] = ""
+            extra_df = extra_df.reindex(columns=list(fresh.columns), fill_value="")
+            fresh = pd.concat([fresh, extra_df], ignore_index=True)
     try:
         if cache_store is not None:
             cache_store.invalidate_memory("users")
-            cache_store.save_sheet("users", fresh, source="guest_seed")
+            cache_store.save_sheet("users", fresh, source="seed_users")
     except Exception:
         pass
     return True
 
 
+def ensure_guest_user() -> bool:
+    """Back-compat wrapper — seed the trial guest account."""
+    return ensure_seed_users(only="guest")
+
+
 def login(u: str, p: str):
     uname = str(u or "").strip()
     pw = str(p or "")
-    df = get_clean_users()
-    if not df.empty:
-        df = df.copy()
-        df["password"] = df["password"].map(_normalize_password_cell)
-        user = df[
-            (df["username"].astype(str).str.strip().str.lower() == uname.lower())
-            & (df["password"] == pw)
-        ]
-        if not user.empty:
-            return user.values.tolist()
 
-    # Built-in trial account — works even if Sheets/cache never seeded guest
-    if is_guest_account(uname) and pw == GUEST_PASSWORD:
+    def _match(frame: pd.DataFrame):
+        if frame is None or frame.empty:
+            return []
+        frame = frame.copy()
+        frame["password"] = frame["password"].map(_normalize_password_cell)
+        hit = frame[
+            (frame["username"].astype(str).str.strip().str.lower() == uname.lower())
+            & (frame["password"] == pw)
+        ]
+        return hit.values.tolist() if not hit.empty else []
+
+    rows = _match(get_clean_users())
+    if rows:
+        return rows
+
+    # Seed known colleagues / guest into Sheets+cache, then retry
+    seed_names = {u[0].lower() for u in SEED_USERS}
+    if uname.lower() in seed_names:
         try:
-            ensure_guest_user()
+            ensure_seed_users(only=uname)
         except Exception:
             pass
+        rows = _match(get_clean_users())
+        if rows:
+            return rows
+        # Last resort: accept seeded credentials even if cache still empty
+        for username, password, role in SEED_USERS:
+            if username.lower() == uname.lower() and password == pw:
+                return [_seed_user_row(username, password, role)]
+
+    # Built-in trial guest (explicit path kept for clarity)
+    if is_guest_account(uname) and pw == GUEST_PASSWORD:
         return [builtin_guest_row()]
     return []
 

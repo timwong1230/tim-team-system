@@ -387,13 +387,18 @@ def init_db_gs():
             if not existing:
                 ws.append_row(SHEET_SCHEMAS["users"], value_input_option="USER_ENTERED")
                 existing = ["username"]
-            defaults = [
-                ("Admin", "admin123", "Leader"),
-                ("Tim", "1234", "Member"),
-                ("Oscar", "1234", "Member"),
-                # Trial login — role Guest stays off 打卡／業績／招募 rosters
-                ("guest", "1234", "Guest"),
-            ]
+            try:
+                from tt_core.constants import SEED_USERS
+
+                defaults = list(SEED_USERS)
+            except Exception:
+                defaults = [
+                    ("Admin", "admin123", "Leader"),
+                    ("Tim", "1234", "Member"),
+                    ("Oscar", "1234", "Member"),
+                    ("KK", "1234", "Member"),
+                    ("guest", "1234", "Guest"),
+                ]
             existing_l = {str(x).strip().lower() for x in existing}
             for u in defaults:
                 if time.time() - started > budget:

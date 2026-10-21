@@ -7,6 +7,16 @@ GUEST_ROLE = "Guest"
 GUEST_USERNAMES = ["guest"]
 GUEST_PASSWORD = "1234"
 
+# Seeded into users sheet on init / first login if missing
+# (username, password, role)
+SEED_USERS = [
+    ("Admin", "admin123", "Leader"),
+    ("Tim", "1234", "Member"),
+    ("Oscar", "1234", "Member"),
+    ("KK", "1234", "Member"),
+    ("guest", "1234", "Guest"),
+]
+
 MDRT_TARGET = 512_800
 Q1_TARGET = 88_000
 WEEKLY_MIN_ACTS = 3
