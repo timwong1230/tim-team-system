@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-21T12:44Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-21T13:06Z
 
 
 from __future__ import annotations
@@ -884,6 +884,23 @@ def _reset_nav_to_home() -> None:
         st.session_state.pop(k, None)
 
 
+def _do_logout() -> None:
+    """Clear login + block browser restore (guest used to bounce back in)."""
+    st.session_state["logged_in"] = False
+    st.session_state.pop("user", None)
+    st.session_state.pop("role", None)
+    st.session_state.pop("avatar", None)
+    st.session_state.pop("_tt_last_active", None)
+    try:
+        from tt_core.auth_persist import clear_browser_session
+
+        clear_browser_session()
+    except Exception:
+        st.session_state["_tt_logout_block"] = True
+    _reset_nav_to_home()
+    st.rerun()
+
+
 def _esc_html(s: str) -> str:
     return (
         str(s or "")
@@ -936,8 +953,9 @@ except Exception:
 # Idle > 30 min in the token → refuse restore (see tt_core.auth_persist)
 if not st.session_state.get("logged_in") or not st.session_state.get("user"):
     try:
-        from tt_core.auth_persist import try_restore_session
+        from tt_core.auth_persist import flush_pending_logout_clear, try_restore_session
 
+        flush_pending_logout_clear()
         if try_restore_session():
             _reset_nav_to_home()
             st.rerun()
@@ -945,6 +963,13 @@ if not st.session_state.get("logged_in") or not st.session_state.get("user"):
         pass
 
 if not st.session_state["logged_in"]:
+    try:
+        from tt_core.auth_persist import flush_pending_logout_clear
+
+        flush_pending_logout_clear()
+    except Exception:
+        pass
+
     def _render_login_brand() -> None:
         # Text-only brand hero — brand color via CSS class (inline color gets stripped on Cloud)
         st.markdown(
@@ -989,11 +1014,13 @@ if not st.session_state["logged_in"]:
                 from tt_core.auth_persist import persist_browser_session, touch_activity
 
                 touch_activity()
-                persist_browser_session(
-                    user=str(d[0][0]),
-                    role=str(d[0][2]),
-                    avatar=str(d[0][5] or ""),
-                )
+                # Guest is never browser-persisted (logout was bouncing back in)
+                if not is_guest_account(str(d[0][0]), str(d[0][2])):
+                    persist_browser_session(
+                        user=str(d[0][0]),
+                        role=str(d[0][2]),
+                        avatar=str(d[0][5] or ""),
+                    )
             except Exception:
                 pass
             _reset_nav_to_home()
@@ -1265,19 +1292,7 @@ with st.sidebar:
         st.toast("數據已更新", icon="✅")
         st.rerun()
     if st.button("登出", use_container_width=True, type="secondary", key="sidebar_logout"):
-        st.session_state["logged_in"] = False
-        st.session_state.pop("user", None)
-        st.session_state.pop("role", None)
-        st.session_state.pop("avatar", None)
-        st.session_state.pop("_tt_last_active", None)
-        try:
-            from tt_core.auth_persist import clear_browser_session
-
-            clear_browser_session()
-        except Exception:
-            pass
-        _reset_nav_to_home()
-        st.rerun()
+        _do_logout()
 
 if PHONE:
     st.markdown('<div class="tt-mobile-nav">', unsafe_allow_html=True)
@@ -1614,6 +1629,9 @@ def page_home():
         with c2:
             if st.button("🧠 問 AI Tim", use_container_width=True, key="guest_go_coach"):
                 go_menu("🧠 AI Tim", coach_tim_pending="介紹吓你可以幫我做咩？")
+        st.markdown("")
+        if st.button("登出", use_container_width=True, type="secondary", key="guest_home_logout"):
+            _do_logout()
         return
 
     # World / HK headlines so the team sees today's big picture on login

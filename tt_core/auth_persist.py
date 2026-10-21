@@ -26,9 +26,22 @@ _TTL_DAYS = int(os.environ.get("TIM_TEAM_SESSION_DAYS", "7"))
 _LS_KEY = "tt_sess_v2"
 _LEGACY_LS_KEY = "tt_sess_v1"
 _LOGOUT_COOKIE = "tt_logout"
+_LOGOUT_QP = "tt_out"
 _LAST_ACTIVE_KEY = "_tt_last_active"
 _LOGOUT_BLOCK_KEY = "_tt_logout_block"
 _BRIDGE_DONE_KEY = "_tt_sess_bridge_done"
+_NEED_CLEAR_JS_KEY = "_tt_need_clear_js"
+
+
+def _is_guest(user: str = "", role: str = "") -> bool:
+    try:
+        from tt_core.data import is_guest_account
+
+        return bool(is_guest_account(user, role))
+    except Exception:
+        u = str(user or "").strip().lower()
+        r = str(role or "").strip().lower()
+        return u == "guest" or r == "guest"
 
 
 def _b64url(data: bytes) -> str:
@@ -146,12 +159,59 @@ def _logout_blocked() -> bool:
     if st.session_state.get(_LOGOUT_BLOCK_KEY):
         return True
     try:
+        # Sync flag — survives rerun even when clear JS has not run yet
+        if st.query_params.get(_LOGOUT_QP):
+            return True
+    except Exception:
+        pass
+    try:
         cookies = st.context.cookies
         if cookies is not None and cookies.get(_LOGOUT_COOKIE):
             return True
     except Exception:
         pass
     return False
+
+
+def _inject_clear_storage_js() -> None:
+    """Client-side wipe — call on a stable page (login), not only before rerun."""
+    key_js = json.dumps(_LS_KEY)
+    legacy_js = json.dumps(_LEGACY_LS_KEY)
+    logout_js = json.dumps(_LOGOUT_COOKIE)
+    script = f"""
+<script>
+(function () {{
+  try {{
+    var key = {key_js};
+    var legacy = {legacy_js};
+    localStorage.removeItem(key);
+    localStorage.removeItem(legacy);
+    document.cookie = key + "=; Max-Age=0; Path=/; SameSite=Lax";
+    document.cookie = legacy + "=; Max-Age=0; Path=/; SameSite=Lax";
+    document.cookie = {logout_js} + "=1; Max-Age=86400; Path=/; SameSite=Lax";
+  }} catch (e) {{}}
+  try {{
+    var url = new URL(window.location.href);
+    if (url.searchParams.has('tt_sess')) {{
+      url.searchParams.delete('tt_sess');
+      window.history.replaceState({{}}, '', url.toString());
+    }}
+  }} catch (e) {{}}
+}})();
+</script>
+"""
+    try:
+        st.html(script, unsafe_allow_javascript=True)
+    except Exception:
+        pass
+
+
+def flush_pending_logout_clear() -> None:
+    """Run deferred localStorage/cookie clear on the login screen."""
+    if not st.session_state.get(_NEED_CLEAR_JS_KEY) and not _logout_blocked():
+        return
+    _inject_clear_storage_js()
+    st.session_state.pop(_NEED_CLEAR_JS_KEY, None)
 
 
 def persist_browser_session(
@@ -161,13 +221,29 @@ def persist_browser_session(
     avatar: str = "",
     last_active: float | None = None,
 ) -> str:
-    """Save signed session to localStorage + cookie; clear logout block."""
+    """Save signed session to localStorage + cookie; clear logout block.
+
+    Guest trial accounts are never persisted — they were bouncing back in
+    after 「登出」via localStorage restore.
+    """
+    if _is_guest(user, role):
+        st.session_state[_LAST_ACTIVE_KEY] = float(
+            last_active if last_active is not None else time.time()
+        )
+        return ""
     la = float(last_active if last_active is not None else time.time())
     token = make_session_token(
         user=user, role=role, avatar=avatar, last_active=la
     )
     st.session_state[_LAST_ACTIVE_KEY] = la
     st.session_state.pop(_LOGOUT_BLOCK_KEY, None)
+    st.session_state.pop(_NEED_CLEAR_JS_KEY, None)
+    try:
+        qp = st.query_params
+        if _LOGOUT_QP in qp:
+            del qp[_LOGOUT_QP]
+    except Exception:
+        pass
     token_js = json.dumps(token)
     key_js = json.dumps(_LS_KEY)
     legacy_js = json.dumps(_LEGACY_LS_KEY)
@@ -200,38 +276,18 @@ def persist_browser_session(
 
 
 def clear_browser_session() -> None:
-    """Drop persisted session and block restore until next successful login."""
+    """Drop persisted session and block restore until next successful login.
+
+    Sets sync flags (session_state + ``?tt_out=1``) immediately, and defers the
+    localStorage wipe to the next stable render so ``st.rerun()`` cannot skip JS.
+    """
     st.session_state[_LOGOUT_BLOCK_KEY] = True
+    st.session_state[_NEED_CLEAR_JS_KEY] = True
     st.session_state.pop(_LAST_ACTIVE_KEY, None)
     st.session_state.pop(_BRIDGE_DONE_KEY, None)
-    key_js = json.dumps(_LS_KEY)
-    legacy_js = json.dumps(_LEGACY_LS_KEY)
-    logout_js = json.dumps(_LOGOUT_COOKIE)
-    script = f"""
-<script>
-(function () {{
-  try {{
-    var key = {key_js};
-    var legacy = {legacy_js};
-    localStorage.removeItem(key);
-    localStorage.removeItem(legacy);
-    document.cookie = key + "=; Max-Age=0; Path=/; SameSite=Lax";
-    document.cookie = legacy + "=; Max-Age=0; Path=/; SameSite=Lax";
-    // Blocks restore across websocket reconnect until next login
-    document.cookie = {logout_js} + "=1; Max-Age=86400; Path=/; SameSite=Lax";
-  }} catch (e) {{}}
-  try {{
-    var url = new URL(window.location.href);
-    if (url.searchParams.has('tt_sess')) {{
-      url.searchParams.delete('tt_sess');
-      window.history.replaceState({{}}, '', url.toString());
-    }}
-  }} catch (e) {{}}
-}})();
-</script>
-"""
+    st.session_state.pop("_tt_last_persist", None)
     try:
-        st.html(script, unsafe_allow_javascript=True)
+        st.query_params[_LOGOUT_QP] = "1"
     except Exception:
         pass
     try:
@@ -240,6 +296,8 @@ def clear_browser_session() -> None:
             del qp["tt_sess"]
     except Exception:
         pass
+    # Best-effort clear now; flush_pending_logout_clear runs again on login page
+    _inject_clear_storage_js()
 
 
 # Back-compat alias used by older app paths
@@ -252,21 +310,23 @@ def touch_activity(*, persist: bool = False) -> None:
 
     When ``persist`` is True (or every ~2 minutes while logged in), refresh the
     browser token so idle countdown survives phone sleeps / reconnects.
+    Guest sessions are never written to the browser.
     """
     now = time.time()
     st.session_state[_LAST_ACTIVE_KEY] = now
+    user = str(st.session_state.get("user") or "").strip()
+    role = str(st.session_state.get("role") or "")
+    if not user or _is_guest(user, role):
+        return
     if not persist:
         last_persist = float(st.session_state.get("_tt_last_persist") or 0)
         # Refresh cookie at least every 2 minutes of active use
         if now - last_persist < 120:
             return
-    user = str(st.session_state.get("user") or "").strip()
-    if not user:
-        return
     try:
         persist_browser_session(
             user=user,
-            role=str(st.session_state.get("role") or "Member"),
+            role=role or "Member",
             avatar=str(st.session_state.get("avatar") or ""),
             last_active=now,
         )
@@ -329,6 +389,10 @@ def try_restore_session() -> bool:
     if token:
         data = parse_session_token(str(token))
         if data:
+            # Never auto-restore guest trial sessions
+            if _is_guest(data.get("user") or "", data.get("role") or ""):
+                clear_browser_session()
+                return False
             _apply_session(data)
             # Sliding idle window — refresh last_active on successful wake
             try:
@@ -357,16 +421,26 @@ def try_restore_session() -> bool:
     st.session_state[_BRIDGE_DONE_KEY] = True
     key_js = json.dumps(_LS_KEY)
     legacy_js = json.dumps(_LEGACY_LS_KEY)
+    logout_cookie_js = json.dumps(_LOGOUT_COOKIE)
     script = f"""
 <script>
 (function () {{
   try {{
+    // Honour logout cookie — do not bounce after 登出
+    if (document.cookie.split(';').some(function (c) {{
+      return c.trim().indexOf({logout_cookie_js} + '=') === 0;
+    }})) {{
+      localStorage.removeItem({key_js});
+      localStorage.removeItem({legacy_js});
+      return;
+    }}
     var key = {key_js};
     var legacy = {legacy_js};
     var token = localStorage.getItem(key) || localStorage.getItem(legacy);
     if (!token) return;
     var url = new URL(window.location.href);
     if (url.searchParams.get('tt_sess')) return;
+    if (url.searchParams.get({json.dumps(_LOGOUT_QP)})) return;
     url.searchParams.set('tt_sess', token);
     window.location.replace(url.toString());
   }} catch (e) {{}}
