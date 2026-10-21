@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-18T00:55Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-21T12:28Z
 
 
 from __future__ import annotations
