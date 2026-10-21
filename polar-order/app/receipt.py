@@ -97,11 +97,17 @@ def generate_receipt_pdf(
         c.drawRightString(width - 18 * mm, y, _money(value))
         y -= 5.5 * mm
 
-    row("Subtotal", bill["subtotal"])
-    row(f"Snack charge ({bill['party_size']} × $10)", bill["snack_charge"])
+    row("Subtotal (products)", bill["subtotal"])
     if bill.get("discount_percent"):
-        row(f"Discount {int(bill['discount_percent'])}%", -float(bill["discount_amount"]))
-    row(f"Service {int(bill['service_charge_rate'] * 100)}%", bill["service_charge"])
+        row(
+            f"Discount {int(bill['discount_percent'])}% (products only)",
+            -float(bill["discount_amount"]),
+        )
+    row(f"Snack charge ({bill['party_size']} × $10)", bill["snack_charge"])
+    row(
+        f"Service {int(bill['service_charge_rate'] * 100)}% (on full price)",
+        bill["service_charge"],
+    )
     row("Amount due", bill["total"], bold=True)
 
     y -= 8 * mm

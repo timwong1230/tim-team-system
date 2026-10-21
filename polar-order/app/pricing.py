@@ -56,26 +56,26 @@ def compute_bill(
 ) -> dict:
     """
     discount_percent: 0 = full price, 10 = 10% off, 20 = 20% off.
-    Order: subtotal + snack → discount → service charge on the discounted amount.
+
+    - Discount applies to product subtotal only (not snack, not service).
+    - Service charge is calculated on full price: (subtotal + snack) × rate.
     """
     subtotal = round(sum(float(x["line_total"]) for x in lines), 1)
     snack_charge = round(max(1, party_size) * snack_charge_per_head, 1)
-    pre_discount = round(subtotal + snack_charge, 1)
+    full_before_service = round(subtotal + snack_charge, 1)
+    service = round(full_before_service * service_charge_rate, 1)
     try:
         disc = max(0.0, min(100.0, float(discount_percent or 0)))
     except (TypeError, ValueError):
         disc = 0.0
-    discount_amount = round(pre_discount * (disc / 100.0), 1)
-    after_discount = round(pre_discount - discount_amount, 1)
-    service = round(after_discount * service_charge_rate, 1)
-    total = round(after_discount + service, 1)
+    discount_amount = round(subtotal * (disc / 100.0), 1)
+    total = round(subtotal + snack_charge + service - discount_amount, 1)
     return {
         "subtotal": subtotal,
         "snack_charge": snack_charge,
         "service_charge": service,
         "service_charge_rate": service_charge_rate,
-        "pre_discount_total": pre_discount,
-        "after_discount": after_discount,
+        "pre_discount_total": full_before_service,  # used by bill UI base (subtotal+snack)
         "discount_percent": disc,
         "discount_amount": discount_amount,
         "total": total,

@@ -22,15 +22,15 @@
   <div class="card" id="billCard"
        data-subtotal="{{ bill.subtotal }}"
        data-snack="{{ bill.snack_charge }}"
-       data-rate="{{ bill.service_charge_rate }}"
-       data-pre="{{ bill.pre_discount_total }}">
-    <div class="row"><span>Subtotal</span><span id="vSub">${{ '%.0f'|format(bill.subtotal) }}</span></div>
-    <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span id="vSnack">${{ '%.0f'|format(bill.snack_charge) }}</span></div>
+       data-service="{{ bill.service_charge }}"
+       data-rate="{{ bill.service_charge_rate }}">
+    <div class="row"><span>Subtotal (products)</span><span id="vSub">${{ '%.0f'|format(bill.subtotal) }}</span></div>
     <div class="row" id="discRow" style="{% if not bill.discount_percent %}display:none{% endif %}">
-      <span id="discLabel">Discount {{ bill.discount_percent|int }}%</span>
+      <span id="discLabel">Discount {{ bill.discount_percent|int }}% (products only)</span>
       <span id="vDisc">-${{ '%.0f'|format(bill.discount_amount) }}</span>
     </div>
-    <div class="row"><span>Service {{ (bill.service_charge_rate * 100)|int }}%</span><span id="vSvc">${{ '%.0f'|format(bill.service_charge) }}</span></div>
+    <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span id="vSnack">${{ '%.0f'|format(bill.snack_charge) }}</span></div>
+    <div class="row"><span>Service {{ (bill.service_charge_rate * 100)|int }}% (on full price)</span><span id="vSvc">${{ '%.0f'|format(bill.service_charge) }}</span></div>
     <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span id="vTotal">${{ '%.0f'|format(bill.total) }}</span></div>
   </div>
   <p class="muted">Collect payment with your third-party POS / terminal, then mark paid.</p>
@@ -63,15 +63,14 @@
   const card = document.getElementById('billCard');
   function recalc() {
     if (!card) return;
-    const pre = Number(card.dataset.pre); // subtotal + snack
-    const rate = Number(card.dataset.rate);
+    const subtotal = Number(card.dataset.subtotal);
+    const snack = Number(card.dataset.snack);
+    const service = Number(card.dataset.service); // fixed on full price
     let d = Number(input.value || 0);
     if (Number.isNaN(d)) d = 0;
     d = Math.max(0, Math.min(100, d));
-    const discAmt = pre * (d / 100);
-    const after = pre - discAmt;
-    const service = after * rate;
-    const total = after + service;
+    const discAmt = subtotal * (d / 100); // products only
+    const total = subtotal + snack + service - discAmt;
     document.getElementById('billTotal').textContent = money(total);
     document.getElementById('vTotal').textContent = money(total);
     document.getElementById('vSvc').textContent = money(service);
@@ -79,7 +78,7 @@
     const row = document.getElementById('discRow');
     if (d > 0) {
       row.style.display = 'flex';
-      document.getElementById('discLabel').textContent = `Discount ${d}%`;
+      document.getElementById('discLabel').textContent = `Discount ${d}% (products only)`;
       document.getElementById('vDisc').textContent = '-' + money(discAmt);
     } else {
       row.style.display = 'none';
