@@ -55,6 +55,7 @@ def test_root_menu_uses_client_and_recruit_hubs():
         "💹 收入／支出 T-Account",
         "🛡️ 保障缺口",
         "🏥 醫療融資計算機",
+        "🏦 保費融資計算機",
         "🆚 保險公司新人 Package 對比",
     ):
         assert leaf not in menu_block
