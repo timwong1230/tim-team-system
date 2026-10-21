@@ -1114,6 +1114,7 @@ CLIENT_TOOL_LABELS = [
     "💹 收入／支出 T-Account",
     "🛡️ 保障缺口",
     "🏥 醫療融資計算機",
+    "🏦 保費融資計算機",
 ]
 RECRUIT_TOOLS_MENU = "🎯 招募工具"
 RECRUIT_TOOL_LABELS = [
@@ -4368,6 +4369,8 @@ def page_client_tools():
         page_protection_gap()
     elif "醫療融資" in pick:
         page_medical_finance()
+    elif "保費融資" in pick:
+        page_pfin()
     else:
         st.info("請揀一個客戶工具。")
 
@@ -5613,6 +5616,237 @@ def page_proposal():
     st.caption("細節以正式計劃書／條款為準；分紅非保證。數字只留在此裝置 session。")
 
 
+def page_pfin():
+    """見客用：智盈匯聚 V 保費融資（銀行對比／槓桿 IRR）示意計算機。"""
+    st.markdown("## 🏦 保費融資計算機")
+    st.caption(
+        "FWD 智盈匯聚 (優越版) V · 一次過保費 + 零售銀行融資示意。"
+        "數字按公開示範表縮放，銀行條款為快照——見客前請再核對。"
+    )
+
+    try:
+        from tt_core import pfin as pfin_mod
+        import importlib
+
+        importlib.reload(pfin_mod)
+    except Exception as e:
+        st.error(f"保費融資模組未能載入：{e}。請 Reboot 後再試。")
+        return
+
+    st.warning(
+        (pfin_mod.banks_disclaimer() or "")
+        + " 利益說明數字按公開示範表（基準 US$400,000）按比例縮放，紅利非保證。"
+    )
+    meta = pfin_mod.illustration_meta()
+    banks = pfin_mod.list_banks()
+    bank_by_id = {b["id"]: b for b in banks}
+
+    st.markdown("#### 1. 保費同假設")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        premium = st.number_input(
+            "保費（USD，一次過）",
+            min_value=50_000,
+            max_value=5_000_000,
+            value=400_000,
+            step=10_000,
+            key="pfin_premium",
+        )
+    with c2:
+        apply_promo = st.checkbox(
+            "套用公司保費折扣（4%／6%／8%）",
+            value=True,
+            key="pfin_promo",
+            help="示意檔位：<US$20萬 4%；<US$50萬 6%；以上 8%",
+        )
+    with c3:
+        scenario = st.selectbox(
+            "紅利情景",
+            ["expected", "pessimistic", "optimistic"],
+            format_func=lambda x: {
+                "expected": "當前假設（Expected）",
+                "pessimistic": "較保守（Pessimistic）",
+                "optimistic": "較樂觀（Optimistic）",
+            }[x],
+            key="pfin_scenario",
+        )
+
+    st.markdown("#### 2. 揀銀行")
+    default_bank = next(
+        (b["id"] for b in banks if b.get("isRecommendedForIconV")), banks[0]["id"]
+    )
+    bank_id = st.radio(
+        "融資銀行",
+        options=[b["id"] for b in banks],
+        index=[b["id"] for b in banks].index(default_bank),
+        format_func=lambda i: (
+            f"{bank_by_id[i].get('shortName')}"
+            + (
+                " ★"
+                if bank_by_id[i].get("isRecommendedForIconV")
+                else ""
+            )
+            + f" · LTV {float((bank_by_id[i].get('maxLTV') or {}).get('sameCurrencyRatio') or 0)*100:.0f}%"
+            + f" · ~{float((bank_by_id[i].get('interestRateHKD') or {}).get('currentEstimatedRate') or 0):.2f}%"
+        ),
+        key="pfin_bank",
+    )
+    bank = bank_by_id[bank_id]
+    st.caption(
+        f"{bank.get('badge') or ''} — {bank.get('tagline') or ''}"
+    )
+    with st.expander("銀行利率／成數詳情", expanded=False):
+        st.markdown(
+            f"**利率公式：** {((bank.get('interestRateHKD') or {}).get('formula') or '—')}\n\n"
+            f"**詳情：** {((bank.get('interestRateHKD') or {}).get('details') or '—')}\n\n"
+            f"**LTV：** {((bank.get('maxLTV') or {}).get('description') or '—')}\n\n"
+            f"**設立費：** {((bank.get('setupFee') or {}).get('description') or '—')}\n\n"
+            f"**優惠期（快照）：** {bank.get('promotionPeriod') or '—'}"
+        )
+
+    rate_default = float(
+        (bank.get("interestRateHKD") or {}).get("currentEstimatedRate") or 4.0
+    )
+    ltv_default = float((bank.get("maxLTV") or {}).get("sameCurrencyRatio") or 0.9)
+    a1, a2 = st.columns(2)
+    with a1:
+        rate = st.number_input(
+            "預估年息 %（可改）",
+            min_value=0.0,
+            max_value=15.0,
+            value=float(rate_default),
+            step=0.05,
+            key=f"pfin_rate_{bank_id}",
+        )
+    with a2:
+        ltv = st.slider(
+            "貸款成數 LTV",
+            min_value=0.50,
+            max_value=0.95,
+            value=float(ltv_default),
+            step=0.01,
+            key=f"pfin_ltv_{bank_id}",
+        )
+
+    try:
+        result = pfin_mod.compute_financing(
+            float(premium),
+            bank_id,
+            interest_rate_pct=float(rate),
+            ltv=float(ltv),
+            apply_promotion=bool(apply_promo),
+            scenario=str(scenario),
+        )
+    except Exception as e:
+        st.error(f"計唔到：{e}")
+        return
+
+    s = result["summary"]
+    st.markdown("#### 3. 融資摘要")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("首日保證 CV", pfin_mod.format_usd(s["day1_guaranteed_cv_usd"]))
+    m2.metric(
+        f"貸款（LTV {s['ltv_ratio']*100:.0f}%）",
+        pfin_mod.format_usd(s["loan_usd"]),
+        help=pfin_mod.format_hkd(s["loan_hkd"]),
+    )
+    m3.metric(
+        "初期自資（Outlay）",
+        pfin_mod.format_usd(s["initial_outlay_usd"]),
+        help=pfin_mod.format_hkd(s["initial_outlay_hkd"]),
+    )
+    m4.metric("槓桿倍數", f"{s['leverage_ratio']:.2f}x")
+
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric(
+        "保費折扣",
+        pfin_mod.format_usd(s["discount_usd"]),
+        help=f"{s['discount_rate']*100:.0f}%" if s["apply_promotion"] else "未套用",
+    )
+    d2.metric("設立費", pfin_mod.format_usd(s["setup_fee_usd"]))
+    d3.metric("Levy", pfin_mod.format_usd(s["levy_usd"]))
+    d4.metric(
+        "每年利息（示意）",
+        pfin_mod.format_usd(s["annual_interest_usd"]),
+        help=f"{s['annual_interest_rate_pct']:.2f}%",
+    )
+
+    st.caption(
+        f"匯率 1 USD = {result['fx']} HKD · 產品：{result['product']} · "
+        f"示範表基準保費 {pfin_mod.format_usd(meta['base_premium_usd'])}"
+    )
+
+    st.markdown("#### 4. 重點年份")
+    focus_rows = []
+    for y in result["focus_years"]:
+        focus_rows.append(
+            {
+                "保單年度": y["year"],
+                "年齡": y["age"],
+                "退保價值（USD）": round(y["total_sv_usd"]),
+                "扣貸後淨值": round(y["net_sv_usd"]),
+                "累計利息": round(y["cumulative_interest_usd"]),
+                "淨利潤": round(y["net_profit_usd"]),
+                "槓桿 IRR%": round(y["leveraged_irr_pct"], 2),
+                "純保單 IRR%": round(y["non_leveraged_irr_pct"], 2),
+            }
+        )
+    st.dataframe(focus_rows, use_container_width=True, hide_index=True)
+
+    with st.expander("完整年度表（示意）", expanded=False):
+        all_rows = [
+            {
+                "年": y["year"],
+                "歲": y["age"],
+                "SV": round(y["total_sv_usd"]),
+                "淨值": round(y["net_sv_usd"]),
+                "利息累計": round(y["cumulative_interest_usd"]),
+                "淨利": round(y["net_profit_usd"]),
+                "槓桿IRR%": round(y["leveraged_irr_pct"], 2),
+            }
+            for y in result["years"]
+        ]
+        st.dataframe(all_rows, use_container_width=True, hide_index=True)
+
+    st.info(result["disclaimer"])
+
+    # WhatsApp / copy-friendly summary
+    lines = [
+        f"*{result['product']} · 保費融資示意*",
+        f"銀行：{result['bank']['name']}",
+        f"保費：{pfin_mod.format_usd(s['premium_usd'])}"
+        + (
+            f"（折扣 {s['discount_rate']*100:.0f}% → 實付 {pfin_mod.format_usd(s['actual_premium_paid_usd'])}）"
+            if s["apply_promotion"] and s["discount_usd"]
+            else ""
+        ),
+        f"貸款：{pfin_mod.format_usd(s['loan_usd'])}（LTV {s['ltv_ratio']*100:.0f}%）",
+        f"初期自資：{pfin_mod.format_usd(s['initial_outlay_usd'])} · 槓桿 {s['leverage_ratio']:.2f}x",
+        f"預估年息：{s['annual_interest_rate_pct']:.2f}%（約 {pfin_mod.format_usd(s['annual_interest_usd'])}/年）",
+        "",
+        "*重點年份（槓桿 IRR）*",
+    ]
+    for y in result["focus_years"]:
+        if y["year"] in (1, 5, 6, 10, 20, 30):
+            lines.append(
+                f"第 {y['year']} 年：淨值 {pfin_mod.format_usd(y['net_sv_usd'])} · "
+                f"IRR {y['leveraged_irr_pct']:.1f}%"
+            )
+    lines.append("")
+    lines.append("_示意數字；紅利／利率非保證；以正式計劃書及銀行批核為準_")
+    wa = "\n".join(lines)
+    st.markdown("#### WhatsApp 摘要")
+    st.code(wa, language=None)
+    st.download_button(
+        "下載摘要（.txt）",
+        data=wa.encode("utf-8"),
+        file_name="pfin-summary.txt",
+        mime="text/plain",
+        use_container_width=True,
+        key="pfin_dl_txt",
+    )
+
+
 def page_medical_finance():
     """見客用：5 年儲盈聚 → 第 6 年起提款繳醫保，計最少年供。"""
     st.markdown("## 🏥 醫療融資計算機")
@@ -6512,6 +6746,7 @@ elif (
     or "Cashflow" in menu
     or "保障缺口" in menu
     or "醫療融資" in menu
+    or "保費融資" in menu
 ):
     for label in CLIENT_TOOL_LABELS:
         if label in menu or any(bit in menu for bit in label.split() if len(bit) > 1):
