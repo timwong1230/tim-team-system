@@ -102,7 +102,7 @@ def test_new_medical_plans_loaded():
     from tt_core.medical_finance import list_plans, medical_annual_hkd, plan_label
 
     ids = {p["id"] for p in list_plans()}
-    assert ids >= {"vfamily", "vprime", "vbooster", "vtheone", "veasy"}
+    assert ids >= {"vfamily", "vprime", "vbooster", "vtheone", "veasy", "gba_op"}
     assert medical_annual_hkd(30, "男", plan_id="veasy", level="標準") == 5745
     assert medical_annual_hkd(30, "女", plan_id="veasy", level="標準") == 7552
     assert medical_annual_hkd(30, "男", plan_id="veasy", level="特等") == 10707
@@ -111,7 +111,18 @@ def test_new_medical_plans_loaded():
     assert medical_annual_hkd(30, "女", plan_id="vprime", level="標準", deductible=0) == 12058  # unisex
     assert medical_annual_hkd(30, "男", plan_id="vbooster", deductible=0) == 8260
     assert medical_annual_hkd(30, "男", plan_id="vtheone", level="標準", deductible=0) == 19531
+    # 大灣區門診：實際年齡 30 → 下次生日 31；1–70 歲段個人計劃
+    assert medical_annual_hkd(30, "男", plan_id="gba_op", level="計劃1") == 2480
+    assert medical_annual_hkd(30, "女", plan_id="gba_op", level="計劃2") == 5380
+    assert medical_annual_hkd(30, "男", plan_id="gba_op", level="計劃3") == 6480
+    assert medical_annual_hkd(70, "男", plan_id="gba_op", level="計劃1") == 3050
+    assert medical_annual_hkd(30, "男", plan_id="gba_op", level="家庭計劃A") == 4800
+    assert medical_annual_hkd(30, "男", plan_id="gba_op", level="家庭計劃B") == 17500
+    # 家庭計劃唔適用 1–18 歲（下次生日）；超齡唔好 clamp
+    assert medical_annual_hkd(10, "男", plan_id="gba_op", level="家庭計劃A") == 0
+    assert medical_annual_hkd(85, "男", plan_id="gba_op", level="計劃1") == 0
     assert "尊衛您" in plan_label("vprime", level="特等", deductible=25000)
+    assert "大灣區" in plan_label("gba_op", level="計劃1")
 
 
 def test_higher_tier_costs_more_to_fund():
