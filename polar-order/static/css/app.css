@@ -88,36 +88,35 @@ button, .cat-btn, .add-btn {
   margin-bottom: 18px;
 }
 .promo-now {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   margin-bottom: 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(212,192,140,0.18);
 }
-.promo-kicker {
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--gold);
-  font-weight: 700;
-}
 .promo-now strong {
-  font-size: 1.2rem;
+  display: block;
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--text);
-  line-height: 1.2;
+  line-height: 1.3;
 }
-.promo-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.promo-block {
+  margin: 0 0 12px;
 }
-.promo-lines p {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.4;
+.promo-block:last-of-type {
+  margin-bottom: 0;
+}
+.promo-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 650;
   color: var(--text);
+  line-height: 1.35;
+}
+.promo-detail {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.35;
 }
 .promo-combo {
   margin-top: 14px;
