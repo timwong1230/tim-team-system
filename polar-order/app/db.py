@@ -170,8 +170,10 @@ def _seat_id(seat: dict) -> int:
     if zone == "table":
         return num  # 1-5
     if zone == "bar":
-        return 10 + num  # 11-15
-    return 20 + num  # 21-28 terrace
+        return 10 + num  # 11-16
+    if zone == "demo":
+        return 30  # DEMO practice seat
+    return 20 + num  # 21-29 terrace
 
 
 def _seed_tables(conn: sqlite3.Connection) -> None:
