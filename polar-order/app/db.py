@@ -40,6 +40,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         ("sessions", "total", "REAL"),
         ("sessions", "receipt_path", "TEXT"),
         ("sessions", "business_date", "TEXT"),
+        ("sessions", "payment_method", "TEXT"),
         ("orders", "created_by", "TEXT"),
         ("orders", "deliver_table_id", "INTEGER"),
         ("orders", "gift_message", "TEXT"),
@@ -47,6 +48,17 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     for table, col, decl in migrations:
         if not _column_exists(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_date TEXT NOT NULL,
+            category TEXT NOT NULL,
+            amount REAL NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
     conn.commit()
 
 
@@ -96,7 +108,16 @@ def init_db() -> None:
             total REAL,
             receipt_path TEXT,
             business_date TEXT,
+            payment_method TEXT,
             FOREIGN KEY(table_id) REFERENCES tables(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_date TEXT NOT NULL,
+            category TEXT NOT NULL,
+            amount REAL NOT NULL,
+            created_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS orders (
@@ -374,8 +395,45 @@ def get_session(conn: sqlite3.Connection, session_id: int) -> sqlite3.Row | None
     return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
 
 
+def add_claim(
+    conn: sqlite3.Connection,
+    *,
+    business_date: str,
+    category: str,
+    amount: float,
+) -> sqlite3.Row:
+    cur = conn.execute(
+        """
+        INSERT INTO claims (business_date, category, amount, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (business_date, category, float(amount), utc_now()),
+    )
+    conn.commit()
+    return conn.execute("SELECT * FROM claims WHERE id = ?", (cur.lastrowid,)).fetchone()
+
+
+def list_claims(conn: sqlite3.Connection, business_date: str) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT * FROM claims
+            WHERE business_date = ?
+            ORDER BY id ASC
+            """,
+            (business_date,),
+        ).fetchall()
+    )
+
+
+def delete_claim(conn: sqlite3.Connection, claim_id: int) -> bool:
+    cur = conn.execute("DELETE FROM claims WHERE id = ?", (claim_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
-    """Wipe orders/sessions/events/receipts. Keeps seats + menu intact."""
+    """Wipe orders/sessions/events/claims/receipts. Keeps seats + menu intact."""
     from .paths import RECEIPT_DIR
 
     counts = {
@@ -383,13 +441,16 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
         "orders": conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"],
         "sessions": conn.execute("SELECT COUNT(*) AS c FROM sessions").fetchone()["c"],
         "events": conn.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
+        "claims": conn.execute("SELECT COUNT(*) AS c FROM claims").fetchone()["c"],
     }
     conn.execute("DELETE FROM order_items")
     conn.execute("DELETE FROM orders")
     conn.execute("DELETE FROM sessions")
     conn.execute("DELETE FROM events")
+    conn.execute("DELETE FROM claims")
     conn.execute(
-        "DELETE FROM sqlite_sequence WHERE name IN ('order_items','orders','sessions','events')"
+        "DELETE FROM sqlite_sequence WHERE name IN "
+        "('order_items','orders','sessions','events','claims')"
     )
     conn.commit()
 

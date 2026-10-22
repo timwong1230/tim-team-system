@@ -12,7 +12,7 @@ fi
 curl -sf "$BASE/health" >/dev/null
 
 curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
-  -F "pin=$PIN" -F "discount_percent=0" >/dev/null || true
+  -F "pin=$PIN" -F "discount_percent=0" -F "payment_method=Cash" >/dev/null || true
 
 PAGE=$(curl -sf "$BASE/t/${SEAT}")
 grep -q 'What should we call you' <<<"$PAGE"
@@ -36,6 +36,9 @@ grep -q Alex <<<"$ORDERS"
 
 BILL=$(curl -sf "$BASE/staff/bill/${SEAT}?pin=$PIN")
 grep -q 'Alex' <<<"$BILL"
+grep -q 'Payment method' <<<"$BILL"
+grep -q 'AlipayHK' <<<"$BILL"
+grep -q 'WeChat pay' <<<"$BILL"
 
 curl -sf "$BASE/qr/${SEAT}.png" -o /tmp/polar-qr-smoke.png
 
@@ -57,7 +60,8 @@ grep -q Barry <<<"$BOSS"
 
 # Guest close — sales
 # Ask AI + Order for HIM/HER (while guest session still open)
-curl -sf -X POST "$BASE/api/staff/bill/TABLE3/close" -F "pin=$PIN" -F "discount_percent=0" >/dev/null || true
+curl -sf -X POST "$BASE/api/staff/bill/TABLE3/close" \
+  -F "pin=$PIN" -F "discount_percent=0" -F "payment_method=Cash" >/dev/null || true
 curl -sf -X POST "$BASE/api/t/TABLE3/welcome" -H 'Content-Type: application/json' \
   -d '{"guest_name":"Sam","party_size":1}' >/dev/null
 AI=$(curl -sf -X POST "$BASE/api/t/${SEAT}/ask-ai" -H 'Content-Type: application/json' \
@@ -71,8 +75,13 @@ STAFF=$(curl -sf "$BASE/api/staff/orders?pin=$PIN")
 grep -q 'nice to meet you' <<<"$STAFF"
 grep -q 'TABLE3' <<<"$STAFF"
 
-CLOSE=$(curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
+# Reject close without payment method
+BAD_CLOSE=$(curl -s -o /tmp/polar-close-bad.json -w '%{http_code}' -X POST "$BASE/api/staff/bill/${SEAT}/close" \
   -F "pin=$PIN" -F "discount_percent=0")
+test "$BAD_CLOSE" != "200"
+
+CLOSE=$(curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
+  -F "pin=$PIN" -F "discount_percent=0" -F "payment_method=Visa")
 grep -q '"ok":true' <<<"$CLOSE"
 SID=$(python3 -c 'import sys,json; print(json.loads(sys.argv[1])["session_id"])' "$CLOSE")
 
@@ -84,8 +93,28 @@ sid = sys.argv[1]
 path = Path("data/receipts") / f"receipt-S{sid}.pdf"
 text = "\n".join((p.extract_text() or "") for p in PdfReader(str(path)).pages)
 assert "Guest: Alex" in text, f"guest name missing from receipt:\n{text}"
+assert "Visa" in text, f"payment method missing from receipt:\n{text}"
 print("receipt ok", path)
 PY
+
+# Nightly claims — use Polar business day from reports page
+REPORTS=$(curl -sf "$BASE/staff/reports?pin=$PIN")
+DAY=$(python3 -c 'import re,sys; m=re.search(r'"'"'name="day" value="([0-9-]+)"'"'"', sys.stdin.read()); print(m.group(1) if m else "")' <<<"$REPORTS")
+test -n "$DAY"
+CLAIM=$(curl -sf -X POST "$BASE/api/staff/claims" \
+  -H 'Content-Type: application/json' \
+  -d "{\"pin\":\"$PIN\",\"business_date\":\"$DAY\",\"category\":\"Ice\",\"amount\":80}")
+grep -q '"ok":true' <<<"$CLAIM"
+CLAIM2=$(curl -sf -X POST "$BASE/api/staff/claims" \
+  -H 'Content-Type: application/json' \
+  -d "{\"pin\":\"$PIN\",\"business_date\":\"$DAY\",\"custom_name\":\"Extra bags\",\"amount\":25}")
+grep -q '"ok":true' <<<"$CLAIM2"
+grep -q 'Extra bags' <<<"$CLAIM2"
+REPORTS=$(curl -sf "$BASE/staff/reports?pin=$PIN&day=$DAY")
+grep -q 'Claims' <<<"$REPORTS"
+grep -q 'Ice' <<<"$REPORTS"
+grep -q 'Extra bags' <<<"$REPORTS"
+grep -q 'Visa' <<<"$REPORTS"
 
 # Boss order must NOT inflate daily guest sales; must appear in boss report
 "$PYTHON" <<'PY'

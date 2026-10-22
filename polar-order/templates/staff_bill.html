@@ -62,7 +62,20 @@
     </div>
     <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span id="vTotal">${{ '%.0f'|format(bill.total) }}</span></div>
   </div>
-  <p class="muted">Collect payment with your third-party POS / terminal, then mark paid.</p>
+  <p class="muted">Collect payment, choose the method below, then mark paid.</p>
+
+  <div class="card pay-method-card">
+    <h3 style="margin-top:0">Payment method</h3>
+    <p class="muted" style="margin-top:0">Required before closing the table.</p>
+    <div class="pay-method-grid" id="payMethodGrid">
+      {% for m in payment_methods %}
+      <label class="pay-method-opt">
+        <input type="radio" name="payment_method_ui" value="{{ m }}" />
+        <span>{{ m }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
 
   <div class="card">
     <h3 style="margin-top:0">Items</h3>
@@ -100,6 +113,7 @@
     <input type="hidden" name="pin" value="{{ pin }}" />
     <input type="hidden" name="discount_percent" id="discountHidden" value="{{ discount|int if discount else 0 }}" />
     <input type="hidden" name="party_size" id="partyHidden" value="{{ bill.party_size }}" />
+    <input type="hidden" name="payment_method" id="paymentHidden" value="" />
     <button class="primary" type="submit">Mark paid & open PDF receipt</button>
   </form>
   {% endif %}
@@ -212,10 +226,17 @@
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     recalc();
+    const chosen = document.querySelector('input[name="payment_method_ui"]:checked');
+    if (!chosen) {
+      alert('Select a payment method first');
+      document.getElementById('payMethodGrid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    document.getElementById('paymentHidden').value = chosen.value;
     const party = partySize();
     if (!isBoss) {
       const ok = confirm(
-        `Confirm party size: ${party} guest(s)?\n\nSnack charge = ${party} × $10.\nClose table after payment collected?`
+        `Confirm party size: ${party} guest(s)?\nPayment: ${chosen.value}\n\nSnack charge = ${party} × $10.\nClose table after payment collected?`
       );
       if (!ok) return;
       // Persist party size before close
@@ -224,18 +245,18 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party }),
       });
-    } else if (!confirm('Close table after payment collected?')) {
+    } else if (!confirm(`Close table after payment collected?\nPayment: ${chosen.value}`)) {
       return;
     }
     const fd = new FormData(e.target);
     const res = await fetch(e.target.action, { method: 'POST', body: fd });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (res.ok && data.receipt_url) {
       window.location.href = data.receipt_url;
     } else if (res.ok) {
       location.href = '/staff/tables?pin={{ pin }}';
     } else {
-      alert('Failed to close');
+      alert(data.detail || 'Failed to close');
     }
   });
 

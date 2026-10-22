@@ -21,11 +21,21 @@
     <p class="muted">{{ daily.window }}</p>
     <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(daily.gross_sales) }}</div>
     <div class="muted">{{ daily.session_count }} closed tables</div>
+    {% if daily.by_payment_method %}
+    <div class="pay-breakdown" style="margin:12px 0 4px">
+      {% for p in daily.by_payment_method %}
+      <div class="cart-line">
+        <div class="muted">{{ p.method }}</div>
+        <div>${{ '%.0f'|format(p.total) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% for s in daily.sessions %}
     <div class="cart-line">
       <div>
         <strong>{{ s.table }}</strong>
-        <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}</div>
+        <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}{% if s.payment_method %} · {{ s.payment_method }}{% endif %}</div>
       </div>
       <div>
         ${{ '%.0f'|format(s.total) }}
@@ -37,6 +47,46 @@
     {% else %}
     <p class="muted">No closed sessions for this business day yet.</p>
     {% endfor %}
+
+    <hr class="claim-sep" />
+    <h3>Claims (當日)</h3>
+    <p class="muted" style="margin-top:0">收鋪埋數時入返今日 claim。揀類型或手動輸入名稱，再入金額。</p>
+    <div class="claim-form">
+      <label class="muted" for="claimPreset">Claim type</label>
+      <select class="field" id="claimPreset">
+        <option value="">— Select —</option>
+        {% for c in claim_presets %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+      <label class="muted" for="claimCustom">Or custom name</label>
+      <input class="field" id="claimCustom" type="text" maxlength="80" placeholder="e.g. Cleaning supplies" />
+      <label class="muted" for="claimAmount">Amount (HKD)</label>
+      <input class="field" id="claimAmount" type="number" min="0.1" max="500000" step="1" placeholder="0" />
+      <button class="primary" type="button" id="claimAddBtn" style="width:auto">Add claim</button>
+      <p class="muted" id="claimMsg" style="margin-bottom:0"></p>
+    </div>
+    <div id="claimList">
+      {% for c in daily.claims %}
+      <div class="cart-line claim-row" data-id="{{ c.id }}" data-amount="{{ c.amount }}">
+        <div>
+          <strong>{{ c.category }}</strong>
+        </div>
+        <div class="claim-amt">
+          ${{ '%.0f'|format(c.amount) }}
+          <button type="button" class="ghost claim-del" data-id="{{ c.id }}" style="width:auto;padding:6px 10px;margin-left:8px">Delete</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="cart-line" style="margin-top:10px;font-weight:700">
+      <div>Claims total</div>
+      <div id="claimsTotal">${{ '%.0f'|format(daily.claims_total) }}</div>
+    </div>
+    <div class="cart-line" style="font-weight:700">
+      <div>Net after claims</div>
+      <div id="netAfterClaims">${{ '%.0f'|format(daily.net_after_claims) }}</div>
+    </div>
   </div>
 
   <div class="card">
@@ -113,6 +163,93 @@
 {% endblock %}
 {% block scripts %}
 <script>
+  const PIN = {{ pin|tojson }};
+  const BIZ_DAY = {{ day|tojson }};
+  const GROSS = {{ daily.gross_sales }};
+  const money = (n) => '$' + Math.round(Number(n) || 0);
+
+  function refreshClaimTotals(claimsTotal) {
+    document.getElementById('claimsTotal').textContent = money(claimsTotal);
+    document.getElementById('netAfterClaims').textContent = money(GROSS - claimsTotal);
+  }
+
+  document.getElementById('claimAddBtn')?.addEventListener('click', async () => {
+    const category = document.getElementById('claimPreset').value || '';
+    const custom_name = (document.getElementById('claimCustom').value || '').trim();
+    const amount = Number(document.getElementById('claimAmount').value);
+    const msg = document.getElementById('claimMsg');
+    if (!category && !custom_name) {
+      msg.textContent = 'Pick a type or enter a custom name.';
+      return;
+    }
+    if (!amount || amount <= 0) {
+      msg.textContent = 'Enter an amount.';
+      return;
+    }
+    msg.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/staff/claims', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: PIN,
+          business_date: BIZ_DAY,
+          category,
+          custom_name,
+          amount,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Failed to add claim');
+      const list = document.getElementById('claimList');
+      const row = document.createElement('div');
+      row.className = 'cart-line claim-row';
+      row.dataset.id = data.claim.id;
+      row.dataset.amount = data.claim.amount;
+      row.innerHTML =
+        `<div><strong></strong></div>` +
+        `<div class="claim-amt"></div>`;
+      row.querySelector('strong').textContent = data.claim.category;
+      const amt = row.querySelector('.claim-amt');
+      amt.appendChild(document.createTextNode(money(data.claim.amount) + ' '));
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'ghost claim-del';
+      del.dataset.id = data.claim.id;
+      del.style.cssText = 'width:auto;padding:6px 10px;margin-left:8px';
+      del.textContent = 'Delete';
+      amt.appendChild(del);
+      list.appendChild(row);
+      refreshClaimTotals(data.claims_total);
+      document.getElementById('claimAmount').value = '';
+      document.getElementById('claimCustom').value = '';
+      document.getElementById('claimPreset').value = '';
+      msg.textContent = 'Added.';
+    } catch (err) {
+      msg.textContent = err.message || 'Failed';
+    }
+  });
+
+  document.getElementById('claimList')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.claim-del');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (!confirm('Delete this claim?')) return;
+    const res = await fetch(`/api/staff/claims/${id}?pin=${encodeURIComponent(PIN)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      alert('Failed to delete');
+      return;
+    }
+    document.querySelector(`.claim-row[data-id="${id}"]`)?.remove();
+    let total = 0;
+    document.querySelectorAll('#claimList .claim-row').forEach((r) => {
+      total += Number(r.dataset.amount) || 0;
+    });
+    refreshClaimTotals(total);
+  });
+
   document.getElementById('resetSalesBtn')?.addEventListener('click', async () => {
     const ok = confirm('Delete ALL sales / orders / receipts and set reports to $0?\n\nThis cannot be undone.');
     if (!ok) return;
