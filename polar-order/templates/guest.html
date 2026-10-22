@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="wrap">
+<div class="wrap{% if not ready %} wrap-welcome{% endif %}">
   {% if not ready %}
   <div class="hero hero-welcome">
     <div class="welcome-logo-wrap">
