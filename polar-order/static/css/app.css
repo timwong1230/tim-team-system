@@ -438,6 +438,22 @@ button.pill-action:active {
   width: auto;
   flex: 0 0 auto;
 }
+.mixer-choices {
+  display: grid;
+  gap: 10px;
+}
+.mixer-choice {
+  border: 1px solid var(--line);
+  background: rgba(16, 24, 42, 0.92);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 16px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.mixer-choice:active { transform: scale(0.99); }
+
 .view-order-block { margin-bottom: 18px; }
 .view-order-heading {
   margin: 0 0 8px;

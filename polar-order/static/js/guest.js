@@ -96,14 +96,67 @@ document.addEventListener("DOMContentLoaded", () => {
     return `$${Math.round(n)}`;
   }
 
+  function mixerSlug(mixer) {
+    return String(mixer || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+  }
+
+  function lineNotePayload(line) {
+    const parts = [];
+    if (line.mixer) parts.push(`Mixer: ${line.mixer}`);
+    if (line.note) parts.push(line.note);
+    return parts.length ? parts.join(" · ") : null;
+  }
+
+  const mixerDrawer = document.getElementById("mixerDrawer");
+  const mixerChoices = document.getElementById("mixerChoices");
+  const mixerItemName = document.getElementById("mixerItemName");
+  let pendingMixerItem = null;
+
+  function openMixerPicker(item, mixers) {
+    pendingMixerItem = { item, mixers };
+    if (mixerItemName) mixerItemName.textContent = item.name;
+    if (mixerChoices) {
+      mixerChoices.innerHTML = mixers
+        .map(
+          (m) =>
+            `<button type="button" class="mixer-choice" data-mixer="${m.replace(/"/g, "&quot;")}">${m}</button>`
+        )
+        .join("");
+    }
+    mixerDrawer?.classList.add("open");
+  }
+
+  function closeMixerPicker() {
+    pendingMixerItem = null;
+    mixerDrawer?.classList.remove("open");
+  }
+
+  document.getElementById("closeMixer")?.addEventListener("click", closeMixerPicker);
+  mixerDrawer?.addEventListener("click", (e) => {
+    if (e.target === mixerDrawer) closeMixerPicker();
+  });
+  mixerChoices?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-mixer]");
+    if (!btn || !pendingMixerItem) return;
+    const mixer = btn.dataset.mixer;
+    addToCart({ ...pendingMixerItem.item, mixer });
+    closeMixerPicker();
+  });
+
   function addToCart(item) {
-    const id = item.id;
+    const itemId = item.itemId || item.id;
+    const mixer = item.mixer || "";
+    const id = mixer ? `${itemId}__${mixerSlug(mixer)}` : itemId;
     const existing = cart.get(id);
     if (existing) {
       existing.qty += item.qty || 1;
     } else {
       cart.set(id, {
         id,
+        itemId,
         name: item.name,
         price: Number(item.price),
         listPrice: Number(item.listPrice || item.price),
@@ -112,19 +165,20 @@ document.addEventListener("DOMContentLoaded", () => {
         qty: item.qty || 1,
         note: item.note || "",
         allowNote: !!item.allowNote,
+        mixer: mixer || null,
         custom: !!item.custom,
         customName: item.customName || null,
         customPrice: item.customPrice != null ? Number(item.customPrice) : null,
       });
     }
     renderCartBar();
-    showToast("Added");
+    showToast(mixer ? `Added · ${mixer}` : "Added");
   }
 
   function pricedCart() {
     let shishaSlots = 0;
     for (const line of cart.values()) {
-      if (line.id === "shisha-regular") shishaSlots += line.qty;
+      if ((line.itemId || line.id) === "shisha-regular") shishaSlots += line.qty;
     }
     const out = [];
     for (const line of cart.values()) {
@@ -185,10 +239,14 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `<div class="muted">${line.comboQty}× Shisha combo $40</div>`
           : "";
       const nomNote = line.custom ? `<div class="muted">Not on Menu</div>` : "";
+      const mixerNote = line.mixer
+        ? `<div class="muted">Mixer: ${line.mixer}</div>`
+        : "";
       row.innerHTML = `
         <div>
           <strong>${line.name}</strong>
           ${nomNote}
+          ${mixerNote}
           ${comboNote}
           <div class="qty">
             <button type="button" data-act="dec" data-id="${line.id}">−</button>
@@ -219,15 +277,25 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const card = btn.closest(".item");
-      addToCart({
+      const mixers = (card.dataset.mixers || "")
+        .split("|")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const payload = {
         id: card.dataset.id,
+        itemId: card.dataset.id,
         name: card.dataset.name,
         price: card.dataset.price,
         listPrice: card.dataset.listPrice || card.dataset.price,
         promoType: card.dataset.promoType || "",
         comboPrice: card.dataset.comboPrice || null,
         allowNote: card.dataset.allowNote === "1",
-      });
+      };
+      if (mixers.length) {
+        openMixerPicker(payload, mixers);
+        return;
+      }
+      addToCart(payload);
     });
   });
 
@@ -331,9 +399,9 @@ document.addEventListener("DOMContentLoaded", () => {
           };
         }
         return {
-          item_id: l.id,
+          item_id: l.itemId || l.id,
           qty: l.qty,
-          note: l.note || null,
+          note: lineNotePayload(l),
         };
       }),
     };
