@@ -1,5 +1,5 @@
-# Polar Lounge QR order — one-click deploy on Render
-# https://render.com/deploy?repo=https://github.com/timwong1230/tim-team-system
+# Polar Lounge QR order — Render Blueprint
+# Deploy: https://render.com/deploy?repo=https://github.com/timwong1230/tim-team-system
 
 services:
   - type: web
@@ -10,7 +10,7 @@ services:
     plan: starter
     region: singapore
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeployTrigger: commit
     disk:
       name: polar-data
       mountPath: /data
@@ -20,6 +20,5 @@ services:
         value: /data
       - key: POLAR_STAFF_PIN
         sync: false
-        value: polar2026
       - key: PORT
         value: "8080"
