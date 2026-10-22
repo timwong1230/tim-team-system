@@ -20,13 +20,16 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from .db import (
+    add_claim,
     connect,
+    delete_claim,
     ensure_session,
     get_open_session,
     get_session,
     get_table_by_code,
     init_db,
     list_active_tables,
+    list_claims,
     list_guest_tables,
     load_menu_meta,
     publish_event,
@@ -34,6 +37,7 @@ from .db import (
     start_session,
     utc_now,
 )
+from .ops_constants import CLAIM_PRESETS, PAYMENT_METHODS
 from .pricing import (
     SHISHA_COMBO_SNACK_PRICE,
     SHISHA_REGULAR_ID,
@@ -948,6 +952,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "session": session,
             "lines": lines,
             "bill": bill,
+            "payment_methods": PAYMENT_METHODS,
             "pin": pin,
             "discount": discount or 0,
             "is_boss": is_boss,
@@ -1099,9 +1104,13 @@ def close_bill(
     pin: str = Form(...),
     discount_percent: float = Form(0),
     party_size: int | None = Form(None),
+    payment_method: str = Form(...),
 ):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
+    method = (payment_method or "").strip()
+    if method not in PAYMENT_METHODS:
+        raise HTTPException(400, "Select a payment method")
     conn = connect()
     table = get_table_by_code(conn, table_code)
     if not table:
@@ -1155,6 +1164,7 @@ def close_bill(
         bill=bill,
         closed_at_iso=now,
         guest_name=guest_name,
+        payment_method=method,
     )
     conn.execute(
         """
@@ -1168,7 +1178,8 @@ def close_bill(
           discount_amount = ?,
           total = ?,
           receipt_path = ?,
-          business_date = ?
+          business_date = ?,
+          payment_method = ?
         WHERE id = ?
         """,
         (
@@ -1181,6 +1192,7 @@ def close_bill(
             bill["total"],
             receipt_rel,
             biz,
+            method,
             session["id"],
         ),
     )
@@ -1340,10 +1352,70 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "monthly": monthly,
             "items": items,
             "bosses": bosses,
+            "claim_presets": CLAIM_PRESETS,
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
         },
     )
+
+
+class ClaimBody(BaseModel):
+    pin: str
+    business_date: str
+    category: str = ""
+    custom_name: str = ""
+    amount: float = Field(..., gt=0, le=500000)
+
+
+@app.post("/api/staff/claims")
+def staff_add_claim(body: ClaimBody):
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    try:
+        date.fromisoformat(body.business_date)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid business date") from exc
+    preset = (body.category or "").strip()
+    custom = (body.custom_name or "").strip()
+    if custom:
+        category = custom[:80]
+    elif preset in CLAIM_PRESETS:
+        category = preset
+    else:
+        raise HTTPException(400, "Pick a claim type or enter a custom name")
+    conn = connect()
+    row = add_claim(
+        conn,
+        business_date=body.business_date,
+        category=category,
+        amount=round(float(body.amount), 1),
+    )
+    claims = list_claims(conn, body.business_date)
+    conn.close()
+    total = round(sum(float(c["amount"]) for c in claims), 1)
+    return {
+        "ok": True,
+        "claim": {
+            "id": row["id"],
+            "category": row["category"],
+            "amount": float(row["amount"]),
+            "business_date": row["business_date"],
+        },
+        "claims_total": total,
+        "claim_count": len(claims),
+    }
+
+
+@app.delete("/api/staff/claims/{claim_id}")
+def staff_delete_claim(claim_id: int, pin: str = ""):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    ok = delete_claim(conn, claim_id)
+    conn.close()
+    if not ok:
+        raise HTTPException(404, "Claim not found")
+    return {"ok": True}
 
 
 @app.post("/api/staff/reset-sales")

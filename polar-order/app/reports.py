@@ -38,6 +38,7 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
     ).fetchall()
     rows = []
     total = 0.0
+    by_method: dict[str, float] = {}
     for s in sessions:
         closed = _parse_iso(s["closed_at"])
         # Prefer stored business_date; else classify by closed_at
@@ -46,23 +47,53 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
             continue
         amt = float(s["total"] or 0)
         total += amt
+        method = (s["payment_method"] if "payment_method" in s.keys() else None) or "—"
+        by_method[method] = round(by_method.get(method, 0) + amt, 1)
         rows.append(
             {
                 "session_id": s["id"],
                 "table": s["table_label"],
                 "party_size": s["party_size"],
                 "discount_percent": s["discount_percent"] or 0,
+                "payment_method": method if method != "—" else None,
                 "total": amt,
                 "closed_at": closed.strftime("%H:%M"),
                 "receipt_path": s["receipt_path"],
             }
         )
+
+    claims = conn.execute(
+        """
+        SELECT * FROM claims
+        WHERE business_date = ?
+        ORDER BY id ASC
+        """,
+        (biz.isoformat(),),
+    ).fetchall()
+    claim_rows = [
+        {
+            "id": c["id"],
+            "category": c["category"],
+            "amount": float(c["amount"] or 0),
+            "created_at": c["created_at"],
+        }
+        for c in claims
+    ]
+    claims_total = round(sum(c["amount"] for c in claim_rows), 1)
+
     return {
         "business_date": biz.isoformat(),
         "window": f"{start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')} (HK)",
         "session_count": len(rows),
         "gross_sales": round(total, 1),
         "sessions": rows,
+        "by_payment_method": [
+            {"method": m, "total": t}
+            for m, t in sorted(by_method.items(), key=lambda x: (-x[1], x[0]))
+        ],
+        "claims": claim_rows,
+        "claims_total": claims_total,
+        "net_after_claims": round(total - claims_total, 1),
     }
 
 

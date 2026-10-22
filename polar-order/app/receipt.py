@@ -26,6 +26,7 @@ def generate_receipt_pdf(
     bill: dict,
     closed_at_iso: str,
     guest_name: str | None = None,
+    payment_method: str | None = None,
 ) -> str:
     RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
     path = RECEIPT_DIR / f"receipt-S{session_id}.pdf"
@@ -63,6 +64,8 @@ def generate_receipt_pdf(
     line(f"Session #{session_id} · Party {party_size}")
     line(f"Closed: {closed_local}")
     line(f"Receipt: R-{session_id:05d}")
+    if payment_method:
+        line(f"Paid: {payment_method}", bold=True, size=11)
     y -= 2 * mm
     c.setStrokeColor(colors.HexColor("#d4c08c"))
     c.line(18 * mm, y, width - 18 * mm, y)
@@ -117,7 +120,10 @@ def generate_receipt_pdf(
     c.setFillColor(colors.grey)
     c.drawString(18 * mm, y, "Thank you for visiting Polar Lounge.")
     y -= 4 * mm
-    c.drawString(18 * mm, y, "Payment collected separately. Keep this receipt for your records.")
+    if payment_method:
+        c.drawString(18 * mm, y, f"Paid by {payment_method}. Keep this receipt for your records.")
+    else:
+        c.drawString(18 * mm, y, "Payment collected separately. Keep this receipt for your records.")
     c.save()
     # Stored relative to DATA_DIR so cloud mounts stay portable.
     return str(path.relative_to(DATA_DIR))
