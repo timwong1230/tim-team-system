@@ -36,7 +36,10 @@
   {% else %}
   <div class="topbar">
     <div class="brand">POLAR</div>
-    <div class="pill">{{ table.label }}</div>
+    <div class="topbar-right">
+      <button type="button" class="pill pill-action" id="openViewOrder">View Order</button>
+      <div class="pill">{{ table.label }}</div>
+    </div>
   </div>
   <div class="hero">
     <h1>{{ table.label }}</h1>
@@ -63,7 +66,6 @@
 
   <div class="play-row">
     <button type="button" class="play-btn" id="openAskAI">Ask AI</button>
-    <button type="button" class="play-btn play-btn-soft" id="openViewOrder">View Order</button>
     <button type="button" class="play-btn play-btn-soft" id="jumpGift">Order for HIM/HER</button>
   </div>
 
