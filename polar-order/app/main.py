@@ -30,6 +30,7 @@ from .db import (
     list_guest_tables,
     load_menu_meta,
     publish_event,
+    reset_operational_data,
     start_session,
     utc_now,
 )
@@ -64,6 +65,12 @@ _subscribers: list[asyncio.Queue] = []
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    # One-shot cloud wipe: set POLAR_RESET_ON_START=RESET, deploy once, then remove the env var.
+    if os.getenv("POLAR_RESET_ON_START", "").strip().upper() == "RESET":
+        conn = connect()
+        cleared = reset_operational_data(conn)
+        conn.close()
+        print(f"[polar] POLAR_RESET_ON_START wiped operational data: {cleared}", flush=True)
     yield
 
 
@@ -1161,6 +1168,19 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "month": f"{year}-{mon:02d}",
         },
     )
+
+
+@app.post("/api/staff/reset-sales")
+def staff_reset_sales(pin: str = Form(...), confirm: str = Form("")):
+    """Wipe all guest/boss orders, sessions, events, and receipts (menu/seats kept)."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if (confirm or "").strip().upper() != "RESET":
+        raise HTTPException(400, "Type RESET to confirm")
+    conn = connect()
+    counts = reset_operational_data(conn)
+    conn.close()
+    return {"ok": True, "cleared": counts}
 
 
 @app.get("/health")

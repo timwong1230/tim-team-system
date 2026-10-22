@@ -102,5 +102,39 @@
     </div>
     {% endfor %}
   </div>
+
+  <div class="card" style="border-color:#5a2a2a">
+    <h3 style="margin-top:0">Reset all sales data</h3>
+    <p class="muted">Clears every order, closed table, receipt PDF, and live session. Menu and seat map stay. Use after testing so reports start at $0.</p>
+    <button class="ghost" type="button" id="resetSalesBtn" style="width:auto;border-color:#a55;color:#f6c">Reset everything to $0</button>
+    <p class="muted" id="resetSalesMsg" style="margin-top:10px"></p>
+  </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.getElementById('resetSalesBtn')?.addEventListener('click', async () => {
+    const ok = confirm('Delete ALL sales / orders / receipts and set reports to $0?\n\nThis cannot be undone.');
+    if (!ok) return;
+    const typed = prompt('Type RESET to confirm:');
+    if ((typed || '').trim().toUpperCase() !== 'RESET') {
+      document.getElementById('resetSalesMsg').textContent = 'Cancelled — confirmation did not match.';
+      return;
+    }
+    const body = new FormData();
+    body.set('pin', {{ pin|tojson }});
+    body.set('confirm', 'RESET');
+    const msg = document.getElementById('resetSalesMsg');
+    msg.textContent = 'Resetting…';
+    try {
+      const res = await fetch('/api/staff/reset-sales', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Reset failed');
+      msg.textContent = 'Done. Reloading…';
+      location.reload();
+    } catch (err) {
+      msg.textContent = err.message || 'Reset failed';
+    }
+  });
+</script>
 {% endblock %}
