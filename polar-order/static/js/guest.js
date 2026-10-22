@@ -204,29 +204,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  document.getElementById("nomAdd")?.addEventListener("click", () => {
-    const name = (document.getElementById("nomName")?.value || "").trim();
-    const price = Number(document.getElementById("nomPrice")?.value);
-    const qty = Math.max(1, Number(document.getElementById("nomQty")?.value || 1));
-    if (!name) return showToast("Enter product name");
-    if (Number.isNaN(price) || price < 0) return showToast("Enter a valid price");
-    const id = `nom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
-    addToCart({
-      id,
-      name,
-      price,
-      listPrice: price,
-      qty,
-      custom: true,
-      customName: name,
-      customPrice: price,
-    });
-    document.getElementById("nomName").value = "";
-    document.getElementById("nomPrice").value = "";
-    document.getElementById("nomQty").value = "1";
-    renderCartLines();
-  });
-
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
