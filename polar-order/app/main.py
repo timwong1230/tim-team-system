@@ -1041,7 +1041,13 @@ def staff_qrs(request: Request, pin: str = ""):
     conn.close()
     base = str(request.base_url).rstrip("/")
     boss_links = [
-        {"name": b["name"], "url": f"{base}/boss/{b['id']}"} for b in BOSSES
+        {
+            "id": b["id"],
+            "name": b["name"],
+            "url": f"{base}/boss/{b['id']}",
+            "qr": f"/qr/boss/{b['id']}.png",
+        }
+        for b in BOSSES
     ]
     return templates.TemplateResponse(
         "staff_qrs.html",
@@ -1064,6 +1070,19 @@ def qr_png(request: Request, table_code: str):
     if not table:
         raise HTTPException(404, "Table not found")
     url = str(request.base_url).rstrip("/") + f"/t/{table['code']}"
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
+@app.get("/qr/boss/{boss_id}.png")
+def boss_qr_png(request: Request, boss_id: str):
+    boss = boss_by_id(boss_id)
+    if not boss:
+        raise HTTPException(404, "Boss not found")
+    url = str(request.base_url).rstrip("/") + f"/boss/{boss['id']}"
     img = qrcode.make(url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")

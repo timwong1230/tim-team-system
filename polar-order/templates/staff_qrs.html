@@ -20,11 +20,17 @@
   </div>
 
   {% if boss_links %}
-  <h2 style="margin:28px 0 10px;font-size:1rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">Boss stations</h2>
-  <p class="muted">Bookmark or open these links — not guest sales.</p>
-  <div class="home-links">
+  <div class="hero" style="margin-top:28px">
+    <h1>Boss stations</h1>
+    <p>Print &amp; keep for Jon / Barry / Tim / Ziv — personal tabs, not guest sales.</p>
+  </div>
+  <div class="qr-grid">
     {% for b in boss_links %}
-    <a href="{{ b.url }}">{{ b.name }} · {{ b.url }}</a>
+    <div class="qr-card">
+      <strong>{{ b.name }}</strong>
+      <div><img src="{{ b.qr }}" alt="{{ b.name }} boss QR" /></div>
+      <small>{{ b.url }}</small>
+    </div>
     {% endfor %}
   </div>
   {% endif %}
