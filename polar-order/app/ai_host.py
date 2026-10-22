@@ -155,6 +155,7 @@ def _local_reply(
             "飲酒",
             "有酒精",
             "酒類",
+            "酒精",
             "with alcohol",
             "booze",
             "spirits",
