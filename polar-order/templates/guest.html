@@ -63,6 +63,7 @@
 
   <div class="play-row">
     <button type="button" class="play-btn" id="openAskAI">Ask AI</button>
+    <button type="button" class="play-btn play-btn-soft" id="openViewOrder">View Order</button>
     <button type="button" class="play-btn play-btn-soft" id="jumpGift">Order for HIM/HER</button>
   </div>
 
@@ -137,7 +138,7 @@
 <div class="drawer" id="drawer">
   <div class="drawer-panel">
     <div class="row">
-      <h2 style="margin:0">Your order</h2>
+      <h2 style="margin:0">Cart</h2>
       <button class="ghost" style="width:auto;padding:8px 12px" id="closeCart" type="button">Close</button>
     </div>
     <div id="cartLines"></div>
@@ -168,6 +169,17 @@
     </div>
 
     <button class="primary" id="submitOrder" type="button">Send to {{ table.label }}</button>
+  </div>
+</div>
+
+<div class="drawer" id="viewOrderDrawer">
+  <div class="drawer-panel">
+    <div class="row">
+      <h2 style="margin:0">View Order</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeViewOrder" type="button">Close</button>
+    </div>
+    <p class="muted" style="margin-top:0">What you’ve already sent to the bar — items and quantities only.</p>
+    <div id="viewOrderLines"></div>
   </div>
 </div>
 

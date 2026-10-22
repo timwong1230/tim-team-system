@@ -446,6 +446,63 @@ def guest_welcome(table_code: str, body: WelcomeIn):
     }
 
 
+@app.get("/api/t/{table_code}/my-orders")
+def guest_my_orders(table_code: str):
+    """What this table has already sent — product + qty only (no prices)."""
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        raise HTTPException(400, "Boss station — use boss tab")
+    session = get_open_session(conn, table["id"])
+    if not session or not session["guest_name"]:
+        conn.close()
+        return {"ok": True, "items": [], "orders": []}
+
+    rows = conn.execute(
+        """
+        SELECT oi.item_name, oi.qty, oi.note, o.id AS order_id, o.status, o.created_at
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.session_id = ? AND o.status != 'cancelled'
+        ORDER BY o.id ASC, oi.id ASC
+        """,
+        (session["id"],),
+    ).fetchall()
+    conn.close()
+
+    orders_map: dict[int, dict[str, Any]] = {}
+    summary: dict[str, int] = {}
+    for r in rows:
+        oid = int(r["order_id"])
+        if oid not in orders_map:
+            orders_map[oid] = {
+                "id": oid,
+                "status": r["status"],
+                "created_at": r["created_at"],
+                "items": [],
+            }
+        name = r["item_name"]
+        qty = int(r["qty"])
+        note = (r["note"] or "").strip() or None
+        # Strip baked-in promo tags like [30% OFF] from guest-facing note
+        if note and note.startswith("[") and "]" in note:
+            after = note.split("]", 1)[1].strip()
+            note = after or None
+        orders_map[oid]["items"].append({"name": name, "qty": qty, "note": note})
+        summary[name] = summary.get(name, 0) + qty
+
+    items = [{"name": n, "qty": q} for n, q in summary.items()]
+    return {
+        "ok": True,
+        "items": items,
+        "orders": list(orders_map.values()),
+    }
+
+
 @app.post("/api/t/{table_code}/orders")
 async def place_order(table_code: str, body: OrderIn):
     conn = connect()

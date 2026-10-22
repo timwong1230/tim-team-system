@@ -419,6 +419,47 @@ button, .cat-btn, .add-btn {
   width: auto;
   flex: 0 0 auto;
 }
+.view-order-block { margin-bottom: 18px; }
+.view-order-heading {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-weight: 700;
+}
+.view-order-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.view-order-qty {
+  flex: 0 0 auto;
+  min-width: 2.2em;
+  font-weight: 750;
+  color: var(--gold-strong);
+}
+.view-order-name {
+  flex: 1;
+  font-weight: 600;
+}
+.view-order-note { font-size: 0.85rem; margin-top: 4px; }
+.view-order-round {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+}
+.view-order-round .view-order-line:last-child { border-bottom: 0; padding-bottom: 0; }
+.view-order-status {
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .cart-bar {
   position: fixed;
   left: 50%;

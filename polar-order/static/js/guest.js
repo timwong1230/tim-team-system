@@ -86,6 +86,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const aiForm = document.getElementById("aiForm");
   const aiInput = document.getElementById("aiInput");
   const aiHistory = [];
+  const viewOrderDrawer = document.getElementById("viewOrderDrawer");
+  const viewOrderLines = document.getElementById("viewOrderLines");
+  const openViewOrderBtn = document.getElementById("openViewOrder");
 
   if (!cartBar || !drawer) return;
 
@@ -357,6 +360,8 @@ document.addEventListener("DOMContentLoaded", () => {
       drawer.classList.remove("open");
       resetGiftToOwnTable();
       showToast(payload.deliver_to ? "Treat sent" : `Sent to ${ownTableLabel}`);
+      // Refresh View Order quietly so the list is ready
+      loadViewOrder({ silent: true });
     } catch (err) {
       showToast("Failed to send order");
       console.error(err);
@@ -368,6 +373,50 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   resetGiftToOwnTable();
+
+  // —— View Order (sent items, no prices) ——
+  async function loadViewOrder({ silent } = {}) {
+    if (!viewOrderLines) return;
+    if (!silent) {
+      viewOrderLines.innerHTML = `<p class="muted">Loading…</p>`;
+    }
+    try {
+      const res = await fetch(`/api/t/${table}/my-orders`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const items = data.items || [];
+      if (!items.length) {
+        viewOrderLines.innerHTML = `<p class="muted">Nothing sent yet. Add items to your cart and tap Send.</p>`;
+        return;
+      }
+      viewOrderLines.innerHTML = items
+        .map(
+          (it) => `
+        <div class="view-order-line">
+          <span class="view-order-qty">${it.qty}×</span>
+          <span class="view-order-name">${String(it.name).replace(/</g, "&lt;")}</span>
+        </div>`
+        )
+        .join("");
+    } catch (err) {
+      console.error(err);
+      if (!silent) {
+        viewOrderLines.innerHTML = `<p class="muted">Could not load your order.</p>`;
+        showToast("Could not load View Order");
+      }
+    }
+  }
+
+  openViewOrderBtn?.addEventListener("click", () => {
+    viewOrderDrawer?.classList.add("open");
+    loadViewOrder();
+  });
+  document.getElementById("closeViewOrder")?.addEventListener("click", () => {
+    viewOrderDrawer?.classList.remove("open");
+  });
+  viewOrderDrawer?.addEventListener("click", (e) => {
+    if (e.target === viewOrderDrawer) viewOrderDrawer.classList.remove("open");
+  });
 
   // —— Ask AI ——
   function appendAI(role, html) {
