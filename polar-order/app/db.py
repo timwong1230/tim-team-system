@@ -370,3 +370,32 @@ def publish_event(conn: sqlite3.Connection, kind: str, payload: dict[str, Any]) 
 
 def get_session(conn: sqlite3.Connection, session_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+
+
+def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
+    """Wipe orders/sessions/events/receipts. Keeps seats + menu intact."""
+    from .paths import RECEIPT_DIR
+
+    counts = {
+        "order_items": conn.execute("SELECT COUNT(*) AS c FROM order_items").fetchone()["c"],
+        "orders": conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"],
+        "sessions": conn.execute("SELECT COUNT(*) AS c FROM sessions").fetchone()["c"],
+        "events": conn.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
+    }
+    conn.execute("DELETE FROM order_items")
+    conn.execute("DELETE FROM orders")
+    conn.execute("DELETE FROM sessions")
+    conn.execute("DELETE FROM events")
+    conn.execute(
+        "DELETE FROM sqlite_sequence WHERE name IN ('order_items','orders','sessions','events')"
+    )
+    conn.commit()
+
+    receipts_removed = 0
+    RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
+    for path in RECEIPT_DIR.iterdir():
+        if path.is_file():
+            path.unlink()
+            receipts_removed += 1
+    counts["receipts"] = receipts_removed
+    return counts
