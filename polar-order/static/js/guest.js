@@ -77,10 +77,41 @@ document.addEventListener("DOMContentLoaded", () => {
   const cartTotal = document.getElementById("cartTotal");
   const drawer = document.getElementById("drawer");
   const cartLines = document.getElementById("cartLines");
+  const giftToggle = document.getElementById("giftToggle");
+  const giftFields = document.getElementById("giftFields");
+  const giftSeat = document.getElementById("giftSeat");
+  const giftMessage = document.getElementById("giftMessage");
+  const aiDrawer = document.getElementById("aiDrawer");
+  const aiThread = document.getElementById("aiThread");
+  const aiForm = document.getElementById("aiForm");
+  const aiInput = document.getElementById("aiInput");
+  const aiHistory = [];
+
   if (!cartBar || !drawer) return;
 
   function money(n) {
     return `$${Math.round(n)}`;
+  }
+
+  function addToCart(item) {
+    const id = item.id;
+    const existing = cart.get(id);
+    if (existing) existing.qty += 1;
+    else {
+      cart.set(id, {
+        id,
+        name: item.name,
+        price: Number(item.price),
+        listPrice: Number(item.listPrice || item.price),
+        promoType: item.promoType || "",
+        comboPrice: item.comboPrice != null ? Number(item.comboPrice) : null,
+        qty: 1,
+        note: "",
+        allowNote: !!item.allowNote,
+      });
+    }
+    renderCartBar();
+    showToast("Added");
   }
 
   function pricedCart() {
@@ -179,24 +210,15 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const card = btn.closest(".item");
-      const id = card.dataset.id;
-      const existing = cart.get(id);
-      if (existing) existing.qty += 1;
-      else {
-        cart.set(id, {
-          id,
-          name: card.dataset.name,
-          price: Number(card.dataset.price),
-          listPrice: Number(card.dataset.listPrice || card.dataset.price),
-          promoType: card.dataset.promoType || "",
-          comboPrice: card.dataset.comboPrice ? Number(card.dataset.comboPrice) : null,
-          qty: 1,
-          note: "",
-          allowNote: card.dataset.allowNote === "1",
-        });
-      }
-      renderCartBar();
-      showToast("Added");
+      addToCart({
+        id: card.dataset.id,
+        name: card.dataset.name,
+        price: card.dataset.price,
+        listPrice: card.dataset.listPrice || card.dataset.price,
+        promoType: card.dataset.promoType || "",
+        comboPrice: card.dataset.comboPrice || null,
+        allowNote: card.dataset.allowNote === "1",
+      });
     });
   });
 
@@ -209,6 +231,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   drawer.addEventListener("click", (e) => {
     if (e.target === drawer) drawer.classList.remove("open");
+  });
+
+  giftToggle?.addEventListener("change", () => {
+    giftFields.hidden = !giftToggle.checked;
+  });
+
+  document.getElementById("jumpGift")?.addEventListener("click", () => {
+    if (!cart.size) showToast("Add a drink first");
+    renderCartLines();
+    drawer.classList.add("open");
+    if (giftToggle) {
+      giftToggle.checked = true;
+      giftFields.hidden = false;
+      giftSeat?.focus();
+    }
   });
 
   cartLines.addEventListener("click", (e) => {
@@ -242,6 +279,14 @@ document.addEventListener("DOMContentLoaded", () => {
         note: l.note || null,
       })),
     };
+    if (giftToggle?.checked) {
+      const seat = (giftSeat?.value || "").trim();
+      const msg = (giftMessage?.value || "").trim();
+      if (!seat) return showToast("Pick who to treat");
+      if (!msg) return showToast("Add a message for them");
+      payload.deliver_to = seat;
+      payload.gift_message = msg;
+    }
     const btn = document.getElementById("submitOrder");
     btn.disabled = true;
     btn.textContent = "Sending…";
@@ -255,7 +300,13 @@ document.addEventListener("DOMContentLoaded", () => {
       cart.clear();
       renderCartBar();
       drawer.classList.remove("open");
-      showToast("Order sent");
+      if (giftToggle) {
+        giftToggle.checked = false;
+        giftFields.hidden = true;
+        giftMessage.value = "";
+        giftSeat.value = "";
+      }
+      showToast(payload.deliver_to ? "Treat sent" : "Order sent");
     } catch (err) {
       showToast("Failed to send order");
       console.error(err);
@@ -263,5 +314,100 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.disabled = false;
       btn.textContent = "Send to bar";
     }
+  });
+
+  // —— Ask AI ——
+  function appendAI(role, html) {
+    const bubble = document.createElement("div");
+    bubble.className = `ai-bubble ai-${role}`;
+    bubble.innerHTML = html;
+    aiThread.appendChild(bubble);
+    aiThread.scrollTop = aiThread.scrollHeight;
+  }
+
+  function renderSuggestions(list) {
+    if (!list?.length) return "";
+    return `<div class="ai-suggest">${list
+      .map(
+        (s) => `
+      <button type="button" class="ai-suggest-btn"
+        data-id="${s.item_id}"
+        data-name="${s.name.replace(/"/g, "&quot;")}"
+        data-price="${s.price}">
+        <strong>${s.name}</strong>
+        <span>$${Math.round(s.price)}</span>
+        ${s.why ? `<em>${s.why}</em>` : ""}
+        <span class="ai-add">Add</span>
+      </button>`
+      )
+      .join("")}</div>`;
+  }
+
+  async function askAI(message) {
+    const text = (message || "").trim();
+    if (!text) return;
+    appendAI("user", text.replace(/</g, "&lt;"));
+    aiHistory.push({ role: "user", content: text });
+    aiInput.value = "";
+    const sendBtn = document.getElementById("aiSend");
+    sendBtn.disabled = true;
+    sendBtn.textContent = "…";
+    try {
+      const res = await fetch(`/api/t/${table}/ask-ai`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: aiHistory.slice(0, -1) }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const reply = (data.reply || "").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+      appendAI("bot", reply + renderSuggestions(data.suggestions || []));
+      aiHistory.push({ role: "assistant", content: data.reply || "" });
+    } catch (err) {
+      console.error(err);
+      appendAI("bot", "Hmm, I glitched — try again in a sec.");
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = "Ask";
+    }
+  }
+
+  document.getElementById("openAskAI")?.addEventListener("click", () => {
+    aiDrawer.classList.add("open");
+    if (!aiThread.childElementCount) {
+      appendAI(
+        "bot",
+        `Hey ${window.POLAR_GUEST || "there"} — what mood are we in tonight?`
+      );
+    }
+    aiInput.focus();
+  });
+  document.getElementById("closeAskAI")?.addEventListener("click", () => {
+    aiDrawer.classList.remove("open");
+  });
+  aiDrawer?.addEventListener("click", (e) => {
+    if (e.target === aiDrawer) aiDrawer.classList.remove("open");
+  });
+  document.querySelectorAll(".ai-chip").forEach((chip) => {
+    chip.addEventListener("click", () => askAI(chip.dataset.q));
+  });
+  aiForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    askAI(aiInput.value);
+  });
+  aiThread?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".ai-suggest-btn");
+    if (!btn) return;
+    // look up promo attrs from menu card if present
+    const card = document.querySelector(`.item[data-id="${btn.dataset.id}"]`);
+    addToCart({
+      id: btn.dataset.id,
+      name: btn.dataset.name,
+      price: card?.dataset.price || btn.dataset.price,
+      listPrice: card?.dataset.listPrice || btn.dataset.price,
+      promoType: card?.dataset.promoType || "",
+      comboPrice: card?.dataset.comboPrice || null,
+      allowNote: card?.dataset.allowNote === "1",
+    });
   });
 });

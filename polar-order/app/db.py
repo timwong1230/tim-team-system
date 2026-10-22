@@ -45,6 +45,8 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         ("sessions", "receipt_path", "TEXT"),
         ("sessions", "business_date", "TEXT"),
         ("orders", "created_by", "TEXT"),
+        ("orders", "deliver_table_id", "INTEGER"),
+        ("orders", "gift_message", "TEXT"),
     ]
     for table, col, decl in migrations:
         if not _column_exists(conn, table, col):

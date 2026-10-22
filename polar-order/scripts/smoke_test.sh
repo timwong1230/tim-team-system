@@ -51,6 +51,21 @@ grep -q '"ok":true' <<<"$BOSS"
 grep -q Barry <<<"$BOSS"
 
 # Guest close — sales
+# Ask AI + Order for HIM/HER (while guest session still open)
+curl -sf -X POST "$BASE/api/staff/bill/TABLE3/close" -F "pin=$PIN" -F "discount_percent=0" >/dev/null || true
+curl -sf -X POST "$BASE/api/t/TABLE3/welcome" -H 'Content-Type: application/json' \
+  -d '{"guest_name":"Sam","party_size":1}' >/dev/null
+AI=$(curl -sf -X POST "$BASE/api/t/${SEAT}/ask-ai" -H 'Content-Type: application/json' \
+  -d '{"message":"Something sweet please"}')
+grep -q '"ok":true' <<<"$AI"
+grep -q 'suggestions' <<<"$AI"
+GIFT=$(curl -sf -X POST "$BASE/api/t/${SEAT}/orders" -H 'Content-Type: application/json' \
+  -d '{"items":[{"item_id":"coke","qty":1}],"deliver_to":"TABLE3","gift_message":"nice to meet you"}')
+grep -q '"ok":true' <<<"$GIFT"
+STAFF=$(curl -sf "$BASE/api/staff/orders?pin=$PIN")
+grep -q 'nice to meet you' <<<"$STAFF"
+grep -q 'TABLE3' <<<"$STAFF"
+
 CLOSE=$(curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
   -F "pin=$PIN" -F "discount_percent=0")
 grep -q '"ok":true' <<<"$CLOSE"

@@ -48,6 +48,7 @@ from .reports import (
     monthly_boss_report,
     monthly_sales_report,
 )
+from .ai_host import ask_ai
 from .seats import BOSSES, boss_by_id, boss_seat_code
 
 HK = ZoneInfo("Asia/Hong_Kong")
@@ -84,11 +85,19 @@ class OrderIn(BaseModel):
     note: str | None = None
     items: list[CartItemIn]
     party_size: int | None = Field(default=None, ge=1, le=30)
+    # Order for HIM/HER — bill stays on this table; deliver to another seat
+    deliver_to: str | None = None
+    gift_message: str | None = Field(default=None, max_length=200)
 
 
 class BossOrderIn(BaseModel):
     note: str | None = None
     items: list[CartItemIn]
+
+
+class AskAIIn(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    history: list[dict[str, str]] = Field(default_factory=list)
 
 
 def _session_shisha_combo_slots(conn: sqlite3.Connection, session_id: int) -> int:
@@ -183,6 +192,8 @@ def _create_order(
     items: list[CartItemIn],
     note: str | None,
     created_by: str | None = None,
+    deliver_table: sqlite3.Row | None = None,
+    gift_message: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
     if not items:
         raise HTTPException(400, "Cart is empty")
@@ -219,12 +230,28 @@ def _create_order(
         raw_entries, promo=promo, extra_shisha_slots=extra_slots
     )
 
+    deliver_id = deliver_table["id"] if deliver_table else None
+    gift = (gift_message or "").strip() or None
+    if gift and len(gift) > 200:
+        gift = gift[:200]
+
     cur = conn.execute(
         """
-        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at, created_by)
-        VALUES (?, ?, 'new', ?, ?, ?, ?)
+        INSERT INTO orders
+        (session_id, table_id, status, note, created_at, updated_at, created_by,
+         deliver_table_id, gift_message)
+        VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?)
         """,
-        (session["id"], table["id"], note, now, now, created_by),
+        (
+            session["id"],
+            table["id"],
+            note,
+            now,
+            now,
+            created_by,
+            deliver_id,
+            gift,
+        ),
     )
     order_id = cur.lastrowid
     lines = []
@@ -262,6 +289,9 @@ def _create_order(
         "table_label": table["label"],
         "guest_name": guest_name,
         "created_by": created_by,
+        "deliver_to_code": deliver_table["code"] if deliver_table else None,
+        "deliver_to_label": deliver_table["label"] if deliver_table else None,
+        "gift_message": gift,
         "items": lines,
         "created_at": now,
     }
@@ -294,6 +324,12 @@ def guest_table(request: Request, table_code: str):
     ready = bool(session and session["guest_name"])
     menu = _menu_payload(conn) if ready else []
     promo = current_promo()
+    other_seats = []
+    if ready:
+        for t in list_guest_tables(conn):
+            if t["id"] == table["id"]:
+                continue
+            other_seats.append({"code": t["code"], "label": t["label"]})
     conn.close()
     return templates.TemplateResponse(
         "guest.html",
@@ -304,6 +340,7 @@ def guest_table(request: Request, table_code: str):
             "menu": menu,
             "promo": promo,
             "ready": ready,
+            "other_seats": other_seats,
             "title": f"Polar · {table['label']}",
         },
     )
@@ -339,6 +376,9 @@ async def place_order(table_code: str, body: OrderIn):
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        raise HTTPException(400, "Use boss station to order")
 
     session = get_open_session(conn, table["id"])
     if not session or not session["guest_name"]:
@@ -353,6 +393,20 @@ async def place_order(table_code: str, body: OrderIn):
             guest_name=session["guest_name"],
         )
 
+    deliver_table = None
+    gift = (body.gift_message or "").strip() or None
+    if body.deliver_to:
+        deliver_table = get_table_by_code(conn, body.deliver_to)
+        if not deliver_table or (deliver_table["zone"] or "") == "boss":
+            conn.close()
+            raise HTTPException(400, "Invalid delivery seat")
+        if deliver_table["id"] == table["id"]:
+            conn.close()
+            raise HTTPException(400, "Pick a different seat to treat")
+        if not gift:
+            conn.close()
+            raise HTTPException(400, "Add a short message for them")
+
     try:
         order_id, payload = _create_order(
             conn,
@@ -361,6 +415,8 @@ async def place_order(table_code: str, body: OrderIn):
             items=body.items,
             note=body.note,
             created_by=None,
+            deliver_table=deliver_table,
+            gift_message=gift,
         )
     except HTTPException:
         conn.close()
@@ -368,6 +424,25 @@ async def place_order(table_code: str, body: OrderIn):
     conn.close()
     await _broadcast({"type": "order.new", "data": payload})
     return {"ok": True, "order_id": order_id}
+
+
+@app.post("/api/t/{table_code}/ask-ai")
+def guest_ask_ai(table_code: str, body: AskAIIn):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table or (table["zone"] or "") == "boss":
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    guest_name = session["guest_name"] if session else None
+    result = ask_ai(
+        conn,
+        message=body.message.strip(),
+        history=body.history,
+        guest_name=guest_name,
+    )
+    conn.close()
+    return {"ok": True, **result}
 
 
 @app.get("/boss", response_class=HTMLResponse)
@@ -478,10 +553,12 @@ def staff_orders(pin: str = ""):
     orders = conn.execute(
         """
         SELECT o.*, t.code AS table_code, t.label AS table_label,
-               s.guest_name AS guest_name
+               s.guest_name AS guest_name,
+               dt.code AS deliver_to_code, dt.label AS deliver_to_label
         FROM orders o
         JOIN tables t ON t.id = o.table_id
         JOIN sessions s ON s.id = o.session_id
+        LEFT JOIN tables dt ON dt.id = o.deliver_table_id
         WHERE o.status IN ('new', 'preparing', 'ready')
         ORDER BY
           CASE o.status WHEN 'new' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END,
@@ -504,6 +581,9 @@ def staff_orders(pin: str = ""):
                 "created_by": o["created_by"],
                 "note": o["note"],
                 "created_at": o["created_at"],
+                "deliver_to_code": o["deliver_to_code"],
+                "deliver_to_label": o["deliver_to_label"],
+                "gift_message": o["gift_message"],
                 "items": [dict(i) for i in items],
             }
         )

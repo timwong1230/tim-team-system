@@ -55,6 +55,11 @@
     <div class="promo-combo">With Regular Shisha: <strong>$40</strong> for any bar snack</div>
   </div>
 
+  <div class="play-row">
+    <button type="button" class="play-btn" id="openAskAI">Ask AI</button>
+    <button type="button" class="play-btn play-btn-soft" id="jumpGift">Order for HIM/HER</button>
+  </div>
+
   <div class="cats" id="cats">
     {% for cat in menu %}
     <button class="cat-btn {% if loop.first %}active{% endif %}" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
@@ -127,7 +132,49 @@
     <div id="cartLines"></div>
     <label class="muted">Note for staff</label>
     <textarea class="field" id="orderNote" rows="2" placeholder="e.g. less ice / flavour notes"></textarea>
+
+    <div class="gift-box" id="giftBox">
+      <label class="gift-toggle">
+        <input type="checkbox" id="giftToggle" />
+        <span>Order for HIM/HER</span>
+      </label>
+      <div id="giftFields" hidden>
+        <p class="muted" style="margin:0 0 8px">Bill stays on {{ table.label }}. Staff deliver to them with your note.</p>
+        <label class="muted" for="giftSeat">Send to</label>
+        <select class="field" id="giftSeat">
+          <option value="">Pick a seat…</option>
+          {% for s in other_seats %}
+          <option value="{{ s.code }}">{{ s.label }}</option>
+          {% endfor %}
+        </select>
+        <label class="muted" for="giftMessage">Say something</label>
+        <textarea class="field" id="giftMessage" rows="2" maxlength="200" placeholder="e.g. nice to meet you"></textarea>
+      </div>
+    </div>
+
     <button class="primary" id="submitOrder" type="button">Send to bar</button>
+  </div>
+</div>
+
+<div class="drawer" id="aiDrawer">
+  <div class="drawer-panel ai-panel">
+    <div class="row">
+      <h2 style="margin:0">Ask AI</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeAskAI" type="button">Close</button>
+    </div>
+    <p class="muted" style="margin-top:0">Tell me your mood — I’ll pick from our menu & what’s hot tonight.</p>
+    <div class="ai-chips">
+      <button type="button" class="ai-chip" data-q="I’m chill, what should I drink?">Chill</button>
+      <button type="button" class="ai-chip" data-q="Something sweet and fun">Sweet</button>
+      <button type="button" class="ai-chip" data-q="What’s popular tonight?">Bestsellers</button>
+      <button type="button" class="ai-chip" data-q="Shisha night — what pairs well?">Shisha</button>
+      <button type="button" class="ai-chip" data-q="No alcohol please">No alcohol</button>
+    </div>
+    <div class="ai-thread" id="aiThread"></div>
+    <form class="ai-compose" id="aiForm">
+      <input class="field" id="aiInput" type="text" maxlength="500" placeholder="e.g. romantic, not too strong…" autocomplete="off" />
+      <button class="primary" type="submit" id="aiSend">Ask</button>
+    </form>
   </div>
 </div>
 {% endif %}
@@ -137,6 +184,7 @@
 <script>
   window.POLAR_TABLE = {{ table.code|tojson }};
   window.POLAR_READY = {{ 'true' if ready else 'false' }};
+  window.POLAR_GUEST = {{ (session.guest_name if session and session.guest_name else '')|tojson }};
 </script>
 <script src="/static/js/guest.js"></script>
 {% endblock %}
