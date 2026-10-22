@@ -21,8 +21,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return `$${Math.round(n)}`;
   }
 
-  function mixerSlug(mixer) {
-    return String(mixer || "")
+  function serveSlug(value) {
+    return String(value || "")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
@@ -30,50 +30,62 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function lineNotePayload(line) {
     const parts = [];
-    if (line.mixer) parts.push(`Mixer: ${line.mixer}`);
+    if (line.serveChoice) {
+      const prefix = line.servePrefix || (line.serveKind === "mixer" ? "Mixer" : "Serve");
+      parts.push(`${prefix}: ${line.serveChoice}`);
+    }
     if (line.note) parts.push(line.note);
     return parts.length ? parts.join(" · ") : null;
   }
 
-  const mixerDrawer = document.getElementById("mixerDrawer");
-  const mixerChoices = document.getElementById("mixerChoices");
-  const mixerItemName = document.getElementById("mixerItemName");
-  let pendingMixerItem = null;
+  const serveDrawer = document.getElementById("serveDrawer");
+  const serveChoices = document.getElementById("serveChoices");
+  const serveItemName = document.getElementById("serveItemName");
+  const serveDrawerTitle = document.getElementById("serveDrawerTitle");
+  let pendingServeItem = null;
 
-  function openMixerPicker(item, mixers) {
-    pendingMixerItem = { item, mixers };
-    if (mixerItemName) mixerItemName.textContent = item.name;
-    if (mixerChoices) {
-      mixerChoices.innerHTML = mixers
+  function openServePicker(item, serve) {
+    pendingServeItem = { item, serve };
+    if (serveDrawerTitle) serveDrawerTitle.textContent = serve.title || "Choose option";
+    if (serveItemName) serveItemName.textContent = item.name;
+    if (serveChoices) {
+      serveChoices.innerHTML = serve.options
         .map(
           (m) =>
-            `<button type="button" class="mixer-choice" data-mixer="${m.replace(/"/g, "&quot;")}">${m}</button>`
+            `<button type="button" class="mixer-choice" data-serve="${m.replace(/"/g, "&quot;")}">${m}</button>`
         )
         .join("");
     }
-    mixerDrawer?.classList.add("open");
+    serveDrawer?.classList.add("open");
   }
 
-  function closeMixerPicker() {
-    pendingMixerItem = null;
-    mixerDrawer?.classList.remove("open");
+  function closeServePicker() {
+    pendingServeItem = null;
+    serveDrawer?.classList.remove("open");
   }
 
-  document.getElementById("closeMixer")?.addEventListener("click", closeMixerPicker);
-  mixerDrawer?.addEventListener("click", (e) => {
-    if (e.target === mixerDrawer) closeMixerPicker();
+  document.getElementById("closeServe")?.addEventListener("click", closeServePicker);
+  serveDrawer?.addEventListener("click", (e) => {
+    if (e.target === serveDrawer) closeServePicker();
   });
-  mixerChoices?.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-mixer]");
-    if (!btn || !pendingMixerItem) return;
-    addCartLine({ ...pendingMixerItem.item, mixer: btn.dataset.mixer });
-    closeMixerPicker();
+  serveChoices?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-serve]");
+    if (!btn || !pendingServeItem) return;
+    const choice = btn.dataset.serve;
+    const { item, serve } = pendingServeItem;
+    addCartLine({
+      ...item,
+      serveChoice: choice,
+      serveKind: serve.kind,
+      servePrefix: serve.prefix,
+    });
+    closeServePicker();
   });
 
   function addCartLine(item) {
     const itemId = item.itemId || item.id;
-    const mixer = item.mixer || "";
-    const id = mixer ? `${itemId}__${mixerSlug(mixer)}` : itemId;
+    const serveChoice = item.serveChoice || "";
+    const id = serveChoice ? `${itemId}__${serveSlug(serveChoice)}` : itemId;
     const existing = cart.get(id);
     if (existing) existing.qty += item.qty || 1;
     else {
@@ -88,14 +100,16 @@ document.addEventListener("DOMContentLoaded", () => {
         qty: item.qty || 1,
         note: item.note || "",
         allowNote: !!item.allowNote,
-        mixer: mixer || null,
+        serveChoice: serveChoice || null,
+        serveKind: item.serveKind || null,
+        servePrefix: item.servePrefix || null,
         custom: !!item.custom,
         customName: item.customName || null,
         customPrice: item.customPrice != null ? Number(item.customPrice) : null,
       });
     }
     renderCartBar();
-    showToast(mixer ? `Added · ${mixer}` : "Added");
+    showToast(serveChoice ? `Added · ${serveChoice}` : "Added");
   }
 
   function pricedCart() {
@@ -162,14 +176,14 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `<div class="muted">${line.comboQty}× Shisha combo $40</div>`
           : "";
       const nomNote = line.custom ? `<div class="muted">Not on Menu</div>` : "";
-      const mixerNote = line.mixer
-        ? `<div class="muted">Mixer: ${line.mixer}</div>`
+      const serveNote = line.serveChoice
+        ? `<div class="muted">${line.servePrefix || (line.serveKind === "mixer" ? "Mixer" : "Serve")}: ${line.serveChoice}</div>`
         : "";
       row.innerHTML = `
         <div>
           <strong>${line.name}</strong>
           ${nomNote}
-          ${mixerNote}
+          ${serveNote}
           ${comboNote}
           <div class="qty">
             <button type="button" data-act="dec" data-id="${line.id}">−</button>
@@ -233,7 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const card = btn.closest(".item");
-      const mixers = (card.dataset.mixers || "")
+      const options = (card.dataset.serveOptions || "")
         .split("|")
         .map((s) => s.trim())
         .filter(Boolean);
@@ -249,8 +263,13 @@ document.addEventListener("DOMContentLoaded", () => {
         note: "",
         allowNote: card.dataset.allowNote === "1",
       };
-      if (mixers.length) {
-        openMixerPicker(payload, mixers);
+      if (options.length) {
+        openServePicker(payload, {
+          kind: card.dataset.serveKind || "style",
+          title: card.dataset.serveTitle || "Choose option",
+          prefix: card.dataset.servePrefix || "Serve",
+          options,
+        });
         return;
       }
       addCartLine(payload);
