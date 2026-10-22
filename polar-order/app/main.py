@@ -456,7 +456,7 @@ async def place_order(table_code: str, body: OrderIn):
     gift = (body.gift_message or "").strip() or None
     if body.deliver_to:
         deliver_table = get_table_by_code(conn, body.deliver_to)
-        if not deliver_table or (deliver_table["zone"] or "") == "boss":
+        if not deliver_table or (deliver_table["zone"] or "") in ("boss", "demo"):
             conn.close()
             raise HTTPException(400, "Invalid delivery seat")
         if deliver_table["id"] == table["id"]:
@@ -686,12 +686,14 @@ def staff_tables(request: Request, pin: str = ""):
     conn = connect()
     tables = list_active_tables(conn)
     rows = []
+    demo_rows = []
     boss_rows = []
     meta = load_menu_meta()
     for t in tables:
         session = get_open_session(conn, t["id"])
         bill = None
         open_orders = 0
+        zone = t["zone"] or ""
         if session:
             lines = conn.execute(
                 """
@@ -710,7 +712,7 @@ def staff_tables(request: Request, pin: str = ""):
                 (session["id"],),
             ).fetchone()["c"]
             # Boss tabs: show product total only (no guest snack/service)
-            if (t["zone"] or "") == "boss":
+            if zone == "boss":
                 prod = round(sum(float(x["line_total"]) for x in lines), 1)
                 bill = {
                     "total": prod,
@@ -734,10 +736,13 @@ def staff_tables(request: Request, pin: str = ""):
             "session": session,
             "bill": bill,
             "open_orders": open_orders,
-            "is_boss": (t["zone"] or "") == "boss",
+            "is_boss": zone == "boss",
+            "is_demo": zone == "demo",
         }
         if entry["is_boss"]:
             boss_rows.append(entry)
+        elif entry["is_demo"]:
+            demo_rows.append(entry)
         else:
             rows.append(entry)
     conn.close()
@@ -747,6 +752,7 @@ def staff_tables(request: Request, pin: str = ""):
             "request": request,
             "title": "Staff · Seats",
             "rows": rows,
+            "demo_rows": demo_rows,
             "boss_rows": boss_rows,
             "pin": pin,
         },

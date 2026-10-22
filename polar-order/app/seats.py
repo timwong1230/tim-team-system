@@ -4,6 +4,8 @@ from __future__ import annotations
 
 # code must be URL-safe and unique
 SEATS: list[dict] = [
+    # Training seat only — not printed on QR sheets; never share a real table code.
+    {"code": "DEMO", "label": "Demo (staff practice)", "zone": "demo", "sort": 0},
     *[
         {"code": f"TABLE{i}", "label": f"Table {i}", "zone": "table", "sort": i}
         for i in range(1, 6)

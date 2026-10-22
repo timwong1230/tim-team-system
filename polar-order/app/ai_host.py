@@ -53,7 +53,7 @@ def bestsellers(conn: sqlite3.Connection, limit: int = 8) -> list[dict[str, Any]
         JOIN sessions s ON s.id = o.session_id
         JOIN tables t ON t.id = o.table_id
         WHERE o.status != 'cancelled'
-          AND COALESCE(t.zone, '') != 'boss'
+          AND COALESCE(t.zone, '') NOT IN ('boss', 'demo')
         GROUP BY oi.item_id
         ORDER BY qty DESC, revenue DESC
         LIMIT ?

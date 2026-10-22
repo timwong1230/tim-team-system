@@ -14,9 +14,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 Open:
 
-- Guest: http://localhost:8080/t/TABLE1
 - Staff: http://localhost:8080/staff — PIN `polar2026`
-- Table QR print sheet: Staff → Table QR codes
+- Practice guest (separate Demo seat, not Table 1): http://localhost:8080/t/DEMO
+- Real seats: scan printed QR → `/t/TABLE1` …
+- Table QR print sheet: Staff → Seat QR codes
 
 ## Deploy to cloud (Render) — recommended
 
@@ -29,7 +30,7 @@ Open:
 4. Confirm service **polar-order** (Singapore + 1GB disk) → **Apply**.
 5. Wait until Live, then use:
    - Staff: `https://YOUR-SERVICE.onrender.com/staff`
-   - Guest: `https://YOUR-SERVICE.onrender.com/t/TABLE1`
+   - Practice guest: `https://YOUR-SERVICE.onrender.com/t/DEMO` (never use Table 1 for demos)
 6. Staff → **Table QR codes** → print & stick on each seat.
 
 Optional: Render → Settings → **Custom Domain** (e.g. `order.polarlounge.hk`).

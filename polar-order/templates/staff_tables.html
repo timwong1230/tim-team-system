@@ -7,7 +7,7 @@
   </div>
   <div class="hero">
     <h1>Open seats</h1>
-    <p>Tables · Bar · Terrace. Boss tabs are separate (not guest sales).</p>
+    <p>Tables · Bar · Terrace. Demo practice and Boss tabs are separate from guest sales.</p>
   </div>
   <div class="table-grid">
     {% for row in rows %}
@@ -25,6 +25,26 @@
     </a>
     {% endfor %}
   </div>
+
+  {% if demo_rows %}
+  <h2 style="margin:22px 0 10px;font-size:1rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">Demo practice</h2>
+  <div class="table-grid">
+    {% for row in demo_rows %}
+    <a class="table-tile" href="/staff/bill/{{ row.table.code }}?pin={{ pin }}">
+      <strong>{{ row.table.label }}</strong>
+      {% if row.session and row.session.guest_name %}
+        <div class="guest-name">{{ row.session.guest_name }}</div>
+      {% endif %}
+      {% if row.bill %}
+        <div class="amt">${{ '%.0f'|format(row.bill.total) }}</div>
+        <div class="muted">{{ row.open_orders }} open · not a real seat</div>
+      {% else %}
+        <div class="muted">No open session</div>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if boss_rows %}
   <h2 style="margin:22px 0 10px;font-size:1rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">Boss tabs</h2>

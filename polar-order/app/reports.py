@@ -32,7 +32,7 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
         FROM sessions s
         JOIN tables t ON t.id = s.table_id
         WHERE s.status = 'closed' AND s.closed_at IS NOT NULL
-          AND COALESCE(t.zone, '') != 'boss'
+          AND COALESCE(t.zone, '') NOT IN ('boss', 'demo')
         ORDER BY s.closed_at ASC
         """
     ).fetchall()
@@ -114,7 +114,7 @@ def item_purchase_report(
         FROM sessions s
         JOIN tables t ON t.id = s.table_id
         WHERE s.status = 'closed'
-          AND COALESCE(t.zone, '') != 'boss'
+          AND COALESCE(t.zone, '') NOT IN ('boss', 'demo')
         """
     ).fetchall()
     session_ids = []
