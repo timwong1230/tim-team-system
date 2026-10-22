@@ -67,8 +67,71 @@ button, .cat-btn, .add-btn {
   font-size: 0.95rem;
 }
 .hero-welcome {
-  margin: 28px 0 28px;
+  margin: 12px 0 28px;
   text-align: center;
+}
+.welcome-logo-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin: 8px auto 10px;
+  width: min(220px, 56vw);
+  aspect-ratio: 1;
+}
+.welcome-logo-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(240, 226, 176, 0.45) 0%,
+    rgba(212, 192, 140, 0.18) 42%,
+    transparent 70%
+  );
+  filter: blur(6px);
+  animation: logoAura 2.8s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.welcome-logo {
+  position: relative;
+  z-index: 1;
+  width: min(168px, 44vw);
+  height: auto;
+  display: block;
+  filter:
+    drop-shadow(0 0 4px rgba(255, 236, 180, 0.95))
+    drop-shadow(0 0 14px rgba(212, 192, 140, 0.85))
+    drop-shadow(0 0 28px rgba(212, 192, 140, 0.55))
+    drop-shadow(0 0 48px rgba(180, 140, 60, 0.35));
+  animation: logoGlow 2.8s ease-in-out infinite alternate;
+}
+@keyframes logoGlow {
+  from {
+    filter:
+      drop-shadow(0 0 3px rgba(255, 236, 180, 0.7))
+      drop-shadow(0 0 10px rgba(212, 192, 140, 0.55))
+      drop-shadow(0 0 22px rgba(212, 192, 140, 0.35));
+    transform: scale(0.985);
+  }
+  to {
+    filter:
+      drop-shadow(0 0 6px rgba(255, 244, 200, 1))
+      drop-shadow(0 0 18px rgba(240, 226, 176, 0.95))
+      drop-shadow(0 0 36px rgba(212, 192, 140, 0.7))
+      drop-shadow(0 0 56px rgba(180, 140, 60, 0.45));
+    transform: scale(1);
+  }
+}
+@keyframes logoAura {
+  from { opacity: 0.55; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1.06); }
+}
+.welcome-brand {
+  margin: 0 0 16px;
+  color: var(--gold-strong);
+  font-weight: 700;
+  text-shadow: 0 0 18px rgba(212, 192, 140, 0.45);
 }
 .hero-welcome h1 {
   margin: 0 0 14px;

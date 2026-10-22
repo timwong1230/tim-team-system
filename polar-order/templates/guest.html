@@ -2,11 +2,17 @@
 {% block body %}
 <div class="wrap">
   {% if not ready %}
-  <div class="topbar">
-    <div class="brand brand-lounge">POLAR LOUNGE</div>
-  </div>
-
   <div class="hero hero-welcome">
+    <div class="welcome-logo-wrap">
+      <img
+        class="welcome-logo"
+        src="/static/images/polar-logo.png"
+        alt="Polar Lounge"
+        width="180"
+        height="180"
+      />
+    </div>
+    <p class="brand-lounge welcome-brand">POLAR LOUNGE</p>
     <h1>WELCOME TO POLAR</h1>
     <p class="welcome-seat">{{ table.label }}</p>
   </div>
