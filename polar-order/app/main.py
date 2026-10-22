@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -73,6 +74,17 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 class CartItemIn(BaseModel):
     item_id: str
     qty: int = Field(ge=1, le=50)
+    note: str | None = None
+    # Not on Menu — staff/guest typed name + price
+    custom_name: str | None = Field(default=None, max_length=80)
+    custom_price: float | None = Field(default=None, ge=0, le=50000)
+
+
+class StaffCustomIn(BaseModel):
+    pin: str
+    custom_name: str = Field(min_length=1, max_length=80)
+    custom_price: float = Field(ge=0, le=50000)
+    qty: int = Field(default=1, ge=1, le=50)
     note: str | None = None
 
 
@@ -202,6 +214,34 @@ def _create_order(
 
     raw_entries = []
     for entry in items:
+        custom_name = (entry.custom_name or "").strip()
+        is_custom = (
+            entry.item_id in ("not-on-menu", "custom", "nom")
+            or bool(custom_name)
+            or (entry.item_id or "").startswith("nom-")
+        )
+        if is_custom:
+            if not custom_name:
+                raise HTTPException(400, "Not on Menu needs a product name")
+            if entry.custom_price is None:
+                raise HTTPException(400, "Not on Menu needs a price")
+            price = round(float(entry.custom_price), 1)
+            if price < 0:
+                raise HTTPException(400, "Invalid price")
+            slug = re.sub(r"[^a-z0-9]+", "-", custom_name.lower()).strip("-")[:40] or "item"
+            raw_entries.append(
+                {
+                    "item_id": f"nom-{slug}",
+                    "name": custom_name,
+                    "category_id": "not-on-menu",
+                    "promo": "none",
+                    "base_price": price,
+                    "qty": entry.qty,
+                    "note": entry.note,
+                }
+            )
+            continue
+
         item = conn.execute(
             """
             SELECT mi.*, mc.promo AS promo
@@ -761,6 +801,45 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "is_boss": is_boss,
         },
     )
+
+
+@app.post("/api/staff/bill/{table_code}/custom")
+async def staff_add_custom(table_code: str, body: StaffCustomIn):
+    """Staff adds a Not on Menu line to the open session."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session — guest must check in first")
+    try:
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=[
+                CartItemIn(
+                    item_id="not-on-menu",
+                    qty=body.qty,
+                    note=body.note,
+                    custom_name=body.custom_name.strip(),
+                    custom_price=body.custom_price,
+                )
+            ],
+            note="Not on Menu (staff)",
+            created_by="Staff",
+        )
+    except HTTPException:
+        conn.close()
+        raise
+    conn.close()
+    await _broadcast({"type": "order.new", "data": payload})
+    return {"ok": True, "order_id": order_id}
 
 
 @app.post("/api/staff/bill/{table_code}/close")

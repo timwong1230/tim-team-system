@@ -96,8 +96,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function addToCart(item) {
     const id = item.id;
     const existing = cart.get(id);
-    if (existing) existing.qty += 1;
-    else {
+    if (existing) {
+      existing.qty += item.qty || 1;
+    } else {
       cart.set(id, {
         id,
         name: item.name,
@@ -105,9 +106,12 @@ document.addEventListener("DOMContentLoaded", () => {
         listPrice: Number(item.listPrice || item.price),
         promoType: item.promoType || "",
         comboPrice: item.comboPrice != null ? Number(item.comboPrice) : null,
-        qty: 1,
-        note: "",
+        qty: item.qty || 1,
+        note: item.note || "",
         allowNote: !!item.allowNote,
+        custom: !!item.custom,
+        customName: item.customName || null,
+        customPrice: item.customPrice != null ? Number(item.customPrice) : null,
       });
     }
     renderCartBar();
@@ -177,9 +181,11 @@ document.addEventListener("DOMContentLoaded", () => {
         line.comboQty > 0
           ? `<div class="muted">${line.comboQty}× Shisha combo $40</div>`
           : "";
+      const nomNote = line.custom ? `<div class="muted">Not on Menu</div>` : "";
       row.innerHTML = `
         <div>
           <strong>${line.name}</strong>
+          ${nomNote}
           ${comboNote}
           <div class="qty">
             <button type="button" data-act="dec" data-id="${line.id}">−</button>
@@ -197,6 +203,29 @@ document.addEventListener("DOMContentLoaded", () => {
       cartLines.appendChild(row);
     }
   }
+
+  document.getElementById("nomAdd")?.addEventListener("click", () => {
+    const name = (document.getElementById("nomName")?.value || "").trim();
+    const price = Number(document.getElementById("nomPrice")?.value);
+    const qty = Math.max(1, Number(document.getElementById("nomQty")?.value || 1));
+    if (!name) return showToast("Enter product name");
+    if (Number.isNaN(price) || price < 0) return showToast("Enter a valid price");
+    const id = `nom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
+    addToCart({
+      id,
+      name,
+      price,
+      listPrice: price,
+      qty,
+      custom: true,
+      customName: name,
+      customPrice: price,
+    });
+    document.getElementById("nomName").value = "";
+    document.getElementById("nomPrice").value = "";
+    document.getElementById("nomQty").value = "1";
+    renderCartLines();
+  });
 
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -309,11 +338,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!cart.size) return showToast("Cart is empty");
     const payload = {
       note: document.getElementById("orderNote").value || null,
-      items: [...cart.values()].map((l) => ({
-        item_id: l.id,
-        qty: l.qty,
-        note: l.note || null,
-      })),
+      items: [...cart.values()].map((l) => {
+        if (l.custom) {
+          return {
+            item_id: "not-on-menu",
+            qty: l.qty,
+            note: l.note || null,
+            custom_name: l.customName || l.name,
+            custom_price: l.customPrice != null ? l.customPrice : l.price,
+          };
+        }
+        return {
+          item_id: l.id,
+          qty: l.qty,
+          note: l.note || null,
+        };
+      }),
     };
     // Default = own table. Only attach deliver_to when guest ticks the box.
     if (giftToggle?.checked) {

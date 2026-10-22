@@ -41,11 +41,30 @@
     <div class="cart-line">
       <div>
         <strong>{{ line.qty }}× {{ line.item_name }}</strong>
+        {% if line.category_id == 'not-on-menu' %}<div class="muted">Not on Menu</div>{% endif %}
         {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
       </div>
       <div>${{ '%.0f'|format(line.line_total) }}</div>
     </div>
     {% endfor %}
+  </div>
+
+  <div class="card nom-box">
+    <h3 style="margin-top:0">Not on Menu</h3>
+    <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price).</p>
+    <label class="muted" for="staffNomName">Product name</label>
+    <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="staffNomPrice">Price (HKD)</label>
+        <input class="field" id="staffNomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+      </div>
+      <div>
+        <label class="muted" for="staffNomQty">Qty</label>
+        <input class="field" id="staffNomQty" type="number" min="1" max="50" value="1" />
+      </div>
+    </div>
+    <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
   </div>
 
   <form method="post" action="/api/staff/bill/{{ table.code }}/close" id="closeForm">
@@ -85,6 +104,29 @@
     }
   }
   input?.addEventListener('input', recalc);
+
+  document.getElementById('staffNomAdd')?.addEventListener('click', async () => {
+    const name = (document.getElementById('staffNomName').value || '').trim();
+    const price = Number(document.getElementById('staffNomPrice').value);
+    const qty = Number(document.getElementById('staffNomQty').value || 1);
+    if (!name) return alert('Enter product name');
+    if (Number.isNaN(price) || price < 0) return alert('Enter a valid price');
+    const res = await fetch('/api/staff/bill/{{ table.code }}/custom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pin: {{ pin|tojson }},
+        custom_name: name,
+        custom_price: price,
+        qty: qty,
+      }),
+    });
+    if (!res.ok) {
+      alert('Failed to add');
+      return;
+    }
+    location.reload();
+  });
 
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();

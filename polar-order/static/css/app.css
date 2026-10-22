@@ -739,3 +739,17 @@ select.field {
   font-size: 0.8rem;
   margin-top: 4px;
 }
+.nom-box {
+  margin: 12px 0 14px;
+  padding: 12px;
+  border: 1px dashed rgba(212,192,140,0.4);
+  border-radius: 14px;
+  background: rgba(212,192,140,0.06);
+}
+.nom-box strong { color: var(--gold-strong); }
+.nom-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.7fr;
+  gap: 10px;
+}
+.nom-row .field { margin-bottom: 8px; }

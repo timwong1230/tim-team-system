@@ -82,6 +82,25 @@
       <button class="ghost" style="width:auto;padding:8px 12px" id="closeCart" type="button">Close</button>
     </div>
     <div id="cartLines"></div>
+
+    <div class="nom-box" id="nomBox">
+      <strong>Not on Menu</strong>
+      <p class="muted" style="margin:6px 0 8px;font-size:0.85rem">Manual name + price for off-menu items.</p>
+      <label class="muted" for="nomName">Product name</label>
+      <input class="field" id="nomName" type="text" maxlength="80" placeholder="e.g. Guest bottle" />
+      <div class="nom-row">
+        <div>
+          <label class="muted" for="nomPrice">Price (HKD)</label>
+          <input class="field" id="nomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+        </div>
+        <div>
+          <label class="muted" for="nomQty">Qty</label>
+          <input class="field" id="nomQty" type="number" min="1" max="50" value="1" />
+        </div>
+      </div>
+      <button class="ghost" type="button" id="nomAdd" style="margin-top:0">Add Not on Menu</button>
+    </div>
+
     <label class="muted">Note for staff</label>
     <textarea class="field" id="orderNote" rows="2" placeholder="optional note"></textarea>
     <button class="primary" id="submitOrder" type="button">Send order</button>

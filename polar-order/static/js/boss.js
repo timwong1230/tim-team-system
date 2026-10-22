@@ -81,9 +81,11 @@ document.addEventListener("DOMContentLoaded", () => {
         line.comboQty > 0
           ? `<div class="muted">${line.comboQty}× Shisha combo $40</div>`
           : "";
+      const nomNote = line.custom ? `<div class="muted">Not on Menu</div>` : "";
       row.innerHTML = `
         <div>
           <strong>${line.name}</strong>
+          ${nomNote}
           ${comboNote}
           <div class="qty">
             <button type="button" data-act="dec" data-id="${line.id}">−</button>
@@ -101,6 +103,39 @@ document.addEventListener("DOMContentLoaded", () => {
       cartLines.appendChild(row);
     }
   }
+
+  document.getElementById("nomAdd")?.addEventListener("click", () => {
+    const name = (document.getElementById("nomName")?.value || "").trim();
+    const price = Number(document.getElementById("nomPrice")?.value);
+    const qty = Math.max(1, Number(document.getElementById("nomQty")?.value || 1));
+    if (!name) return showToast("Enter product name");
+    if (Number.isNaN(price) || price < 0) return showToast("Enter a valid price");
+    const id = `nom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
+    const existing = cart.get(id);
+    if (existing) existing.qty += qty;
+    else {
+      cart.set(id, {
+        id,
+        name,
+        price,
+        listPrice: price,
+        promoType: "",
+        comboPrice: null,
+        qty,
+        note: "",
+        allowNote: false,
+        custom: true,
+        customName: name,
+        customPrice: price,
+      });
+    }
+    renderCartBar();
+    renderCartLines();
+    document.getElementById("nomName").value = "";
+    document.getElementById("nomPrice").value = "";
+    document.getElementById("nomQty").value = "1";
+    showToast("Added");
+  });
 
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -171,11 +206,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!cart.size) return showToast("Cart is empty");
     const payload = {
       note: document.getElementById("orderNote").value || null,
-      items: [...cart.values()].map((l) => ({
-        item_id: l.id,
-        qty: l.qty,
-        note: l.note || null,
-      })),
+      items: [...cart.values()].map((l) => {
+        if (l.custom) {
+          return {
+            item_id: "not-on-menu",
+            qty: l.qty,
+            note: l.note || null,
+            custom_name: l.customName || l.name,
+            custom_price: l.customPrice != null ? l.customPrice : l.price,
+          };
+        }
+        return {
+          item_id: l.id,
+          qty: l.qty,
+          note: l.note || null,
+        };
+      }),
     };
     const btn = document.getElementById("submitOrder");
     btn.disabled = true;
