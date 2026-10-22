@@ -56,6 +56,25 @@ button, .cat-btn, .add-btn {
   background: linear-gradient(to bottom, rgba(7,11,22,0.95), rgba(7,11,22,0.7), transparent);
   z-index: 20;
 }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+button.pill-action {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  background: rgba(212, 192, 140, 0.12);
+  border-color: rgba(212, 192, 140, 0.55);
+  color: var(--gold-strong);
+  letter-spacing: 0.04em;
+}
+button.pill-action:active {
+  transform: scale(0.98);
+}
 .brand {
   letter-spacing: 0.22em;
   font-weight: 700;
