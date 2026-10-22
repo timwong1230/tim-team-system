@@ -53,7 +53,12 @@ from .reports import (
 from .ai_host import ask_ai
 from .paths import DATA_DIR, ROOT
 from .seats import BOSSES, boss_by_id, boss_seat_code
-from .spirits import spirit_serve_for
+from .spirits import (
+    SINGLE_MIX_ITEM_ID,
+    list_spirit_glass_options,
+    single_mix_serve,
+    spirit_serve_for,
+)
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -190,6 +195,8 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 item_id=item["id"],
             )
             serve = spirit_serve_for(cat["id"], item["unit"])
+            if item["id"] == SINGLE_MIX_ITEM_ID:
+                serve = single_mix_serve(list_spirit_glass_options(conn))
             row = {
                 "id": item["id"],
                 "name": item["name"],
@@ -204,7 +211,7 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "combo_price": None,
                 "serve": serve,
                 # legacy alias for templates during transition
-                "mixer_options": serve["options"] if serve else None,
+                "mixer_options": (serve.get("options") if serve else None) or None,
             }
             if cat["promo"] == "snacks":
                 row["combo_price"] = SHISHA_COMBO_SNACK_PRICE
@@ -405,6 +412,7 @@ def guest_table(request: Request, table_code: str):
     session = get_open_session(conn, table["id"])
     ready = bool(session and session["guest_name"])
     menu = _menu_payload(conn) if ready else []
+    single_mix_spirits = list_spirit_glass_options(conn) if ready else []
     promo = current_promo()
     other_seats = []
     if ready:
@@ -423,6 +431,7 @@ def guest_table(request: Request, table_code: str):
             "promo": promo,
             "ready": ready,
             "other_seats": other_seats,
+            "single_mix_spirits": single_mix_spirits,
             "title": f"Polar · {table['label']}",
         },
     )
@@ -606,6 +615,7 @@ def boss_station(request: Request, boss_id: str):
     # Keep an open personal tab so staff can see running total
     start_session(conn, table["id"], boss["name"], party_size=1)
     menu = _menu_payload(conn)
+    single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()
     return templates.TemplateResponse(
@@ -617,6 +627,7 @@ def boss_station(request: Request, boss_id: str):
             "seat_code": table["code"],
             "menu": menu,
             "promo": promo,
+            "single_mix_spirits": single_mix_spirits,
         },
     )
 
@@ -872,6 +883,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
     menu = _menu_payload(conn)
+    single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()
     return templates.TemplateResponse(
@@ -885,6 +897,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
             "promo": promo,
             "pin": pin,
             "needs_checkin": not bool(session and session["guest_name"]),
+            "single_mix_spirits": single_mix_spirits,
         },
     )
 

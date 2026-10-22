@@ -25,10 +25,23 @@ document.addEventListener("DOMContentLoaded", () => {
       .replace(/^-|-$/g, "");
   }
 
+  const GLASS_STYLES = new Set(["Neat", "On the Rocks"]);
+
+  function prefixForServeChoice(choice, kind) {
+    if (kind === "mixer") return "Mixer";
+    if (kind === "single_mix") return "Spirit";
+    if (GLASS_STYLES.has(choice)) return "Serve";
+    return "Mixer";
+  }
+
   function lineNotePayload(line) {
     const parts = [];
-    if (line.serveChoice) {
-      const prefix = line.servePrefix || (line.serveKind === "mixer" ? "Mixer" : "Serve");
+    if (line.serveKind === "single_mix" && line.serveSpirit && line.serveMixer) {
+      parts.push(`Spirit: ${line.serveSpirit}`);
+      parts.push(`Mixer: ${line.serveMixer}`);
+    } else if (line.serveChoice) {
+      const prefix =
+        line.servePrefix || prefixForServeChoice(line.serveChoice, line.serveKind);
       parts.push(`${prefix}: ${line.serveChoice}`);
     }
     if (line.note) parts.push(line.note);
@@ -41,17 +54,29 @@ document.addEventListener("DOMContentLoaded", () => {
   const serveDrawerTitle = document.getElementById("serveDrawerTitle");
   let pendingServeItem = null;
 
+  function renderServeOptions(options, dataAttr) {
+    if (!serveChoices) return;
+    serveChoices.innerHTML = options
+      .map((m) => {
+        const label = typeof m === "string" ? m : m.label || m.name;
+        const value = typeof m === "string" ? m : m.name;
+        return `<button type="button" class="mixer-choice" data-${dataAttr}="${String(value).replace(/"/g, "&quot;")}">${label}</button>`;
+      })
+      .join("");
+  }
+
   function openServePicker(item, serve) {
-    pendingServeItem = { item, serve };
+    pendingServeItem = { item, serve, step: serve.kind === "single_mix" ? "spirit" : "choice" };
     if (serveDrawerTitle) serveDrawerTitle.textContent = serve.title || "Choose option";
-    if (serveItemName) serveItemName.textContent = item.name;
-    if (serveChoices) {
-      serveChoices.innerHTML = serve.options
-        .map(
-          (m) =>
-            `<button type="button" class="mixer-choice" data-serve="${m.replace(/"/g, "&quot;")}">${m}</button>`
-        )
-        .join("");
+    if (serveItemName) {
+      serveItemName.textContent =
+        serve.kind === "single_mix" ? "1/2 — Pick a spirit" : item.name;
+    }
+    if (serve.kind === "single_mix") {
+      const spirits = window.POLAR_SINGLE_MIX_SPIRITS || [];
+      renderServeOptions(spirits, "spirit");
+    } else {
+      renderServeOptions(serve.options || [], "serve");
     }
     serveDrawer?.classList.add("open");
   }
@@ -66,15 +91,44 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === serveDrawer) closeServePicker();
   });
   serveChoices?.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-serve]");
-    if (!btn || !pendingServeItem) return;
-    const choice = btn.dataset.serve;
+    if (!pendingServeItem) return;
     const { item, serve } = pendingServeItem;
+    if (serve.kind === "single_mix") {
+      const spiritBtn = e.target.closest("[data-spirit]");
+      const mixerBtn = e.target.closest("[data-mixer]");
+      if (spiritBtn && pendingServeItem.step === "spirit") {
+        pendingServeItem.spirit = spiritBtn.dataset.spirit;
+        pendingServeItem.step = "mixer";
+        if (serveDrawerTitle) serveDrawerTitle.textContent = "Choose mixer";
+        if (serveItemName) {
+          serveItemName.textContent = `2/2 — ${pendingServeItem.spirit} · pick mixer`;
+        }
+        renderServeOptions(serve.mixers || [], "mixer");
+        return;
+      }
+      if (mixerBtn && pendingServeItem.step === "mixer" && pendingServeItem.spirit) {
+        const mixer = mixerBtn.dataset.mixer;
+        const spirit = pendingServeItem.spirit;
+        addCartLine({
+          ...item,
+          serveKind: "single_mix",
+          serveSpirit: spirit,
+          serveMixer: mixer,
+          serveChoice: `${spirit} + ${mixer}`,
+          servePrefix: "Spirit",
+        });
+        closeServePicker();
+      }
+      return;
+    }
+    const btn = e.target.closest("[data-serve]");
+    if (!btn) return;
+    const choice = btn.dataset.serve;
     addCartLine({
       ...item,
       serveChoice: choice,
       serveKind: serve.kind,
-      servePrefix: serve.prefix,
+      servePrefix: prefixForServeChoice(choice, serve.kind),
     });
     closeServePicker();
   });
@@ -84,8 +138,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const serveChoice = item.serveChoice || "";
     const id = serveChoice ? `${itemId}__${serveSlug(serveChoice)}` : itemId;
     const existing = cart.get(id);
-    if (existing) existing.qty += item.qty || 1;
-    else {
+    if (existing) {
+      existing.qty += item.qty || 1;
+    } else {
       cart.set(id, {
         id,
         itemId,
@@ -100,6 +155,8 @@ document.addEventListener("DOMContentLoaded", () => {
         serveChoice: serveChoice || null,
         serveKind: item.serveKind || null,
         servePrefix: item.servePrefix || null,
+        serveSpirit: item.serveSpirit || null,
+        serveMixer: item.serveMixer || null,
         custom: !!item.custom,
         customName: item.customName || null,
         customPrice: item.customPrice != null ? Number(item.customPrice) : null,
@@ -173,9 +230,11 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `<div class="muted">${line.comboQty}× Shisha combo $40</div>`
           : "";
       const nomNote = line.custom ? `<div class="muted">Not on Menu</div>` : "";
-      const serveNote = line.serveChoice
-        ? `<div class="muted">${line.servePrefix || (line.serveKind === "mixer" ? "Mixer" : "Serve")}: ${line.serveChoice}</div>`
-        : "";
+      const serveNote = line.serveKind === "single_mix" && line.serveSpirit
+        ? `<div class="muted">Spirit: ${line.serveSpirit}<br/>Mixer: ${line.serveMixer || ""}</div>`
+        : line.serveChoice
+          ? `<div class="muted">${line.servePrefix || prefixForServeChoice(line.serveChoice, line.serveKind)}: ${line.serveChoice}</div>`
+          : "";
       row.innerHTML = `
         <div>
           <strong>${line.name}</strong>
@@ -260,9 +319,21 @@ document.addEventListener("DOMContentLoaded", () => {
         note: "",
         allowNote: card.dataset.allowNote === "1",
       };
+      const kind = card.dataset.serveKind || "";
+      if (kind === "single_mix") {
+        openServePicker(payload, {
+          kind: "single_mix",
+          title: card.dataset.serveTitle || "Single Mix",
+          mixers: (card.dataset.serveMixers || "")
+            .split("|")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        });
+        return;
+      }
       if (options.length) {
         openServePicker(payload, {
-          kind: card.dataset.serveKind || "style",
+          kind: kind || "glass",
           title: card.dataset.serveTitle || "Choose option",
           prefix: card.dataset.servePrefix || "Serve",
           options,
