@@ -12,8 +12,8 @@ SHISHA_REGULAR_ID = "shisha-regular"
 def current_promo(now: datetime | None = None) -> dict:
     """
     Polar time-based pricing (HK):
-    - 2pm–5pm Meditation: Shisha $250, drinks 30% off (7折)
-    - 5pm–8pm Happy Hour: drinks 20% off (8折)
+    - 2pm–5pm Meditation: Shisha $250, drinks 30% off
+    - 5pm–8pm Happy Hour: drinks 20% off
     - after 8pm (and before 2pm): regular price
     """
     now = now or datetime.now(HK)
@@ -24,7 +24,7 @@ def current_promo(now: datetime | None = None) -> dict:
             "label": "Meditation Hour",
             "window": "2pm–5pm",
             "drinks_off": 0.30,
-            "drinks_label": "7折",
+            "drinks_label": "30% OFF",
             "shisha_price": 250.0,
             "snack_combo_price": SHISHA_COMBO_SNACK_PRICE,
         }
@@ -34,7 +34,7 @@ def current_promo(now: datetime | None = None) -> dict:
             "label": "Happy Hour",
             "window": "5pm–8pm",
             "drinks_off": 0.20,
-            "drinks_label": "8折",
+            "drinks_label": "20% OFF",
             "shisha_price": None,
             "snack_combo_price": SHISHA_COMBO_SNACK_PRICE,
         }
