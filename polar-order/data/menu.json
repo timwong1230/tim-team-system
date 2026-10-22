@@ -43,67 +43,78 @@
           "id": "taurus",
           "name": "Taurus — The Grounded Soul",
           "price": 129,
-          "note": "Lemongrass gin, cranberry, St. Germain"
+          "note": "Lemongrass gin, cranberry, St. Germain",
+          "image": "/static/images/menu/taurus.jpg"
         },
         {
           "id": "gemini",
           "name": "Gemini — The Dual Reflection",
           "price": 129,
-          "note": "Tequila, pineapple, yogurt, lime"
+          "note": "Tequila, pineapple, yogurt, lime",
+          "image": "/static/images/menu/gemini.jpg"
         },
         {
           "id": "cancer",
           "name": "Cancer — The Soothing Oasis",
           "price": 139,
-          "note": "Rose gin, cucumber, Cointreau, soda"
+          "note": "Rose gin, cucumber, Cointreau, soda",
+          "image": "/static/images/menu/cancer.jpg"
         },
         {
           "id": "leo",
           "name": "Leo — The Radiant Majesty",
           "price": 139,
-          "note": "B&B D.O.M, Martini Blanco, Patron"
+          "note": "B&B D.O.M, Martini Blanco, Patron",
+          "image": "/static/images/menu/leo.jpg"
         },
         {
           "id": "virgo",
           "name": "Virgo — The Refined Botanist",
           "price": 139,
-          "note": "Earl Grey, gin, elderflower, rose"
+          "note": "Earl Grey, gin, elderflower, rose",
+          "image": "/static/images/menu/virgo.jpg"
         },
         {
           "id": "libra",
           "name": "Libra — The Elegant Balance",
           "price": 129,
-          "note": "Rum, lychee, violet, egg white"
+          "note": "Rum, lychee, violet, egg white",
+          "image": "/static/images/menu/libra.jpg"
         },
         {
           "id": "scorpio",
           "name": "Scorpio — The Smoky Enigma",
           "price": 129,
-          "note": "Mezcal, Aperol, cucumber, lime"
+          "note": "Mezcal, Aperol, cucumber, lime",
+          "image": "/static/images/menu/scorpio.jpg"
         },
         {
           "id": "sagittarius",
           "name": "Sagittarius — The Eternal Explorer",
           "price": 129,
-          "note": "Rose gin, violette, St. Germain"
+          "note": "Rose gin, violette, St. Germain",
+          "image": "/static/images/menu/sagittarius.jpg"
         },
         {
           "id": "capricorn",
           "name": "Capricorn — The Earthy Sophistication",
           "price": 129,
-          "note": "Dark rum, perilla, bitters, ginger ale"
+          "note": "Dark rum, perilla, bitters, ginger ale",
+          "image": "/static/images/menu/capricorn.jpg"
         },
         {
           "id": "aquarius",
           "name": "Aquarius — The Unconventional Kiss",
           "price": 139,
-          "note": "Moscato, blue curaçao, caviar"
+          "note": "Moscato, blue curaçao, caviar",
+          "image": "/static/images/menu/aquarius.jpg"
         },
         {
           "id": "pisces",
           "name": "Pisces — The Midnight Daydream",
           "price": 129,
-          "note": "Disaronno, Malibu, Martini Extra Dry"
+          "note": "Disaronno, Malibu, Martini Extra Dry",
+          "image": "/static/images/menu/pisces.jpg"
         }
       ]
     },
