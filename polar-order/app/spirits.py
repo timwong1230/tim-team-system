@@ -7,6 +7,9 @@ from typing import Any
 # Keep in sync with Ask AI mood playbooks (ai_host.SPIRIT_CATS).
 SPIRIT_CATS = ("vodka", "gin", "whisky", "liqueur", "tequila", "rum", "cognac")
 
+# Single Mix tower — house spirits only (no liqueur / tequila / cognac).
+SINGLE_MIX_SPIRIT_CATS = ("vodka", "gin", "whisky", "rum")
+
 SPIRIT_MIXERS = ("Soda Water", "Tonic Water", "Coke")
 SPIRIT_BOTTLE_MIXERS = SPIRIT_MIXERS
 
@@ -61,7 +64,8 @@ def single_mix_serve(spirit_options: list[dict[str, str]]) -> dict[str, Any]:
 
 
 def list_spirit_glass_options(conn) -> list[dict[str, str]]:
-    """Cheapest glass (house) spirit per category for Single Mix."""
+    """Cheapest glass (house) spirit per Single Mix category."""
+    cats = SINGLE_MIX_SPIRIT_CATS
     rows = conn.execute(
         """
         SELECT mi.id, mi.name, mi.price, mc.id AS category_id,
@@ -72,8 +76,8 @@ def list_spirit_glass_options(conn) -> list[dict[str, str]]:
           AND mi.unit = 'Glass'
           AND mc.id IN ({placeholders})
         ORDER BY mc.sort_order ASC, mi.price ASC, mi.name ASC
-        """.format(placeholders=",".join("?" * len(SPIRIT_CATS))),
-        SPIRIT_CATS,
+        """.format(placeholders=",".join("?" * len(cats))),
+        cats,
     ).fetchall()
     # One house pour per spirit type — lowest Glass price (name tie-break).
     best: dict[str, Any] = {}
@@ -89,6 +93,5 @@ def list_spirit_glass_options(conn) -> list[dict[str, str]]:
             "price": float(r["price"]),
             "label": f"{r['category_name']} · {r['name']}",
         }
-    # Keep category sort order from SPIRIT_CATS / sort_order in query
-    order = {cid: i for i, cid in enumerate(SPIRIT_CATS)}
+    order = {cid: i for i, cid in enumerate(cats)}
     return sorted(best.values(), key=lambda x: order.get(x["category_id"], 99))
