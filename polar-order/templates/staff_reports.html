@@ -58,6 +58,26 @@
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0">Monthly Boss Report</h3>
+    <p class="muted">{{ bosses.label }} · not included in guest sales above</p>
+    <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(bosses.gross_total) }}</div>
+    {% for b in bosses.bosses %}
+    <div class="cart-line" style="align-items:flex-start">
+      <div>
+        <strong>{{ b.boss_name }}</strong>
+        <div class="muted">{{ b.order_count }} orders · {{ b.item_qty }} items</div>
+        {% for i in b.item_rows[:6] %}
+        <div class="muted">{{ i.qty }}× {{ i.item_name }} · ${{ '%.0f'|format(i.revenue) }}</div>
+        {% endfor %}
+      </div>
+      <div>${{ '%.0f'|format(b.total) }}</div>
+    </div>
+    {% else %}
+    <p class="muted">No boss orders this month.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0">Purchase · by category</h3>
     <p class="muted">{{ items.label }}</p>
     {% for c in items.by_category %}

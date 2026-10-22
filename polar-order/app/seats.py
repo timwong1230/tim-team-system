@@ -1,4 +1,4 @@
-"""Polar Lounge seat map."""
+"""Polar Lounge seat map + boss stations."""
 
 from __future__ import annotations
 
@@ -30,9 +30,34 @@ BOSSES = [
     {"id": "ziv", "name": "Ziv"},
 ]
 
+# Dedicated order tabs — not guest seats, excluded from sales reports
+for i, b in enumerate(BOSSES):
+    SEATS.append(
+        {
+            "code": f"BOSS{b['id'].upper()}",
+            "label": f"Boss · {b['name']}",
+            "zone": "boss",
+            "sort": 900 + i,
+            "boss_id": b["id"],
+        }
+    )
+
 
 def boss_by_id(boss_id: str) -> dict | None:
     for b in BOSSES:
         if b["id"] == boss_id.lower():
             return b
     return None
+
+
+def boss_seat_code(boss_id: str) -> str | None:
+    b = boss_by_id(boss_id)
+    if not b:
+        return None
+    return f"BOSS{b['id'].upper()}"
+
+
+def is_boss_name(name: str | None) -> bool:
+    if not name:
+        return False
+    return name.strip().lower() in {b["name"].lower() for b in BOSSES}

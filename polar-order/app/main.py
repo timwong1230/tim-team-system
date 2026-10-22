@@ -26,6 +26,7 @@ from .db import (
     get_table_by_code,
     init_db,
     list_active_tables,
+    list_guest_tables,
     load_menu_meta,
     publish_event,
     start_session,
@@ -41,8 +42,13 @@ from .pricing import (
     price_order_lines,
 )
 from .receipt import generate_receipt_pdf
-from .reports import daily_sales_report, item_purchase_report, monthly_sales_report
-from .seats import BOSSES, boss_by_id
+from .reports import (
+    daily_sales_report,
+    item_purchase_report,
+    monthly_boss_report,
+    monthly_sales_report,
+)
+from .seats import BOSSES, boss_by_id, boss_seat_code
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -81,9 +87,6 @@ class OrderIn(BaseModel):
 
 
 class BossOrderIn(BaseModel):
-    table_code: str
-    guest_name: str = Field(min_length=1, max_length=40)
-    party_size: int = Field(default=2, ge=1, le=30)
     note: str | None = None
     items: list[CartItemIn]
 
@@ -282,6 +285,11 @@ def guest_table(request: Request, table_code: str):
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        # Boss tabs are not guest QR seats
+        boss_id = table_code.replace("BOSS", "").lower()
+        return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
     ready = bool(session and session["guest_name"])
     menu = _menu_payload(conn) if ready else []
@@ -375,21 +383,14 @@ def boss_station(request: Request, boss_id: str):
     boss = boss_by_id(boss_id)
     if not boss:
         raise HTTPException(404, "Boss not found")
+    seat_code = boss_seat_code(boss_id)
     conn = connect()
-    tables = list_active_tables(conn)
-    seat_rows = []
-    for t in tables:
-        session = get_open_session(conn, t["id"])
-        seat_rows.append(
-            {
-                "code": t["code"],
-                "label": t["label"],
-                "zone": t["zone"],
-                "has_session": bool(session),
-                "guest_name": session["guest_name"] if session else None,
-                "party_size": session["party_size"] if session else None,
-            }
-        )
+    table = get_table_by_code(conn, seat_code) if seat_code else None
+    if not table:
+        conn.close()
+        raise HTTPException(500, "Boss seat not seeded")
+    # Keep an open personal tab so staff can see running total
+    start_session(conn, table["id"], boss["name"], party_size=1)
     menu = _menu_payload(conn)
     promo = current_promo()
     conn.close()
@@ -399,7 +400,7 @@ def boss_station(request: Request, boss_id: str):
             "request": request,
             "title": f"{boss['name']} · Order",
             "boss": boss,
-            "tables": seat_rows,
+            "seat_code": table["code"],
             "menu": menu,
             "promo": promo,
         },
@@ -413,15 +414,14 @@ async def boss_place_order(boss_id: str, body: BossOrderIn):
         raise HTTPException(404, "Boss not found")
     if not body.items:
         raise HTTPException(400, "Cart is empty")
+    seat_code = boss_seat_code(boss_id)
     conn = connect()
-    table = get_table_by_code(conn, body.table_code)
+    table = get_table_by_code(conn, seat_code) if seat_code else None
     if not table:
         conn.close()
-        raise HTTPException(404, "Seat not found")
+        raise HTTPException(500, "Boss seat not seeded")
     try:
-        session = start_session(
-            conn, table["id"], body.guest_name.strip(), body.party_size
-        )
+        session = start_session(conn, table["id"], boss["name"], party_size=1)
         order_id, payload = _create_order(
             conn,
             table=table,
@@ -547,6 +547,7 @@ def staff_tables(request: Request, pin: str = ""):
     conn = connect()
     tables = list_active_tables(conn)
     rows = []
+    boss_rows = []
     meta = load_menu_meta()
     for t in tables:
         session = get_open_session(conn, t["id"])
@@ -569,24 +570,47 @@ def staff_tables(request: Request, pin: str = ""):
                 """,
                 (session["id"],),
             ).fetchone()["c"]
-            bill = compute_bill(
-                [dict(x) for x in lines],
-                session["party_size"],
-                meta["service_charge_rate"],
-                meta["snack_charge_per_head"],
-            )
-        rows.append(
-            {
-                "table": t,
-                "session": session,
-                "bill": bill,
-                "open_orders": open_orders,
-            }
-        )
+            # Boss tabs: show product total only (no guest snack/service)
+            if (t["zone"] or "") == "boss":
+                prod = round(sum(float(x["line_total"]) for x in lines), 1)
+                bill = {
+                    "total": prod,
+                    "subtotal": prod,
+                    "snack_charge": 0,
+                    "service_charge": 0,
+                    "discount_amount": 0,
+                    "discount_percent": 0,
+                    "party_size": 1,
+                    "service_charge_rate": 0,
+                }
+            else:
+                bill = compute_bill(
+                    [dict(x) for x in lines],
+                    session["party_size"],
+                    meta["service_charge_rate"],
+                    meta["snack_charge_per_head"],
+                )
+        entry = {
+            "table": t,
+            "session": session,
+            "bill": bill,
+            "open_orders": open_orders,
+            "is_boss": (t["zone"] or "") == "boss",
+        }
+        if entry["is_boss"]:
+            boss_rows.append(entry)
+        else:
+            rows.append(entry)
     conn.close()
     return templates.TemplateResponse(
         "staff_tables.html",
-        {"request": request, "title": "Staff · Seats", "rows": rows, "pin": pin},
+        {
+            "request": request,
+            "title": "Staff · Seats",
+            "rows": rows,
+            "boss_rows": boss_rows,
+            "pin": pin,
+        },
     )
 
 
@@ -619,15 +643,29 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
     meta = load_menu_meta()
     lines: list[dict] = []
     bill = None
+    is_boss = (table["zone"] or "") == "boss"
     if session:
         lines = _session_lines(conn, session["id"])
-        bill = compute_bill(
-            lines,
-            session["party_size"],
-            meta["service_charge_rate"],
-            meta["snack_charge_per_head"],
-            discount_percent=discount,
-        )
+        if is_boss:
+            prod = round(sum(float(x["line_total"]) for x in lines), 1)
+            bill = {
+                "total": prod,
+                "subtotal": prod,
+                "snack_charge": 0,
+                "service_charge": 0,
+                "discount_amount": 0,
+                "discount_percent": 0,
+                "party_size": 1,
+                "service_charge_rate": 0,
+            }
+        else:
+            bill = compute_bill(
+                lines,
+                session["party_size"],
+                meta["service_charge_rate"],
+                meta["snack_charge_per_head"],
+                discount_percent=discount,
+            )
     conn.close()
     return templates.TemplateResponse(
         "staff_bill.html",
@@ -640,6 +678,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "bill": bill,
             "pin": pin,
             "discount": discount or 0,
+            "is_boss": is_boss,
         },
     )
 
@@ -664,20 +703,34 @@ def close_bill(
 
     meta = load_menu_meta()
     lines = _session_lines(conn, session["id"])
-    bill = compute_bill(
-        lines,
-        session["party_size"],
-        meta["service_charge_rate"],
-        meta["snack_charge_per_head"],
-        discount_percent=discount_percent,
-    )
+    is_boss = (table["zone"] or "") == "boss"
+    if is_boss:
+        prod = round(sum(float(x["line_total"]) for x in lines), 1)
+        bill = {
+            "total": prod,
+            "subtotal": prod,
+            "snack_charge": 0,
+            "service_charge": 0,
+            "discount_amount": 0,
+            "discount_percent": 0,
+            "party_size": 1,
+            "service_charge_rate": 0,
+        }
+    else:
+        bill = compute_bill(
+            lines,
+            session["party_size"],
+            meta["service_charge_rate"],
+            meta["snack_charge_per_head"],
+            discount_percent=discount_percent,
+        )
     now = utc_now()
     biz = business_date(datetime.now(HK)).isoformat()
     guest_name = session["guest_name"] if session["guest_name"] else None
     receipt_rel = generate_receipt_pdf(
         session_id=session["id"],
         table_label=table["label"],
-        party_size=session["party_size"],
+        party_size=session["party_size"] if not is_boss else 1,
         lines=lines,
         bill=bill,
         closed_at_iso=now,
@@ -749,15 +802,19 @@ def staff_qrs(request: Request, pin: str = ""):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
     conn = connect()
-    tables = list_active_tables(conn)
+    tables = list_guest_tables(conn)
     conn.close()
     base = str(request.base_url).rstrip("/")
+    boss_links = [
+        {"name": b["name"], "url": f"{base}/boss/{b['id']}"} for b in BOSSES
+    ]
     return templates.TemplateResponse(
         "staff_qrs.html",
         {
             "request": request,
             "title": "Seat QR Codes",
             "tables": tables,
+            "boss_links": boss_links,
             "base": base,
             "pin": pin,
         },
@@ -828,6 +885,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
     daily = daily_sales_report(conn, biz)
     monthly = monthly_sales_report(conn, year, mon)
     items = item_purchase_report(conn, year=year, month=mon)
+    bosses = monthly_boss_report(conn, year, mon)
     conn.close()
     return templates.TemplateResponse(
         "staff_reports.html",
@@ -838,6 +896,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "daily": daily,
             "monthly": monthly,
             "items": items,
+            "bosses": bosses,
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
         },

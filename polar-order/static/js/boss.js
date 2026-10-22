@@ -7,10 +7,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const drawer = document.getElementById("drawer");
   const cartLines = document.getElementById("cartLines");
   const toast = document.getElementById("toast");
-  const seatSelect = document.getElementById("seatSelect");
-  const guestPanel = document.getElementById("guestPanel");
-  const guestName = document.getElementById("bossGuestName");
-  const partySize = document.getElementById("bossPartySize");
 
   function showToast(msg) {
     toast.textContent = msg;
@@ -21,19 +17,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function money(n) {
     return `$${Math.round(n)}`;
   }
-
-  function syncGuestFields() {
-    const opt = seatSelect.selectedOptions[0];
-    if (!opt || !opt.value) {
-      guestPanel.hidden = true;
-      return;
-    }
-    guestPanel.hidden = false;
-    guestName.value = opt.dataset.guest || "";
-    partySize.value = opt.dataset.party || "2";
-  }
-
-  seatSelect.addEventListener("change", syncGuestFields);
 
   function pricedCart() {
     let shishaSlots = 0;
@@ -130,11 +113,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!seatSelect.value) {
-        showToast("Pick a seat first");
-        seatSelect.focus();
-        return;
-      }
       const card = btn.closest(".item");
       const id = card.dataset.id;
       const existing = cart.get(id);
@@ -191,18 +169,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("submitOrder").addEventListener("click", async () => {
     if (!cart.size) return showToast("Cart is empty");
-    const table_code = seatSelect.value;
-    if (!table_code) return showToast("Pick a seat first");
-    const guest_name = (guestName.value || "").trim();
-    if (!guest_name) {
-      showToast("Enter guest name");
-      guestName.focus();
-      return;
-    }
     const payload = {
-      table_code,
-      guest_name,
-      party_size: Number(partySize.value || 1),
       note: document.getElementById("orderNote").value || null,
       items: [...cart.values()].map((l) => ({
         item_id: l.id,
@@ -224,15 +191,6 @@ document.addEventListener("DOMContentLoaded", () => {
       renderCartBar();
       drawer.classList.remove("open");
       showToast("Order sent");
-      // refresh seat labels
-      const opt = seatSelect.selectedOptions[0];
-      if (opt) {
-        opt.dataset.guest = guest_name;
-        opt.dataset.party = String(payload.party_size);
-        opt.dataset.open = "1";
-        const label = opt.textContent.split(" · ")[0];
-        opt.textContent = `${label} · ${guest_name} (${payload.party_size})`;
-      }
     } catch (err) {
       showToast("Failed to send order");
       console.error(err);

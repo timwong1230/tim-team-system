@@ -6,7 +6,6 @@ SEAT="${SMOKE_SEAT:-TABLE5}"
 
 curl -sf "$BASE/health" >/dev/null
 
-# Close any leftover open session on the smoke seat
 curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
   -F "pin=$PIN" -F "discount_percent=0" >/dev/null || true
 
@@ -35,20 +34,23 @@ grep -q 'Alex' <<<"$BILL"
 
 curl -sf "$BASE/qr/${SEAT}.png" -o /tmp/polar-qr-smoke.png
 
-BOSS_HOME=$(curl -sf "$BASE/boss")
-grep -q Jon <<<"$BOSS_HOME"
+# Boss: direct order, no seat/guest fields
 for b in jon barry tim ziv; do
   NAME=$(python3 -c "print('$b'.title())")
   PAGE=$(curl -sf "$BASE/boss/$b")
-  grep -q "${NAME}'s station" <<<"$PAGE"
+  grep -q "${NAME}" <<<"$PAGE"
+  grep -q 'Personal tab' <<<"$PAGE"
+  # should NOT ask for seat
+  ! grep -q 'Select seat' <<<"$PAGE"
 done
 
 BOSS=$(curl -sf -X POST "$BASE/api/boss/barry/orders" \
   -H 'Content-Type: application/json' \
-  -d '{"table_code":"BAR3","guest_name":"Sam","party_size":2,"items":[{"item_id":"coke","qty":1}]}')
+  -d '{"items":[{"item_id":"coke","qty":1}]}')
 grep -q '"ok":true' <<<"$BOSS"
 grep -q Barry <<<"$BOSS"
 
+# Guest close — sales
 CLOSE=$(curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
   -F "pin=$PIN" -F "discount_percent=0")
 grep -q '"ok":true' <<<"$CLOSE"
@@ -65,9 +67,38 @@ assert "Guest: Alex" in text, f"guest name missing from receipt:\n{text}"
 print("receipt ok", path)
 PY
 
+# Boss order must NOT inflate daily guest sales; must appear in boss report
+.venv/bin/python <<'PY'
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.db import connect, init_db
+from app.pricing import business_date
+from app.reports import daily_sales_report, monthly_boss_report
+
+init_db()
+conn = connect()
+biz = business_date(datetime.now(ZoneInfo("Asia/Hong_Kong")))
+daily = daily_sales_report(conn, biz)
+# closed guest session should be present; boss tab sessions excluded
+assert all("Boss" not in (s["table"] or "") for s in daily["sessions"]), daily
+boss = monthly_boss_report(conn, biz.year, biz.month)
+barry = next(b for b in boss["bosses"] if b["boss_name"] == "Barry")
+assert barry["order_count"] >= 1, barry
+assert barry["total"] > 0, barry
+print("boss report ok", barry["total"], "daily guest sessions", daily["session_count"])
+conn.close()
+PY
+
 QRS=$(curl -sf "$BASE/staff/qrs?pin=$PIN")
 test "$(grep -c '>Terrace ' <<<"$QRS")" -eq 8
 test "$(grep -c '>Bar ' <<<"$QRS")" -eq 5
 test "$(grep -c '>Table ' <<<"$QRS")" -eq 5
+# boss seats must not appear as guest QRs
+! grep -q 'Boss ·' <<<"$QRS"
+grep -q '/boss/jon' <<<"$QRS"
+
+REPORTS=$(curl -sf "$BASE/staff/reports?pin=$PIN")
+grep -q 'Monthly Boss Report' <<<"$REPORTS"
+grep -q 'Barry' <<<"$REPORTS"
 
 echo "SMOKE OK"

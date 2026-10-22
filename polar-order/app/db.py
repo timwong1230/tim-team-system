@@ -144,6 +144,15 @@ def init_db() -> None:
 
 def _seat_id(seat: dict) -> int:
     zone = seat["zone"]
+    if zone == "boss":
+        # BOSSJON / BOSSBARRY / BOSSTIM / BOSSZIV → 31-34
+        from .seats import BOSSES
+
+        code = seat["code"].upper()
+        for i, b in enumerate(BOSSES):
+            if code == f"BOSS{b['id'].upper()}":
+                return 31 + i
+        return 39
     num = int("".join(ch for ch in seat["code"] if ch.isdigit()) or "0")
     if zone == "table":
         return num  # 1-5
@@ -238,6 +247,17 @@ def get_table_by_code(conn: sqlite3.Connection, code: str) -> sqlite3.Row | None
 def list_active_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM tables WHERE active = 1 ORDER BY sort_order ASC, id ASC"
+    ).fetchall()
+
+
+def list_guest_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Guest-facing seats only (exclude boss personal tabs)."""
+    return conn.execute(
+        """
+        SELECT * FROM tables
+        WHERE active = 1 AND COALESCE(zone, '') != 'boss'
+        ORDER BY sort_order ASC, id ASC
+        """
     ).fetchall()
 
 

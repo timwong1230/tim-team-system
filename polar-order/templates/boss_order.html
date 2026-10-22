@@ -6,31 +6,11 @@
     <div class="pill">{{ boss.name }}</div>
   </div>
   <div class="hero">
-    <h1>{{ boss.name }}'s station</h1>
-    <p>Pick a seat, confirm guest, then send orders. Tagged as {{ boss.name }}.</p>
+    <h1>{{ boss.name }}</h1>
+    <p>Personal tab · not guest sales. Add items and send.</p>
   </div>
 
-  <label class="muted" for="seatSelect">Seat</label>
-  <select class="field" id="seatSelect">
-    <option value="">Select seat…</option>
-    {% for t in tables %}
-    <option value="{{ t.code }}"
-      data-guest="{{ t.guest_name or '' }}"
-      data-party="{{ t.party_size or 2 }}"
-      data-open="{{ 1 if t.has_session else 0 }}">
-      {{ t.label }}{% if t.guest_name %} · {{ t.guest_name }} ({{ t.party_size }}){% elif t.has_session %} · open{% else %} · free{% endif %}
-    </option>
-    {% endfor %}
-  </select>
-
-  <div id="guestPanel" hidden>
-    <label class="muted" for="bossGuestName">Guest name</label>
-    <input class="field" id="bossGuestName" type="text" maxlength="40" placeholder="Guest name / nickname" />
-    <label class="muted" for="bossPartySize">Party size</label>
-    <input class="field" id="bossPartySize" type="number" min="1" max="30" value="2" />
-  </div>
-
-  <div class="promo" style="margin-top:8px">
+  <div class="promo">
     <div class="promo-now"><strong>Now: {{ promo.label }}</strong></div>
   </div>
 
@@ -103,7 +83,7 @@
     </div>
     <div id="cartLines"></div>
     <label class="muted">Note for staff</label>
-    <textarea class="field" id="orderNote" rows="2" placeholder="e.g. VIP / less ice"></textarea>
+    <textarea class="field" id="orderNote" rows="2" placeholder="optional note"></textarea>
     <button class="primary" id="submitOrder" type="button">Send order</button>
   </div>
 </div>

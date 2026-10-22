@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .pricing import business_date, business_day_window
+from .seats import BOSSES
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -17,14 +18,21 @@ def _parse_iso(s: str) -> datetime:
     return dt.astimezone(HK)
 
 
+def _is_boss_session(s: sqlite3.Row) -> bool:
+    """Boss personal tabs are excluded from guest sales reports."""
+    zone = s["zone"] if "zone" in s.keys() else None
+    return (zone or "") == "boss"
+
+
 def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
     start, end = business_day_window(biz)
     sessions = conn.execute(
         """
-        SELECT s.*, t.label AS table_label, t.code AS table_code
+        SELECT s.*, t.label AS table_label, t.code AS table_code, t.zone AS zone
         FROM sessions s
         JOIN tables t ON t.id = s.table_id
         WHERE s.status = 'closed' AND s.closed_at IS NOT NULL
+          AND COALESCE(t.zone, '') != 'boss'
         ORDER BY s.closed_at ASC
         """
     ).fetchall()
@@ -91,7 +99,7 @@ def item_purchase_report(
     year: int,
     month: int,
 ) -> dict:
-    """Sold qty/revenue for closed sessions in a calendar month's business dates."""
+    """Sold qty/revenue for closed guest sessions in a calendar month's business dates."""
     last = monthrange(year, month)[1]
     start_biz = date(year, month, 1)
     end_biz = date(year, month, last)
@@ -99,12 +107,14 @@ def item_purchase_report(
     # include last day's window end
     _, end_dt = business_day_window(end_biz)
 
-    # Pull closed sessions in month by business_date when set, else by closed_at window
+    # Pull closed guest sessions in month (exclude boss tabs)
     sessions = conn.execute(
         """
-        SELECT id, business_date, closed_at, status
-        FROM sessions
-        WHERE status = 'closed'
+        SELECT s.id, s.business_date, s.closed_at, s.status
+        FROM sessions s
+        JOIN tables t ON t.id = s.table_id
+        WHERE s.status = 'closed'
+          AND COALESCE(t.zone, '') != 'boss'
         """
     ).fetchall()
     session_ids = []
@@ -178,4 +188,138 @@ def item_purchase_report(
         "label": f"{year}-{month:02d}",
         "by_category": cats,
         "by_item": items,
+    }
+
+
+def monthly_boss_report(conn: sqlite3.Connection, year: int, month: int) -> dict:
+    """Per-boss order totals for a calendar month (not guest sales).
+
+    Counts non-cancelled order lines tagged created_by = boss name,
+    classified by business_date of the order timestamp.
+    """
+    last = monthrange(year, month)[1]
+    start_biz = date(year, month, 1)
+    end_biz = date(year, month, last)
+    start_dt, _ = business_day_window(start_biz)
+    _, end_dt = business_day_window(end_biz)
+
+    boss_names = {b["name"]: b for b in BOSSES}
+    by_boss: dict[str, dict] = {
+        b["name"]: {
+            "boss_id": b["id"],
+            "boss_name": b["name"],
+            "order_count": 0,
+            "item_qty": 0,
+            "total": 0.0,
+            "items": {},  # item_id -> row
+            "orders": [],
+        }
+        for b in BOSSES
+    }
+
+    orders = conn.execute(
+        """
+        SELECT o.id, o.created_by, o.created_at, o.status, o.note,
+               t.label AS table_label
+        FROM orders o
+        JOIN tables t ON t.id = o.table_id
+        WHERE o.status != 'cancelled'
+          AND o.created_by IS NOT NULL
+        ORDER BY o.id ASC
+        """
+    ).fetchall()
+
+    order_ids_in_month: list[int] = []
+    order_meta: dict[int, sqlite3.Row] = {}
+    for o in orders:
+        if o["created_by"] not in boss_names:
+            continue
+        created = _parse_iso(o["created_at"])
+        bd = business_date(created)
+        if not (start_biz <= bd <= end_biz):
+            # also allow if within window spanning month edges
+            if not (start_dt <= created < end_dt):
+                continue
+        order_ids_in_month.append(o["id"])
+        order_meta[o["id"]] = o
+
+    if order_ids_in_month:
+        placeholders = ",".join("?" * len(order_ids_in_month))
+        lines = conn.execute(
+            f"""
+            SELECT oi.order_id, oi.item_id, oi.item_name, oi.qty, oi.line_total
+            FROM order_items oi
+            WHERE oi.order_id IN ({placeholders})
+            """,
+            order_ids_in_month,
+        ).fetchall()
+        lines_by_order: dict[int, list] = {}
+        for row in lines:
+            lines_by_order.setdefault(row["order_id"], []).append(row)
+
+        for oid in order_ids_in_month:
+            o = order_meta[oid]
+            bucket = by_boss[o["created_by"]]
+            o_lines = lines_by_order.get(oid, [])
+            o_total = sum(float(x["line_total"]) for x in o_lines)
+            o_qty = sum(int(x["qty"]) for x in o_lines)
+            bucket["order_count"] += 1
+            bucket["item_qty"] += o_qty
+            bucket["total"] += o_total
+            created = _parse_iso(o["created_at"])
+            bucket["orders"].append(
+                {
+                    "order_id": oid,
+                    "created_at": created.strftime("%Y-%m-%d %H:%M"),
+                    "table": o["table_label"],
+                    "total": round(o_total, 1),
+                    "qty": o_qty,
+                    "note": o["note"],
+                }
+            )
+            for row in o_lines:
+                iid = row["item_id"]
+                items = bucket["items"]
+                items.setdefault(
+                    iid,
+                    {
+                        "item_id": iid,
+                        "item_name": row["item_name"],
+                        "qty": 0,
+                        "revenue": 0.0,
+                    },
+                )
+                items[iid]["qty"] += int(row["qty"])
+                items[iid]["revenue"] += float(row["line_total"])
+
+    bosses_out = []
+    grand = 0.0
+    for b in BOSSES:
+        bucket = by_boss[b["name"]]
+        item_list = sorted(
+            bucket["items"].values(),
+            key=lambda x: (-x["revenue"], x["item_name"]),
+        )
+        for x in item_list:
+            x["revenue"] = round(x["revenue"], 1)
+        total = round(bucket["total"], 1)
+        grand += total
+        bosses_out.append(
+            {
+                "boss_id": bucket["boss_id"],
+                "boss_name": bucket["boss_name"],
+                "order_count": bucket["order_count"],
+                "item_qty": bucket["item_qty"],
+                "total": total,
+                "item_rows": item_list,
+                "orders": list(reversed(bucket["orders"]))[:40],
+            }
+        )
+
+    return {
+        "year": year,
+        "month": month,
+        "label": f"{year}-{month:02d}",
+        "gross_total": round(grand, 1),
+        "bosses": bosses_out,
     }
