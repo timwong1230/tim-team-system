@@ -1,20 +1,19 @@
 {% extends "base.html" %}
 {% block body %}
 <div class="wrap">
+  {% if not ready %}
   <div class="topbar">
-    <div class="brand">POLAR</div>
-    <div class="pill">{{ table.label }}</div>
+    <div class="brand brand-lounge">POLAR LOUNGE</div>
   </div>
 
-  {% if not ready %}
-  <div class="hero">
-    <h1>Welcome</h1>
-    <p>{{ table.label }} · Polar Lounge</p>
+  <div class="hero hero-welcome">
+    <h1>WELCOME TO POLAR</h1>
+    <p class="welcome-seat">{{ table.label }}</p>
   </div>
 
   <div class="welcome" id="welcome">
     <div class="welcome-step" id="stepName" data-step="name">
-      <label class="muted" for="guestName">What should we call you?</label>
+      <label class="welcome-ask" for="guestName">What should we call you?</label>
       <input class="field" id="guestName" type="text" maxlength="40" autocomplete="name" placeholder="Your name / nickname" value="{{ session.guest_name if session and session.guest_name else '' }}" />
       <button class="primary" type="button" id="toParty">Continue</button>
     </div>
@@ -29,6 +28,10 @@
   </div>
 
   {% else %}
+  <div class="topbar">
+    <div class="brand">POLAR</div>
+    <div class="pill">{{ table.label }}</div>
+  </div>
   <div class="hero">
     <h1>{{ table.label }}</h1>
     <p>Hi {{ session.guest_name }} · party of {{ session.party_size }}. Order from your phone. Pay at the end with staff.</p>

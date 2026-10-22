@@ -62,6 +62,36 @@ button, .cat-btn, .add-btn {
   font-size: 0.85rem;
   color: var(--gold-strong);
 }
+.brand-lounge {
+  letter-spacing: 0.18em;
+  font-size: 0.95rem;
+}
+.hero-welcome {
+  margin: 28px 0 28px;
+  text-align: center;
+}
+.hero-welcome h1 {
+  margin: 0 0 14px;
+  font-size: clamp(2.1rem, 8.5vw, 2.85rem);
+  font-weight: 780;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  color: var(--text);
+}
+.welcome-seat {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--gold-strong);
+  letter-spacing: 0.04em;
+}
+.welcome-ask {
+  display: block;
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
 .pill {
   border: 1px solid var(--line);
   background: rgba(212, 192, 140, 0.08);
