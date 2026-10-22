@@ -11,15 +11,53 @@ import streamlit as st
 from PIL import Image
 
 from tt_core.constants import (
+    GUEST_PASSWORD,
+    GUEST_ROLE,
+    GUEST_USERNAMES,
     INACTIVE_MEMBERS,
     MDRT_TARGET,
     RECRUIT_YEAR_TARGET,
+    SEED_USERS,
+    SHEET_SCHEMAS,
     WEEKLY_MIN_ACTS,
 )
 from tt_core.db import read_data, run_query_gs, update_user_field
 
 
+def is_guest_account(username: str = "", role: str = "") -> bool:
+    """Trial guest — login OK, hidden from team ops lists."""
+    u = str(username or "").strip().lower()
+    r = str(role or "").strip().lower()
+    return u in {x.lower() for x in GUEST_USERNAMES} or r == GUEST_ROLE.lower()
+
+
+def _guest_avatar_url() -> str:
+    return "https://ui-avatars.com/api/?name=guest&background=d4af37&color=fff&size=128"
+
+
+def builtin_guest_row() -> list:
+    """Canonical guest row for login when Sheets/cache has not seeded yet."""
+    return [
+        "guest",
+        GUEST_PASSWORD,
+        GUEST_ROLE,
+        "Tim Team",
+        0,
+        _guest_avatar_url(),
+        "",
+    ]
+
+
+def _normalize_password_cell(value) -> str:
+    """Sheets sometimes stores 1234 as float → '1234.0'."""
+    text = str(value if value is not None else "").strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
+
+
 def get_clean_users() -> pd.DataFrame:
+    """Active accounts that may log in (includes Guest trial users)."""
     df = read_data("users")
     if df.empty:
         return pd.DataFrame(
@@ -29,13 +67,157 @@ def get_clean_users() -> pd.DataFrame:
     return df[~df["username"].isin(INACTIVE_MEMBERS)]
 
 
-def login(u: str, p: str):
+def get_team_users() -> pd.DataFrame:
+    """Roster for 打卡／業績／招募 — excludes Guest trial accounts."""
     df = get_clean_users()
     if df.empty:
-        return []
-    df["password"] = df["password"].astype(str)
-    user = df[(df["username"] == u) & (df["password"] == str(p))]
-    return user.values.tolist() if not user.empty else []
+        return df
+    guest_names = {x.lower() for x in GUEST_USERNAMES}
+    mask = df["username"].astype(str).str.strip().str.lower().isin(guest_names)
+    if "role" in df.columns:
+        mask = mask | (df["role"].astype(str).str.strip().str.lower() == GUEST_ROLE.lower())
+    return df[~mask].copy()
+
+
+def _seed_user_row(username: str, password: str, role: str) -> list:
+    url = (
+        f"https://ui-avatars.com/api/?name={username}"
+        f"&background=d4af37&color=fff&size=128"
+    )
+    return [username, password, role, "Tim Team", 0, url, ""]
+
+
+def ensure_seed_users(*, only: str | None = None) -> bool:
+    """Append missing SEED_USERS (e.g. KK) to Sheets + local users cache."""
+    try:
+        from tt_core import cache_store
+        from tt_core.db import get_sheet
+    except Exception:
+        cache_store = None  # type: ignore
+        get_sheet = None  # type: ignore
+
+    cols = SHEET_SCHEMAS.get(
+        "users",
+        ["username", "password", "role", "team", "recruit", "avatar", "last_read"],
+    )
+    want = list(SEED_USERS)
+    if only:
+        key = str(only).strip().lower()
+        want = [u for u in want if u[0].lower() == key]
+        if not want:
+            return False
+
+    df = read_data("users")
+    have = (
+        set(df["username"].astype(str).str.strip().str.lower())
+        if df is not None and not df.empty
+        else set()
+    )
+    missing = [u for u in want if u[0].lower() not in have]
+    if not missing and want:
+        # Still present in cache — done
+        if only:
+            return True
+        # Fall through only if we still need to sync Sheets for some
+        pass
+
+    if get_sheet is not None:
+        try:
+            ws = get_sheet("users")
+            if ws:
+                try:
+                    existing = [str(x).strip().lower() for x in (ws.col_values(1) or [])]
+                except Exception:
+                    existing = []
+                if not existing:
+                    ws.append_row(cols, value_input_option="USER_ENTERED")
+                    existing = ["username"]
+                for username, password, role in want:
+                    if username.lower() in existing:
+                        continue
+                    ws.append_row(
+                        _seed_user_row(username, password, role),
+                        value_input_option="USER_ENTERED",
+                    )
+                    existing.append(username.lower())
+        except Exception:
+            pass
+
+    try:
+        fresh = read_data("users", force=True)
+    except Exception:
+        fresh = df
+    if fresh is None or getattr(fresh, "empty", True):
+        fresh = pd.DataFrame(
+            [_seed_user_row(u, p, r) for u, p, r in want],
+            columns=cols,
+        )
+    else:
+        names = set(fresh["username"].astype(str).str.strip().str.lower())
+        extras = []
+        for username, password, role in want:
+            if username.lower() in names:
+                continue
+            extras.append(dict(zip(cols, _seed_user_row(username, password, role))))
+        if extras:
+            extra_df = pd.DataFrame(extras)
+            for col in fresh.columns:
+                if col not in extra_df.columns:
+                    extra_df[col] = ""
+            extra_df = extra_df.reindex(columns=list(fresh.columns), fill_value="")
+            fresh = pd.concat([fresh, extra_df], ignore_index=True)
+    try:
+        if cache_store is not None:
+            cache_store.invalidate_memory("users")
+            cache_store.save_sheet("users", fresh, source="seed_users")
+    except Exception:
+        pass
+    return True
+
+
+def ensure_guest_user() -> bool:
+    """Back-compat wrapper — seed the trial guest account."""
+    return ensure_seed_users(only="guest")
+
+
+def login(u: str, p: str):
+    uname = str(u or "").strip()
+    pw = str(p or "")
+
+    def _match(frame: pd.DataFrame):
+        if frame is None or frame.empty:
+            return []
+        frame = frame.copy()
+        frame["password"] = frame["password"].map(_normalize_password_cell)
+        hit = frame[
+            (frame["username"].astype(str).str.strip().str.lower() == uname.lower())
+            & (frame["password"] == pw)
+        ]
+        return hit.values.tolist() if not hit.empty else []
+
+    rows = _match(get_clean_users())
+    if rows:
+        return rows
+
+    # Seed known colleagues / guest into Sheets+cache, then retry
+    seed_names = {u[0].lower() for u in SEED_USERS}
+    if uname.lower() in seed_names:
+        try:
+            ensure_seed_users(only=uname)
+        except Exception:
+            pass
+        rows = _match(get_clean_users())
+        if rows:
+            return rows
+        # Last resort: accept seeded credentials even if cache still empty
+        for username, password, role in SEED_USERS:
+            if username.lower() == uname.lower() and password == pw:
+                return [_seed_user_row(username, password, role)]
+
+    # Built-in trial guest (explicit path kept for clarity)
+    if is_guest_account(uname) and pw == GUEST_PASSWORD:
+        return [builtin_guest_row()]
+    return []
 
 
 def proc_img(f):
@@ -390,7 +572,7 @@ def get_coach_member_pack(username: str, *, today=None) -> dict:
 def get_team_coach_overview(*, today=None) -> pd.DataFrame:
     """Leader summary row per member for weekly challenge coach view."""
     today = today or datetime.date.today()
-    users = get_clean_users()
+    users = get_team_users()
     if users.empty:
         return pd.DataFrame()
     members = users[users["role"] == "Member"]["username"].astype(str).tolist()
@@ -620,7 +802,18 @@ def get_all_act() -> pd.DataFrame:
         )
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.drop_duplicates(subset=["username", "date", "type", "note"], keep="first")
-    return df[~df["username"].isin(INACTIVE_MEMBERS)].sort_values(by="date", ascending=False)
+    guest_names = {x.lower() for x in GUEST_USERNAMES}
+    hide = set(INACTIVE_MEMBERS) | guest_names
+    # Also drop any username whose role is Guest if we can resolve it
+    team = get_team_users()
+    if not team.empty:
+        allowed = set(team["username"].astype(str))
+        return df[df["username"].astype(str).isin(allowed)].sort_values(
+            by="date", ascending=False
+        )
+    return df[
+        ~df["username"].astype(str).str.strip().str.lower().isin({x.lower() for x in hide})
+    ].sort_values(by="date", ascending=False)
 
 
 def get_data(month=None) -> pd.DataFrame:
@@ -636,7 +829,7 @@ def get_data(month=None) -> pd.DataFrame:
         pass
 
     base_columns = ["username", "team", "recruit", "avatar", "fyc", "Total_Score"]
-    users = get_clean_users()
+    users = get_team_users()
     users = users[users["role"] == "Member"][["username", "team", "recruit", "avatar"]]
     if users.empty:
         return pd.DataFrame(columns=base_columns)
@@ -739,7 +932,7 @@ def set_mdrt_progress(username: str, amount: float) -> None:
 
 
 def get_q1_data() -> pd.DataFrame:
-    users = get_clean_users()
+    users = get_team_users()
     users = users[users["role"] == "Member"][["username", "avatar"]]
     if users.empty:
         return pd.DataFrame(columns=["username", "q1_total"])
@@ -763,7 +956,7 @@ def get_q1_data() -> pd.DataFrame:
 
 
 def _week_stats(start: datetime.date, end: datetime.date | None = None):
-    users = get_clean_users()
+    users = get_team_users()
     users = users[users["role"] == "Member"][["username", "avatar"]]
     if users.empty:
         return pd.DataFrame(columns=["username", "wk_score", "wk_count"])
@@ -930,12 +1123,19 @@ def check_notifications(current_user: str):
         if st.session_state.get("_notif_checked_this_login"):
             return
 
+        # Guests don't participate in team activity notifications
+        if is_guest_account(current_user):
+            st.session_state["_notif_checked_this_login"] = True
+            return
         users_df = get_clean_users()
         act_df = read_data("activities")
         if users_df.empty or act_df.empty:
             st.session_state["_notif_checked_this_login"] = True
             return
-        user_record = users_df[users_df["username"] == current_user]
+        user_record = users_df[
+            users_df["username"].astype(str).str.strip().str.lower()
+            == str(current_user).strip().lower()
+        ]
         if user_record.empty:
             st.session_state["_notif_checked_this_login"] = True
             return
@@ -953,10 +1153,12 @@ def check_notifications(current_user: str):
             return
         act_df = act_df.copy()
         act_df["timestamp_dt"] = pd.to_datetime(act_df["timestamp"], errors="coerce")
+        guest_names = {x.lower() for x in GUEST_USERNAMES}
         new_activities = act_df[
             (act_df["timestamp_dt"] > last_read)
             & (act_df["username"] != current_user)
             & (~act_df["username"].isin(INACTIVE_MEMBERS))
+            & (~act_df["username"].astype(str).str.strip().str.lower().isin(guest_names))
         ]
         st.session_state["_notif_checked_this_login"] = True
         rows = _activities_to_plain_rows(new_activities)

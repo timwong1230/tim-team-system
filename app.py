@@ -1,5 +1,5 @@
 """TIM TEAM System — activity + performance hub."""
-# redeploy_marker: force Streamlit Cloud restart 2026-10-18T00:55Z
+# redeploy_marker: force Streamlit Cloud restart 2026-10-21T13:06Z
 
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ from tt_core.data import (
     check_notifications,
     get_activity_style,
     get_all_act,
-    get_clean_users,
     get_coach_member_pack,
     get_data,
     get_due_followups,
@@ -50,8 +49,10 @@ from tt_core.data import (
     get_q1_data,
     get_stuck_cases,
     get_team_coach_overview,
+    get_team_users,
     get_upcoming_followups,
     get_weekly_data,
+    is_guest_account,
     member_home_metrics,
     weekly_activity_shortfall,
     last_iris_sync,
@@ -883,6 +884,23 @@ def _reset_nav_to_home() -> None:
         st.session_state.pop(k, None)
 
 
+def _do_logout() -> None:
+    """Clear login + block browser restore (guest used to bounce back in)."""
+    st.session_state["logged_in"] = False
+    st.session_state.pop("user", None)
+    st.session_state.pop("role", None)
+    st.session_state.pop("avatar", None)
+    st.session_state.pop("_tt_last_active", None)
+    try:
+        from tt_core.auth_persist import clear_browser_session
+
+        clear_browser_session()
+    except Exception:
+        st.session_state["_tt_logout_block"] = True
+    _reset_nav_to_home()
+    st.rerun()
+
+
 def _esc_html(s: str) -> str:
     return (
         str(s or "")
@@ -935,8 +953,9 @@ except Exception:
 # Idle > 30 min in the token → refuse restore (see tt_core.auth_persist)
 if not st.session_state.get("logged_in") or not st.session_state.get("user"):
     try:
-        from tt_core.auth_persist import try_restore_session
+        from tt_core.auth_persist import flush_pending_logout_clear, try_restore_session
 
+        flush_pending_logout_clear()
         if try_restore_session():
             _reset_nav_to_home()
             st.rerun()
@@ -944,6 +963,13 @@ if not st.session_state.get("logged_in") or not st.session_state.get("user"):
         pass
 
 if not st.session_state["logged_in"]:
+    try:
+        from tt_core.auth_persist import flush_pending_logout_clear
+
+        flush_pending_logout_clear()
+    except Exception:
+        pass
+
     def _render_login_brand() -> None:
         # Text-only brand hero — brand color via CSS class (inline color gets stripped on Cloud)
         st.markdown(
@@ -966,6 +992,12 @@ if not st.session_state["logged_in"]:
                 init_db_gs()
             except Exception:
                 pass
+            try:
+                from tt_core.data import ensure_seed_users
+
+                ensure_seed_users(only=str(u or "").strip() or None)
+            except Exception:
+                pass
             d = login(u, p)
         if d:
             st.session_state.update(
@@ -982,11 +1014,13 @@ if not st.session_state["logged_in"]:
                 from tt_core.auth_persist import persist_browser_session, touch_activity
 
                 touch_activity()
-                persist_browser_session(
-                    user=str(d[0][0]),
-                    role=str(d[0][2]),
-                    avatar=str(d[0][5] or ""),
-                )
+                # Guest is never browser-persisted (logout was bouncing back in)
+                if not is_guest_account(str(d[0][0]), str(d[0][2])):
+                    persist_browser_session(
+                        user=str(d[0][0]),
+                        role=str(d[0][2]),
+                        avatar=str(d[0][5] or ""),
+                    )
             except Exception:
                 pass
             _reset_nav_to_home()
@@ -1113,6 +1147,10 @@ try:
     except Exception:
         pass
     is_leader = st.session_state.get("role") == "Leader"
+    is_guest = is_guest_account(
+        st.session_state.get("user") or "",
+        st.session_state.get("role") or "",
+    )
     try:
         conn = connection_banner_state()
     except Exception:
@@ -1140,26 +1178,52 @@ RECRUIT_TOOL_LABELS = [
 _LEGACY_CLIENT_TOOL_MAP = {label: label for label in CLIENT_TOOL_LABELS}
 _LEGACY_RECRUIT_TOOL_MAP = {label: label for label in RECRUIT_TOOL_LABELS}
 
-menu_items = [
-    "🏠 我的主頁",
-    "🧠 AI Tim",
-    "📊 團隊 Dashboard",
-    "📋 準客戶名單",
-    "📝 打卡 Check-in",
-    "🏅 龍虎榜",
-    "🎁 季度優惠 & 獎賞",
-    "📁 常用表格",
-    CLIENT_TOOLS_MENU,
-    RECRUIT_TOOLS_MENU,
-]
-if is_leader:
-    # After Dashboard (index shifts with AI Tim at 1)
-    try:
-        dash_i = menu_items.index("📊 團隊 Dashboard")
-        menu_items.insert(dash_i + 1, "🔄 業績報告同步")
-    except ValueError:
-        menu_items.insert(3, "🔄 業績報告同步")
-menu_items.append("👤 設定")
+if is_guest:
+    # Trial account: client tools only — no team 打卡／業績／招募 surfaces
+    menu_items = [
+        "🏠 我的主頁",
+        "🧠 AI Tim",
+        "🎁 季度優惠 & 獎賞",
+        "📁 常用表格",
+        CLIENT_TOOLS_MENU,
+        "👤 設定",
+    ]
+else:
+    menu_items = [
+        "🏠 我的主頁",
+        "🧠 AI Tim",
+        "📊 團隊 Dashboard",
+        "📋 準客戶名單",
+        "📝 打卡 Check-in",
+        "🏅 龍虎榜",
+        "🎁 季度優惠 & 獎賞",
+        "📁 常用表格",
+        CLIENT_TOOLS_MENU,
+        RECRUIT_TOOLS_MENU,
+    ]
+    if is_leader:
+        # After Dashboard (index shifts with AI Tim at 1)
+        try:
+            dash_i = menu_items.index("📊 團隊 Dashboard")
+            menu_items.insert(dash_i + 1, "🔄 業績報告同步")
+        except ValueError:
+            menu_items.insert(3, "🔄 業績報告同步")
+    menu_items.append("👤 設定")
+
+# Guest bookmarks pointing at ops pages → send home
+if is_guest:
+    _ops_menus = {
+        "📊 團隊 Dashboard",
+        "📋 準客戶名單",
+        "📝 打卡 Check-in",
+        "🏅 龍虎榜",
+        "🔄 業績報告同步",
+        RECRUIT_TOOLS_MENU,
+    }
+    if st.session_state.get("_menu_choice") in _ops_menus:
+        _reset_nav_to_home()
+    if st.session_state.get("_nav_pending") in _ops_menus:
+        st.session_state["_nav_pending"] = HOME_MENU
 
 # Old bookmarks / session still on a leaf tool → open the right hub
 _prev_menu = st.session_state.get("_menu_choice")
@@ -1228,19 +1292,7 @@ with st.sidebar:
         st.toast("數據已更新", icon="✅")
         st.rerun()
     if st.button("登出", use_container_width=True, type="secondary", key="sidebar_logout"):
-        st.session_state["logged_in"] = False
-        st.session_state.pop("user", None)
-        st.session_state.pop("role", None)
-        st.session_state.pop("avatar", None)
-        st.session_state.pop("_tt_last_active", None)
-        try:
-            from tt_core.auth_persist import clear_browser_session
-
-            clear_browser_session()
-        except Exception:
-            pass
-        _reset_nav_to_home()
-        st.rerun()
+        _do_logout()
 
 if PHONE:
     st.markdown('<div class="tt-mobile-nav">', unsafe_allow_html=True)
@@ -1548,20 +1600,39 @@ def page_home():
     from tt_core.coach_writes import is_admin as _is_admin_home
 
     is_admin_home = _is_admin_home(role, user)
-    is_member_home = role == "Member" and not is_admin_home
+    is_guest_home = is_guest_account(user, role)
+    is_member_home = role == "Member" and not is_admin_home and not is_guest_home
     team = get_data("Yearly")
 
     hero_sub = f"你好，{user}"
+    if is_guest_home:
+        hero_sub = f"試用帳號 · {user}"
     st.markdown(
         f"""
         <div class="tt-hero">
           <div class="tt-kicker">{BRAND_APP if MOBILE else BRAND_SYSTEM}</div>
-          <h1 style="margin:0;">今日行動清單</h1>
+          <h1 style="margin:0;">{"試用主頁" if is_guest_home else "今日行動清單"}</h1>
           <p class="tt-sub">{hero_sub}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    if is_guest_home:
+        st.info(
+            "呢個係試用帳號，唔會出現喺打卡／業績／招募團隊名單。"
+            "可以試客戶工具、常用表格、季度優惠同 AI Tim。"
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🧰 客戶工具", type="primary", use_container_width=True, key="guest_go_client"):
+                go_menu(CLIENT_TOOLS_MENU)
+        with c2:
+            if st.button("🧠 問 AI Tim", use_container_width=True, key="guest_go_coach"):
+                go_menu("🧠 AI Tim", coach_tim_pending="介紹吓你可以幫我做咩？")
+        st.markdown("")
+        if st.button("登出", use_container_width=True, type="secondary", key="guest_home_logout"):
+            _do_logout()
+        return
 
     # World / HK headlines so the team sees today's big picture on login
     try:
@@ -1653,7 +1724,7 @@ def page_home():
 
     with st.expander("團隊最新動態", expanded=False):
         acts = get_all_act().head(5)
-        users_df = get_clean_users()
+        users_df = get_team_users()
         if acts.empty:
             st.info("暫時未有動態。")
         else:
@@ -2185,7 +2256,7 @@ def page_checkin():
                         st.error(f"提交失敗：{e}")
 
     with tab_hist:
-        users_df = get_clean_users()
+        users_df = get_team_users()
         filter_user = st.multiselect(
             "篩選同事", options=users_df["username"].unique().tolist() if not users_df.empty else []
         )
@@ -3024,7 +3095,7 @@ def page_iris_sync():
             key_prefix="drv_mdrt",
         )
 
-    users = get_clean_users()
+    users = get_team_users()
     member_names = (
         users[users["role"] == "Member"]["username"].tolist() if not users.empty else []
     )
@@ -3550,7 +3621,7 @@ def _section_weekly_challenge():
                 members = (
                     overview["username"].tolist()
                     if not overview.empty
-                    else get_clean_users()
+                    else get_team_users()
                     .query("role == 'Member'")["username"]
                     .astype(str)
                     .tolist()
@@ -6262,7 +6333,7 @@ def page_prospect_list():
 
     view_user = user
     if leader:
-        users_df = get_clean_users()
+        users_df = get_team_users()
         names = sorted(users_df["username"].astype(str).tolist()) if not users_df.empty else [user]
         pick = st.selectbox(
             "睇邊位同事？",
