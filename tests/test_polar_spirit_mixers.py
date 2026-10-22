@@ -22,11 +22,13 @@ def test_spirit_serve_and_single_mix():
 
     import app.paths as paths
     import app.db as db
+    import app.spirits as spirits
     import app.main as main
     from app.spirits import SPIRIT_MIXERS, SPIRIT_GLASS_STYLES
 
     importlib.reload(paths)
     importlib.reload(db)
+    importlib.reload(spirits)
     importlib.reload(main)
 
     from fastapi.testclient import TestClient
@@ -47,11 +49,9 @@ def test_spirit_serve_and_single_mix():
         assert "House spirit + mixer" in html
 
         conn = db.connect()
-        from app.spirits import list_spirit_glass_options, SINGLE_MIX_SPIRIT_CATS
-
-        house = list_spirit_glass_options(conn)
-        assert len(house) == len(SINGLE_MIX_SPIRIT_CATS)
-        assert {h["category_id"] for h in house} == set(SINGLE_MIX_SPIRIT_CATS)
+        house = spirits.list_spirit_glass_options(conn)
+        assert len(house) == len(spirits.SINGLE_MIX_SPIRIT_CATS)
+        assert {h["category_id"] for h in house} == set(spirits.SINGLE_MIX_SPIRIT_CATS)
         house_names = {h["name"] for h in house}
         assert "Jessy's Barrel" in house_names  # vodka/gin/rum house
         assert "Claymore" in house_names
