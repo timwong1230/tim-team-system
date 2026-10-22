@@ -93,6 +93,11 @@ class WelcomeIn(BaseModel):
     party_size: int = Field(default=2, ge=1, le=30)
 
 
+class StaffPartyIn(BaseModel):
+    pin: str
+    party_size: int = Field(ge=1, le=30)
+
+
 class OrderIn(BaseModel):
     note: str | None = None
     items: list[CartItemIn]
@@ -138,6 +143,14 @@ def _session_shisha_combo_slots(conn: sqlite3.Connection, session_id: int) -> in
     return max(0, int(shisha) - int(combo_snacks))
 
 
+def _serve_rank(unit: str | None) -> int:
+    if unit == "Glass":
+        return 0
+    if unit == "Bottle":
+        return 1
+    return 2
+
+
 def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     promo = current_promo()
     cats = conn.execute(
@@ -146,7 +159,7 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     out = []
     for cat in cats:
         items = conn.execute(
-            "SELECT * FROM menu_items WHERE category_id = ? AND available = 1 ORDER BY name ASC",
+            "SELECT * FROM menu_items WHERE category_id = ? AND available = 1",
             (cat["id"],),
         ).fetchall()
         row_items = []
@@ -173,12 +186,18 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             if cat["promo"] == "snacks":
                 row["combo_price"] = SHISHA_COMBO_SNACK_PRICE
             row_items.append(row)
+        row_items.sort(
+            key=lambda r: (_serve_rank(r.get("unit")), (r["name"] or "").lower(), r["id"])
+        )
+        units = {r.get("unit") for r in row_items if r.get("unit")}
         out.append(
             {
                 "id": cat["id"],
                 "name": cat["name"],
                 "promo": cat["promo"],
                 "items": row_items,
+                # Guest UI shows Glass / Bottle section headers when both exist.
+                "split_serve": "Glass" in units and "Bottle" in units,
             }
         )
     return out
@@ -799,8 +818,51 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "pin": pin,
             "discount": discount or 0,
             "is_boss": is_boss,
+            "snack_per_head": meta["snack_charge_per_head"],
         },
     )
+
+
+@app.post("/api/staff/bill/{table_code}/party")
+def staff_update_party(table_code: str, body: StaffPartyIn):
+    """Staff confirms / corrects party size before close (affects snack charge)."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        return {"ok": True, "party_size": 1, "bill": None}
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session")
+    size = max(1, min(30, int(body.party_size)))
+    conn.execute(
+        "UPDATE sessions SET party_size = ? WHERE id = ?",
+        (size, session["id"]),
+    )
+    conn.commit()
+    session = get_open_session(conn, table["id"])
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = compute_bill(
+        lines,
+        session["party_size"],
+        meta["service_charge_rate"],
+        meta["snack_charge_per_head"],
+        discount_percent=0,
+    )
+    conn.close()
+    return {
+        "ok": True,
+        "party_size": session["party_size"],
+        "guest_name": session["guest_name"],
+        "bill": bill,
+    }
 
 
 @app.post("/api/staff/bill/{table_code}/custom")
@@ -847,6 +909,7 @@ def close_bill(
     table_code: str,
     pin: str = Form(...),
     discount_percent: float = Form(0),
+    party_size: int | None = Form(None),
 ):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
@@ -860,9 +923,18 @@ def close_bill(
         conn.close()
         return {"ok": True, "message": "No open session"}
 
+    is_boss = (table["zone"] or "") == "boss"
+    if not is_boss and party_size is not None:
+        size = max(1, min(30, int(party_size)))
+        conn.execute(
+            "UPDATE sessions SET party_size = ? WHERE id = ?",
+            (size, session["id"]),
+        )
+        conn.commit()
+        session = get_open_session(conn, table["id"])
+
     meta = load_menu_meta()
     lines = _session_lines(conn, session["id"])
-    is_boss = (table["zone"] or "") == "boss"
     if is_boss:
         prod = round(sum(float(x["line_total"]) for x in lines), 1)
         bill = {

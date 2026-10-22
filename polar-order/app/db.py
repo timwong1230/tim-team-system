@@ -200,12 +200,16 @@ def _seed_tables(conn: sqlite3.Connection) -> None:
 def sync_menu(conn: sqlite3.Connection) -> None:
     """Upsert categories/items from menu.json (prices, notes, images)."""
     menu = json.loads(MENU_PATH.read_text(encoding="utf-8"))
+    keep_cats: list[str] = []
+    keep_items: list[str] = []
     for cat in menu["categories"]:
+        keep_cats.append(cat["id"])
         conn.execute(
             "INSERT OR REPLACE INTO menu_categories (id, name, sort_order, promo) VALUES (?, ?, ?, ?)",
             (cat["id"], cat["name"], cat["sort"], cat.get("promo", "none")),
         )
         for item in cat["items"]:
+            keep_items.append(item["id"])
             conn.execute(
                 """
                 INSERT INTO menu_items
@@ -232,6 +236,19 @@ def sync_menu(conn: sqlite3.Connection) -> None:
                     item.get("image"),
                 ),
             )
+    # Drop retired categories (e.g. old "wine") so guest tabs stay clean.
+    if keep_cats:
+        placeholders = ",".join("?" * len(keep_cats))
+        conn.execute(
+            f"DELETE FROM menu_categories WHERE id NOT IN ({placeholders})",
+            keep_cats,
+        )
+    if keep_items:
+        placeholders = ",".join("?" * len(keep_items))
+        conn.execute(
+            f"UPDATE menu_items SET available = 0 WHERE id NOT IN ({placeholders})",
+            keep_items,
+        )
     conn.commit()
 
 

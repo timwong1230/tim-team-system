@@ -269,6 +269,22 @@ button, .cat-btn, .add-btn {
   text-transform: uppercase;
   color: var(--gold);
 }
+.serve-heading {
+  margin: 16px 0 8px;
+  padding: 6px 0 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold-strong);
+  border-bottom: 1px solid var(--line);
+}
+.serve-heading:first-of-type { margin-top: 4px; }
+.chip-unit {
+  color: var(--gold-strong);
+  background: rgba(212, 192, 140, 0.14);
+  border: 1px solid rgba(212, 192, 140, 0.35);
+}
 .item {
   display: flex;
   gap: 12px;
@@ -348,6 +364,21 @@ button, .cat-btn, .add-btn {
   color: var(--gold-strong);
   background: rgba(212, 192, 140, 0.12);
   border: 1px solid rgba(212, 192, 140, 0.28);
+}
+.party-confirm .party-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0 6px;
+}
+.party-confirm .party-row .field {
+  flex: 1;
+  margin: 0;
+}
+.party-confirm .party-row .ghost {
+  width: auto;
+  padding: 10px 14px;
+  flex: 0 0 auto;
 }
 .item-foot {
   display: flex;

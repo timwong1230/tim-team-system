@@ -84,6 +84,8 @@ ALCOHOL_CATS = {
     "beer",
     "tower",
     "wine",
+    "red-wine",
+    "white-wine",
     "vodka",
     "gin",
     "whisky",
@@ -93,6 +95,7 @@ ALCOHOL_CATS = {
     "rum",
     "cognac",
 }
+WINE_CATS = {"wine", "red-wine", "white-wine"}
 ZERO_PROOF_CATS = {"non-alcohol", "teas"}
 NON_DRINK_CATS = {"shisha", "snacks"}
 
@@ -213,7 +216,8 @@ def _local_reply(
         mood_picks = pick(lambda x: x["category_id"] == "celestial", 2)
         mood_picks += hot_in_cats(ALCOHOL_CATS, 2)
         mood_picks += pick(
-            lambda x: x["category_id"] in ("wine", "beer", "champagne", "gin", "vodka"),
+            lambda x: x["category_id"]
+            in (*WINE_CATS, "beer", "champagne", "gin", "vodka"),
             2,
         )
         hot_for_line = hot_in_cats(ALCOHOL_CATS)
@@ -235,7 +239,7 @@ def _local_reply(
     elif any(k in text for k in ("chill", "relax", "tired", "calm", "放鬆", "累")):
         vibe = "a chill unwind"
         mood_picks = pick(
-            lambda x: x["category_id"] in ("celestial", "wine")
+            lambda x: x["category_id"] in ("celestial", *WINE_CATS)
             or "sooth" in (x["note"] + x["name"]).lower()
             or "rose" in (x["note"] + x["name"]).lower(),
             3,
@@ -244,7 +248,7 @@ def _local_reply(
     elif any(k in text for k in ("date", "romantic", "impress", "約會", "浪漫")):
         vibe = "a little romance"
         mood_picks = pick(
-            lambda x: x["category_id"] in ("celestial", "champagne", "wine"),
+            lambda x: x["category_id"] in ("celestial", "champagne", *WINE_CATS),
             3,
         )
         hot_for_line = hot_in_cats(ALCOHOL_CATS)

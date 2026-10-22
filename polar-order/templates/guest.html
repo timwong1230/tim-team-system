@@ -75,11 +75,16 @@
   {% for cat in menu %}
   <section class="section" id="cat-{{ cat.id }}">
     <h2>{{ cat.name }}</h2>
+    {% set ns = namespace(last_unit=None) %}
     {% for item in cat['items'] %}
+    {% if cat.split_serve and item['unit'] in ('Glass', 'Bottle') and item['unit'] != ns.last_unit %}
+    <h3 class="serve-heading">{{ item['unit'] }}</h3>
+    {% set ns.last_unit = item['unit'] %}
+    {% endif %}
     <article
       class="item{% if not item['image'] %} no-photo{% endif %}"
       data-id="{{ item['id'] }}"
-      data-name="{{ item['name'] }}"
+      data-name="{{ item['name'] }}{% if item['unit'] %} ({{ item['unit'] }}){% endif %}"
       data-price="{{ item['display_price'] }}"
       data-list-price="{{ item['price'] }}"
       data-promo-type="{{ item['promo_type'] }}"
@@ -97,7 +102,7 @@
         <div class="item-copy">
           <h3>{{ item['name'] }}</h3>
           {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
-          {% if item['unit'] %}<p class="note unit">{{ item['unit'] }}</p>{% endif %}
+          {% if item['unit'] %}<span class="chip chip-unit">{{ item['unit'] }}</span>{% endif %}
           {% if item['combo_price'] is not none %}
           <span class="chip">With Shisha ${{ '%.0f'|format(item['combo_price']) }}</span>
           {% endif %}
