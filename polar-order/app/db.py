@@ -135,9 +135,24 @@ def init_db() -> None:
     )
     conn.commit()
     _ensure_columns(conn)
+    _rewrite_chinese_promo_notes(conn)
     _seed_tables(conn)
     sync_menu(conn)
     conn.close()
+
+
+def _rewrite_chinese_promo_notes(conn: sqlite3.Connection) -> None:
+    """Replace legacy Chinese discount tags baked into order line notes."""
+    replacements = (
+        ("[7折]", "[30% OFF]"),
+        ("[8折]", "[20% OFF]"),
+    )
+    for old, new in replacements:
+        conn.execute(
+            "UPDATE order_items SET note = REPLACE(note, ?, ?) WHERE note LIKE ?",
+            (old, new, f"%{old}%"),
+        )
+    conn.commit()
 
 
 def _seat_id(seat: dict) -> int:
