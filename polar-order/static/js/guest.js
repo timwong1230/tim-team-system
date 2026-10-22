@@ -246,7 +246,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const submitBtn = document.getElementById("submitOrder");
   const orderTargetHint = document.getElementById("orderTargetHint");
   const ownTableLabel =
-    document.querySelector(".pill")?.textContent?.trim() || "your table";
+    window.POLAR_TABLE_LABEL ||
+    document.getElementById("tablePill")?.textContent?.trim() ||
+    "your table";
 
   function resetGiftToOwnTable() {
     if (!giftToggle) return;
@@ -271,7 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     if (submitBtn) {
-      submitBtn.textContent = treating ? "Send treat" : `Send to ${ownTableLabel}`;
+      submitBtn.textContent = treating ? "Send treat" : "Send Order";
     }
   }
 

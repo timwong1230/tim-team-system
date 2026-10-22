@@ -38,7 +38,7 @@
     <div class="brand">POLAR</div>
     <div class="topbar-right">
       <button type="button" class="pill pill-action" id="openViewOrder">View Order</button>
-      <div class="pill">{{ table.label }}</div>
+      <div class="pill" id="tablePill">{{ table.label }}</div>
     </div>
   </div>
   <div class="hero">
@@ -170,7 +170,7 @@
       </div>
     </div>
 
-    <button class="primary" id="submitOrder" type="button">Send to {{ table.label }}</button>
+    <button class="primary" id="submitOrder" type="button">Send Order</button>
   </div>
 </div>
 
@@ -212,6 +212,7 @@
 {% block scripts %}
 <script>
   window.POLAR_TABLE = {{ table.code|tojson }};
+  window.POLAR_TABLE_LABEL = {{ table.label|tojson }};
   window.POLAR_READY = {{ 'true' if ready else 'false' }};
   window.POLAR_GUEST = {{ (session.guest_name if session and session.guest_name else '')|tojson }};
 </script>
