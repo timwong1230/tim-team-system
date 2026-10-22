@@ -48,38 +48,47 @@ def spirit_serve_for(category_id: str, unit: str | None) -> dict[str, Any] | Non
 
 
 def single_mix_serve(spirit_options: list[dict[str, str]]) -> dict[str, Any]:
-    """Two-step picker: spirit brand, then mixer."""
+    """Two-step picker: house spirit (cheapest per type), then mixer."""
     return {
         "kind": "single_mix",
         "options": [],  # filled client-side in two steps
         "spirits": spirit_options,
         "mixers": list(SPIRIT_MIXERS),
         "title": "Single Mix",
-        "chip": "Pick spirit + mixer",
+        "chip": "House spirit + mixer",
         "note_prefix": "Spirit",
     }
 
 
 def list_spirit_glass_options(conn) -> list[dict[str, str]]:
-    """Glass spirit brands for Single Mix (category label + name)."""
+    """Cheapest glass (house) spirit per category for Single Mix."""
     rows = conn.execute(
         """
-        SELECT mi.id, mi.name, mc.name AS category_name, mc.sort_order
+        SELECT mi.id, mi.name, mi.price, mc.id AS category_id,
+               mc.name AS category_name, mc.sort_order
         FROM menu_items mi
         JOIN menu_categories mc ON mc.id = mi.category_id
         WHERE mi.available = 1
           AND mi.unit = 'Glass'
           AND mc.id IN ({placeholders})
-        ORDER BY mc.sort_order ASC, mi.name ASC
+        ORDER BY mc.sort_order ASC, mi.price ASC, mi.name ASC
         """.format(placeholders=",".join("?" * len(SPIRIT_CATS))),
         SPIRIT_CATS,
     ).fetchall()
-    return [
-        {
+    # One house pour per spirit type — lowest Glass price (name tie-break).
+    best: dict[str, Any] = {}
+    for r in rows:
+        cid = r["category_id"]
+        if cid in best:
+            continue
+        best[cid] = {
             "id": r["id"],
             "name": r["name"],
             "category": r["category_name"],
+            "category_id": cid,
+            "price": float(r["price"]),
             "label": f"{r['category_name']} · {r['name']}",
         }
-        for r in rows
-    ]
+    # Keep category sort order from SPIRIT_CATS / sort_order in query
+    order = {cid: i for i, cid in enumerate(SPIRIT_CATS)}
+    return sorted(best.values(), key=lambda x: order.get(x["category_id"], 99))

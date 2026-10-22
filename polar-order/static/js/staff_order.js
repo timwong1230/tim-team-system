@@ -73,7 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (serveDrawerTitle) serveDrawerTitle.textContent = serve.title || "Choose option";
     if (serveItemName) {
       serveItemName.textContent =
-        serve.kind === "single_mix" ? "1/2 — Pick a spirit" : item.name;
+        serve.kind === "single_mix" ? "1/2 — Pick house spirit" : item.name;
     }
     if (serve.kind === "single_mix") {
       const spirits = window.POLAR_SINGLE_MIX_SPIRITS || [];
