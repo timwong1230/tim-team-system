@@ -575,10 +575,12 @@ button, .cat-btn, .add-btn {
   color: var(--gold-strong);
   margin: 8px 0 16px;
 }
-.qr-grid {
+/* Screen preview: flow of 3×3 sheets */
+.qr-sheet {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+  margin-bottom: 22px;
 }
 .qr-card {
   text-align: center;
@@ -586,16 +588,34 @@ button, .cat-btn, .add-btn {
   color: #111;
   border-radius: 14px;
   padding: 16px 12px 14px;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  overflow: hidden;
 }
-.qr-card img { width: 148px; height: 148px; display: block; margin: 0 auto; }
+.qr-code {
+  width: 148px;
+  height: 148px;
+  flex: 0 0 148px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr-code img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
 .qr-seat {
   display: block;
   font-size: 1.05rem;
   font-weight: 780;
   letter-spacing: 0.02em;
-  margin-bottom: 8px;
+  margin: 0 0 8px;
+  line-height: 1.2;
 }
 .qr-cta {
   margin-top: 10px;
@@ -604,6 +624,7 @@ button, .cat-btn, .add-btn {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #111;
+  line-height: 1.2;
 }
 .qr-cta-boss {
   letter-spacing: 0.1em;
@@ -612,31 +633,86 @@ button, .cat-btn, .add-btn {
 }
 
 @media print {
-  body {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  html, body {
     background: #fff !important;
     color: #111 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
   }
-  .no-print { display: none !important; }
+  .no-print,
+  .toast { display: none !important; }
   .wrap.qr-print-page {
     max-width: none;
-    padding: 8mm;
+    width: 100%;
+    padding: 0;
     margin: 0;
   }
-  .qr-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6mm;
+  /* One physical page = one 3×3 sheet — avoids mid-card page breaks */
+  .qr-sheet {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    gap: 4mm;
+    width: 190mm; /* A4 width minus @page margins */
+    height: 270mm; /* stay under printable height so sheets never split */
+    max-height: 270mm;
+    margin: 0 auto;
+    padding: 0;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .qr-sheet.qr-sheet-last {
+    page-break-after: auto;
+    break-after: auto;
   }
   .qr-card {
     border: 1px dashed #999;
-    border-radius: 8px;
-    background: #fff;
+    border-radius: 6px;
+    background: #fff !important;
     box-shadow: none;
-    padding: 8mm 5mm 6mm;
+    padding: 3mm 2.5mm;
+    margin: 0;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  .qr-card img { width: 42mm; height: 42mm; }
-  .qr-seat { font-size: 14pt; margin-bottom: 3mm; }
-  .qr-cta { font-size: 11pt; margin-top: 3mm; letter-spacing: 0.12em; }
-  .qr-grid-boss { margin-top: 8mm; }
+  .qr-seat {
+    font-size: 12pt;
+    margin: 0 0 2mm;
+    flex: 0 0 auto;
+  }
+  .qr-code {
+    width: 38mm;
+    height: 38mm;
+    flex: 0 0 38mm;
+    max-width: 100%;
+  }
+  .qr-code img {
+    width: 38mm !important;
+    height: 38mm !important;
+    max-width: 38mm;
+    max-height: 38mm;
+  }
+  .qr-cta {
+    font-size: 9pt;
+    margin-top: 2mm;
+    letter-spacing: 0.12em;
+    flex: 0 0 auto;
+  }
 }
 .home-links a {
   display: block;

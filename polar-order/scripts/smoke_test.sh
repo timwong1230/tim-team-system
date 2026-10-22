@@ -3,6 +3,11 @@ set -euo pipefail
 BASE="${1:-http://127.0.0.1:8080}"
 PIN="${POLAR_STAFF_PIN:-polar2026}"
 SEAT="${SMOKE_SEAT:-TABLE5}"
+if [[ -x .venv/bin/python ]]; then
+  PYTHON=.venv/bin/python
+else
+  PYTHON="${PYTHON:-python3}"
+fi
 
 curl -sf "$BASE/health" >/dev/null
 
@@ -71,7 +76,7 @@ CLOSE=$(curl -sf -X POST "$BASE/api/staff/bill/${SEAT}/close" \
 grep -q '"ok":true' <<<"$CLOSE"
 SID=$(python3 -c 'import sys,json; print(json.loads(sys.argv[1])["session_id"])' "$CLOSE")
 
-.venv/bin/python - "$SID" <<'PY'
+"$PYTHON" - "$SID" <<'PY'
 import sys
 from pathlib import Path
 from pypdf import PdfReader
@@ -83,7 +88,7 @@ print("receipt ok", path)
 PY
 
 # Boss order must NOT inflate daily guest sales; must appear in boss report
-.venv/bin/python <<'PY'
+"$PYTHON" <<'PY'
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from app.db import connect, init_db
@@ -105,9 +110,11 @@ conn.close()
 PY
 
 QRS=$(curl -sf "$BASE/staff/qrs?pin=$PIN")
-test "$(grep -c '>Terrace ' <<<"$QRS")" -eq 8
-test "$(grep -c '>Bar ' <<<"$QRS")" -eq 5
+test "$(grep -c '>Terrace ' <<<"$QRS")" -eq 9
+test "$(grep -c '>Bar ' <<<"$QRS")" -eq 6
 test "$(grep -c '>Table ' <<<"$QRS")" -eq 5
+# 3×3 print sheets (batch of 9) — guest seats fill 3 pages
+test "$(grep -c 'class="qr-sheet' <<<"$QRS")" -ge 3
 # boss seats must not appear as guest QRs
 ! grep -q 'Boss ·' <<<"$QRS"
 grep -q '/boss/jon' <<<"$QRS"
