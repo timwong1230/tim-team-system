@@ -11,13 +11,13 @@ import urllib.request
 from typing import Any
 
 from .pricing import current_promo
+from .spirits import SPIRIT_CATS
 
 OPENAI_KEY = os.getenv("POLAR_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
 OPENAI_MODEL = os.getenv("POLAR_OPENAI_MODEL", "gpt-4o-mini")
 
 # Mood → ordered category groups (first groups preferred).
 COCKTAIL_CATS = ("celestial",)
-SPIRIT_CATS = ("vodka", "gin", "whisky", "liqueur", "tequila", "rum", "cognac")
 MOOD_PLAYBOOK: dict[str, tuple[str, tuple[tuple[str, ...], ...]]] = {
     # key → (vibe label, ordered category groups)
     "happy": ("a happy night", (("shisha",), COCKTAIL_CATS, SPIRIT_CATS)),
