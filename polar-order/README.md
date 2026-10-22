@@ -2,7 +2,7 @@
 
 Guest scans a table QR → orders on phone → staff get a live alert → at checkout staff open the table bill to see **amount due** (payment stays on your third-party POS).
 
-## Quick start
+## Quick start (local)
 
 ```bash
 cd polar-order
@@ -14,19 +14,39 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 Open:
 
-- Guest demo: http://localhost:8080/t/T01
-- Staff: http://localhost:8080/staff  
-  Default PIN: `polar2026`
+- Guest: http://localhost:8080/t/TABLE1
+- Staff: http://localhost:8080/staff — PIN `polar2026`
 - Table QR print sheet: Staff → Table QR codes
+
+## Deploy to cloud (Render) — recommended
+
+1. Open: **https://render.com/deploy?repo=https://github.com/timwong1230/tim-team-system**
+2. Sign in with GitHub → confirm service **polar-order** (Singapore + 1GB disk).
+3. Change env `POLAR_STAFF_PIN` to your own PIN.
+4. **Apply** → wait until status is Live.
+5. Use your URL:
+   - Staff: `https://YOUR-SERVICE.onrender.com/staff`
+   - Guest: `https://YOUR-SERVICE.onrender.com/t/TABLE1`
+6. Staff → **Table QR codes** → print & stick on each seat.
+
+Optional: Render → Settings → **Custom Domain** (e.g. `order.polarlounge.hk`).
+
+Docker local smoke test:
+
+```bash
+cd polar-order
+docker build -t polar-order .
+docker run --rm -p 8080:8080 -e POLAR_STAFF_PIN=polar2026 -v polar-data:/data polar-order
+```
 
 ## Flow
 
 1. Print QR for each table (`/staff/qrs`)
-2. Guest scans → `/t/T01` … `/t/T20`
+2. Guest scans → `/t/TABLE1` …
 3. Guest adds items → **Send to bar**
 4. Staff board beeps + shows new order
 5. Staff marks Preparing → Ready → Served
-6. Checkout: Staff → Tables → tap table → see amount due → collect payment elsewhere → **Mark paid & close table**
+6. Checkout: Staff → Tables → confirm party size → collect payment elsewhere → **Mark paid**
 
 ## Bill rules (from Polar menu)
 
@@ -35,18 +55,18 @@ Open:
 - Meditation Hour (2–5pm HK): shisha $250, drinks 30% off
 - Happy Hour (5–8pm HK): drinks 20% off
 
-Menu seeded from `data/menu.json` (Polar Menu Final Version).
+Menu seeded from `data/menu.json`.
 
 ## Staff extras
 
 - **Discount on bill:** enter `10` for 10% off (blank/0 = full price)
-- **PDF receipt:** generated when you mark paid (`/staff/receipt/{session_id}`)
-- **Reports:** `/staff/reports` — nightly close (2pm–2am), monthly sales, purchase by category / by item
-- **Menu photos:** see `docs/ADD-MENU-PHOTOS.md`
+- **PDF receipt:** generated when you mark paid
+- **Reports:** `/staff/reports` — nightly close, monthly sales, boss report
+- **Ask AI** mood chips on guest menu
 
 ## Notes
 
 - This system does **not** process payments.
-- Change staff PIN via env `POLAR_STAFF_PIN` (default `polar2026`).
-- SQLite DB file: `data/polar_order.db` (created on first run).
-- Receipt PDFs: `data/receipts/` (gitignored).
+- Staff PIN: env `POLAR_STAFF_PIN` (default `polar2026`).
+- Runtime DB/receipts: env `POLAR_DATA_DIR` (default `data/`; cloud uses `/data`).
+- Menu photos: see `docs/ADD-MENU-PHOTOS.md`

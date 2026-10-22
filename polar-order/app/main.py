@@ -50,11 +50,11 @@ from .reports import (
     monthly_sales_report,
 )
 from .ai_host import ask_ai
+from .paths import DATA_DIR, ROOT
 from .seats import BOSSES, boss_by_id, boss_seat_code
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
-ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
@@ -1018,7 +1018,11 @@ def staff_receipt(session_id: int, pin: str = ""):
     conn.close()
     if not session or not session["receipt_path"]:
         raise HTTPException(404, "Receipt not found")
-    path = ROOT / session["receipt_path"]
+    # New receipts live under DATA_DIR; keep ROOT fallback for older rows.
+    rel = session["receipt_path"]
+    path = DATA_DIR / rel
+    if not path.exists():
+        path = ROOT / rel
     if not path.exists():
         raise HTTPException(404, "Receipt file missing")
     return FileResponse(

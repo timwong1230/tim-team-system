@@ -6,11 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .paths import DB_PATH, MENU_PATH
 from .seats import SEATS
-
-ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = ROOT / "data" / "polar_order.db"
-MENU_PATH = ROOT / "data" / "menu.json"
 
 
 def utc_now() -> str:

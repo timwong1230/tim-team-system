@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
@@ -9,9 +8,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
+from .paths import DATA_DIR, RECEIPT_DIR
+
 HK = ZoneInfo("Asia/Hong_Kong")
-ROOT = Path(__file__).resolve().parents[1]
-RECEIPT_DIR = ROOT / "data" / "receipts"
 
 
 def _money(n: float) -> str:
@@ -120,4 +119,5 @@ def generate_receipt_pdf(
     y -= 4 * mm
     c.drawString(18 * mm, y, "Payment collected separately. Keep this receipt for your records.")
     c.save()
-    return str(path.relative_to(ROOT))
+    # Stored relative to DATA_DIR so cloud mounts stay portable.
+    return str(path.relative_to(DATA_DIR))

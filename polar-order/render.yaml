@@ -1,0 +1,25 @@
+# One-click cloud deploy: https://render.com/deploy?repo=https://github.com/timwong1230/tim-team-system
+# After connect, set root to polar-order (this blueprint already uses rootDir).
+
+services:
+  - type: web
+    name: polar-order
+    runtime: docker
+    rootDir: polar-order
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: singapore
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: polar-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: POLAR_DATA_DIR
+        value: /data
+      - key: POLAR_STAFF_PIN
+        sync: false
+        value: polar2026
+      - key: PORT
+        value: "8080"
