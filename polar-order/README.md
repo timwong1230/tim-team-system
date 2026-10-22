@@ -21,10 +21,13 @@ Open:
 ## Deploy to cloud (Render) — recommended
 
 1. Open: **https://render.com/deploy?repo=https://github.com/timwong1230/tim-team-system**
-2. Sign in with GitHub → confirm service **polar-order** (Singapore + 1GB disk).
-3. Change env `POLAR_STAFF_PIN` to your own PIN.
-4. **Apply** → wait until status is Live.
-5. Use your URL:
+2. Fill the form:
+   - **Blueprint Name:** `polar-order` (any unique name)
+   - **Branch:** `main`
+   - **Blueprint Path:** leave as `render.yaml`
+3. When prompted, set **`POLAR_STAFF_PIN`** (your staff login PIN).
+4. Confirm service **polar-order** (Singapore + 1GB disk) → **Apply**.
+5. Wait until Live, then use:
    - Staff: `https://YOUR-SERVICE.onrender.com/staff`
    - Guest: `https://YOUR-SERVICE.onrender.com/t/TABLE1`
 6. Staff → **Table QR codes** → print & stick on each seat.
