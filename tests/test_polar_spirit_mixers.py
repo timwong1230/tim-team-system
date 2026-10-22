@@ -22,11 +22,13 @@ def test_spirit_serve_and_single_mix():
 
     import app.paths as paths
     import app.db as db
+    import app.spirits as spirits
     import app.main as main
     from app.spirits import SPIRIT_MIXERS, SPIRIT_GLASS_STYLES
 
     importlib.reload(paths)
     importlib.reload(db)
+    importlib.reload(spirits)
     importlib.reload(main)
 
     from fastapi.testclient import TestClient
@@ -47,26 +49,30 @@ def test_spirit_serve_and_single_mix():
         assert "House spirit + mixer" in html
 
         conn = db.connect()
-        from app.spirits import list_spirit_glass_options, SPIRIT_CATS
-
-        house = list_spirit_glass_options(conn)
-        assert len(house) == len(SPIRIT_CATS)
+        house = spirits.list_spirit_glass_options(conn)
+        assert len(house) == len(spirits.SINGLE_MIX_SPIRIT_CATS)
+        assert {h["category_id"] for h in house} == set(spirits.SINGLE_MIX_SPIRIT_CATS)
         house_names = {h["name"] for h in house}
         assert "Jessy's Barrel" in house_names  # vodka/gin/rum house
         assert "Claymore" in house_names
+        assert "Baileys" not in house_names
+        assert "Jose Cuervo Silver" not in house_names
+        assert "VSOP" not in house_names
         assert "Belvedere" not in house_names
-        assert "Grey Goose" not in house_names
-        assert "Patron Silver" not in house_names
 
-        # Embedded JSON for Single Mix must only list house pours
+        # Embedded JSON for Single Mix must only list allowed house pours
         import json
         import re
 
         m = re.search(r"POLAR_SINGLE_MIX_SPIRITS = (\[.*?\]);", html, re.S)
         assert m, "missing POLAR_SINGLE_MIX_SPIRITS"
         embedded = json.loads(m.group(1))
-        assert len(embedded) == len(SPIRIT_CATS)
+        assert len(embedded) == len(SINGLE_MIX_SPIRIT_CATS)
         assert {e["name"] for e in embedded} == house_names
+        assert not any(
+            x in html[m.start() : m.end()]
+            for x in ("Baileys", "Jose Cuervo", "VSOP", "Tequila", "Cognac", "Liqueur")
+        )
 
         glass = conn.execute(
             "SELECT id FROM menu_items WHERE category_id='vodka' AND unit='Glass' AND available=1 LIMIT 1"
