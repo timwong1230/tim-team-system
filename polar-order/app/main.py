@@ -53,7 +53,7 @@ from .reports import (
 from .ai_host import ask_ai
 from .paths import DATA_DIR, ROOT
 from .seats import BOSSES, boss_by_id, boss_seat_code
-from .spirits import mixer_options_for
+from .spirits import spirit_serve_for
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -189,7 +189,7 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 promo,
                 item_id=item["id"],
             )
-            mixers = mixer_options_for(cat["id"], item["unit"])
+            serve = spirit_serve_for(cat["id"], item["unit"])
             row = {
                 "id": item["id"],
                 "name": item["name"],
@@ -202,7 +202,9 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "image": item["image"],
                 "promo_type": cat["promo"],
                 "combo_price": None,
-                "mixer_options": mixers,
+                "serve": serve,
+                # legacy alias for templates during transition
+                "mixer_options": serve["options"] if serve else None,
             }
             if cat["promo"] == "snacks":
                 row["combo_price"] = SHISHA_COMBO_SNACK_PRICE

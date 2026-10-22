@@ -52,7 +52,12 @@
       data-promo-type="{{ item['promo_type'] }}"
       data-combo-price="{{ item['combo_price'] if item['combo_price'] is not none else '' }}"
       data-allow-note="{{ 1 if item['allow_note'] else 0 }}"
-      {% if item['mixer_options'] %}data-mixers="{{ item['mixer_options']|join('|') }}"{% endif %}
+      {% if item['serve'] %}
+      data-serve-options="{{ item['serve']['options']|join('|') }}"
+      data-serve-kind="{{ item['serve']['kind'] }}"
+      data-serve-title="{{ item['serve']['title'] }}"
+      data-serve-prefix="{{ item['serve']['note_prefix'] }}"
+      {% endif %}
     >
       <div class="item-photo">
         {% if item['image'] %}
@@ -66,7 +71,7 @@
           <h3>{{ item['name'] }}</h3>
           {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
           {% if item['unit'] %}<span class="chip chip-unit">{{ item['unit'] }}</span>{% endif %}
-          {% if item['mixer_options'] %}<span class="chip chip-soft">Pick a mixer</span>{% endif %}
+          {% if item['serve'] %}<span class="chip chip-soft">{{ item['serve']['chip'] }}</span>{% endif %}
           {% if item['combo_price'] is not none %}
           <span class="chip">With Shisha ${{ '%.0f'|format(item['combo_price']) }}</span>
           {% endif %}
@@ -127,14 +132,14 @@
     <button class="primary" id="submitOrder" type="button">Send order for table</button>
   </div>
 </div>
-<div class="drawer" id="mixerDrawer">
+<div class="drawer" id="serveDrawer">
   <div class="drawer-panel">
     <div class="row">
-      <h2 style="margin:0">Choose mixer</h2>
-      <button class="ghost" style="width:auto;padding:8px 12px" id="closeMixer" type="button">Close</button>
+      <h2 style="margin:0" id="serveDrawerTitle">How to serve</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeServe" type="button">Close</button>
     </div>
-    <p class="muted" id="mixerItemName" style="margin-top:0"></p>
-    <div class="mixer-choices" id="mixerChoices"></div>
+    <p class="muted" id="serveItemName" style="margin-top:0"></p>
+    <div class="mixer-choices" id="serveChoices"></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
