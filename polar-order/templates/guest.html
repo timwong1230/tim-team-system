@@ -133,13 +133,16 @@
     <label class="muted">Note for staff</label>
     <textarea class="field" id="orderNote" rows="2" placeholder="e.g. less ice / flavour notes"></textarea>
 
+    <p class="muted" id="orderTargetHint" style="margin:4px 0 10px">Sending to <strong>{{ table.label }}</strong> (your table).</p>
+
     <div class="gift-box" id="giftBox">
       <label class="gift-toggle">
         <input type="checkbox" id="giftToggle" />
-        <span>Order for HIM/HER</span>
+        <span>Order for HIM/HER instead</span>
       </label>
+      <p class="muted" style="margin:8px 0 0;font-size:0.85rem">Leave unticked = order for your table. Tick only to treat another seat.</p>
       <div id="giftFields" hidden>
-        <p class="muted" style="margin:0 0 8px">Bill stays on {{ table.label }}. Staff deliver to them with your note.</p>
+        <p class="muted" style="margin:10px 0 8px">Bill stays on {{ table.label }}. Staff deliver to them with your note.</p>
         <label class="muted" for="giftSeat">Send to</label>
         <select class="field" id="giftSeat">
           <option value="">Pick a seat…</option>
@@ -152,7 +155,7 @@
       </div>
     </div>
 
-    <button class="primary" id="submitOrder" type="button">Send to bar</button>
+    <button class="primary" id="submitOrder" type="button">Send to {{ table.label }}</button>
   </div>
 </div>
 

@@ -223,6 +223,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("openCart").addEventListener("click", () => {
+    resetGiftToOwnTable();
     renderCartLines();
     drawer.classList.add("open");
   });
@@ -233,17 +234,52 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === drawer) drawer.classList.remove("open");
   });
 
-  giftToggle?.addEventListener("change", () => {
-    giftFields.hidden = !giftToggle.checked;
-  });
+  const submitBtn = document.getElementById("submitOrder");
+  const orderTargetHint = document.getElementById("orderTargetHint");
+  const ownTableLabel =
+    document.querySelector(".pill")?.textContent?.trim() || "your table";
+
+  function resetGiftToOwnTable() {
+    if (!giftToggle) return;
+    giftToggle.checked = false;
+    if (giftFields) giftFields.hidden = true;
+    if (giftSeat) giftSeat.value = "";
+    if (giftMessage) giftMessage.value = "";
+    syncOrderTargetUI();
+  }
+
+  function syncOrderTargetUI() {
+    const treating = !!(giftToggle && giftToggle.checked);
+    if (giftFields) giftFields.hidden = !treating;
+    if (orderTargetHint) {
+      if (treating && giftSeat?.value) {
+        const label = giftSeat.selectedOptions[0]?.textContent || giftSeat.value;
+        orderTargetHint.innerHTML = `Treat for <strong>${label}</strong> · bill on <strong>${ownTableLabel}</strong>.`;
+      } else if (treating) {
+        orderTargetHint.innerHTML = `Pick a seat to treat · bill stays on <strong>${ownTableLabel}</strong>.`;
+      } else {
+        orderTargetHint.innerHTML = `Sending to <strong>${ownTableLabel}</strong> (your table).`;
+      }
+    }
+    if (submitBtn) {
+      submitBtn.textContent = treating ? "Send treat" : `Send to ${ownTableLabel}`;
+    }
+  }
+
+  giftToggle?.addEventListener("change", syncOrderTargetUI);
+  giftSeat?.addEventListener("change", syncOrderTargetUI);
 
   document.getElementById("jumpGift")?.addEventListener("click", () => {
-    if (!cart.size) showToast("Add a drink first");
+    if (!cart.size) {
+      showToast("Add something first");
+      return;
+    }
     renderCartLines();
     drawer.classList.add("open");
+    // Shortcut: open cart with treat option ready — still requires manual seat + message
     if (giftToggle) {
       giftToggle.checked = true;
-      giftFields.hidden = false;
+      syncOrderTargetUI();
       giftSeat?.focus();
     }
   });
@@ -269,7 +305,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (line) line.note = input.value;
   });
 
-  document.getElementById("submitOrder").addEventListener("click", async () => {
+  submitBtn?.addEventListener("click", async () => {
     if (!cart.size) return showToast("Cart is empty");
     const payload = {
       note: document.getElementById("orderNote").value || null,
@@ -279,6 +315,7 @@ document.addEventListener("DOMContentLoaded", () => {
         note: l.note || null,
       })),
     };
+    // Default = own table. Only attach deliver_to when guest ticks the box.
     if (giftToggle?.checked) {
       const seat = (giftSeat?.value || "").trim();
       const msg = (giftMessage?.value || "").trim();
@@ -287,8 +324,9 @@ document.addEventListener("DOMContentLoaded", () => {
       payload.deliver_to = seat;
       payload.gift_message = msg;
     }
-    const btn = document.getElementById("submitOrder");
+    const btn = submitBtn;
     btn.disabled = true;
+    const prevLabel = btn.textContent;
     btn.textContent = "Sending…";
     try {
       const res = await fetch(`/api/t/${table}/orders`, {
@@ -300,21 +338,19 @@ document.addEventListener("DOMContentLoaded", () => {
       cart.clear();
       renderCartBar();
       drawer.classList.remove("open");
-      if (giftToggle) {
-        giftToggle.checked = false;
-        giftFields.hidden = true;
-        giftMessage.value = "";
-        giftSeat.value = "";
-      }
-      showToast(payload.deliver_to ? "Treat sent" : "Order sent");
+      resetGiftToOwnTable();
+      showToast(payload.deliver_to ? "Treat sent" : `Sent to ${ownTableLabel}`);
     } catch (err) {
       showToast("Failed to send order");
       console.error(err);
+      btn.textContent = prevLabel;
     } finally {
       btn.disabled = false;
-      btn.textContent = "Send to bar";
+      if (!payload.deliver_to) syncOrderTargetUI();
     }
   });
+
+  resetGiftToOwnTable();
 
   // —— Ask AI ——
   function appendAI(role, html) {
