@@ -94,10 +94,14 @@
       data-combo-price="{{ item['combo_price'] if item['combo_price'] is not none else '' }}"
       data-allow-note="{{ 1 if item['allow_note'] else 0 }}"
       {% if item['serve'] %}
-      data-serve-options="{{ item['serve']['options']|join('|') }}"
       data-serve-kind="{{ item['serve']['kind'] }}"
       data-serve-title="{{ item['serve']['title'] }}"
       data-serve-prefix="{{ item['serve']['note_prefix'] }}"
+      {% if item['serve']['kind'] == 'single_mix' %}
+      data-serve-mixers="{{ item['serve']['mixers']|join('|') }}"
+      {% else %}
+      data-serve-options="{{ item['serve']['options']|join('|') }}"
+      {% endif %}
       {% endif %}
     >
       <div class="item-photo">
@@ -233,6 +237,7 @@
   window.POLAR_TABLE_LABEL = {{ table.label|tojson }};
   window.POLAR_READY = {{ 'true' if ready else 'false' }};
   window.POLAR_GUEST = {{ (session.guest_name if session and session.guest_name else '')|tojson }};
+  window.POLAR_SINGLE_MIX_SPIRITS = {{ (single_mix_spirits or [])|tojson }};
 </script>
 <script src="/static/js/guest.js"></script>
 {% endblock %}
