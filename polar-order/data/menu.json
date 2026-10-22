@@ -128,61 +128,71 @@
           "id": "aj",
           "name": "Apple Juice",
           "price": 49,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/aj.jpg"
         },
         {
           "id": "coke",
           "name": "Coke",
           "price": 59,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/coke.jpg"
         },
         {
           "id": "coke-zero",
           "name": "Coke Zero",
           "price": 59,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/coke-zero.jpg"
         },
         {
           "id": "cran",
           "name": "Cranberry Juice",
           "price": 49,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/cran.jpg"
         },
         {
           "id": "ginger-ale",
           "name": "Ginger Ale",
           "price": 59,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/ginger-ale.jpg"
         },
         {
           "id": "oj",
           "name": "Orange Juice",
           "price": 49,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/oj.jpg"
         },
         {
           "id": "redbull",
           "name": "Redbull",
           "price": 69,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/redbull.jpg"
         },
         {
           "id": "sprite",
           "name": "Sprite",
           "price": 59,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/sprite.jpg"
         },
         {
           "id": "tonic",
           "name": "Tonic Water",
           "price": 59,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/tonic.jpg"
         },
         {
           "id": "pellegrino",
           "name": "S. Pellegrino Sparkling Water",
           "price": 98,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/pellegrino.jpg"
         }
       ]
     },
@@ -196,19 +206,22 @@
           "id": "tea-orange",
           "name": "Fresh Orange Jasmine",
           "price": 88,
-          "note": "Includes tea biscuit"
+          "note": "Includes tea biscuit",
+          "image": "/static/images/menu/tea-orange.jpg"
         },
         {
           "id": "tea-lemon",
           "name": "Lemon Ginger Honey",
           "price": 88,
-          "note": "Includes tea biscuit"
+          "note": "Includes tea biscuit",
+          "image": "/static/images/menu/tea-lemon.jpg"
         },
         {
           "id": "tea-pineapple",
           "name": "Pineapple Earl Grey",
           "price": 88,
-          "note": "Includes tea biscuit"
+          "note": "Includes tea biscuit",
+          "image": "/static/images/menu/tea-pineapple.jpg"
         }
       ]
     },
@@ -221,7 +234,8 @@
         {
           "id": "wings",
           "name": "Chicken Wings (4pcs)",
-          "price": 78
+          "price": 78,
+          "image": "/static/images/menu/wings.jpg"
         },
         {
           "id": "fries",
@@ -232,7 +246,8 @@
         {
           "id": "kfc",
           "name": "Korean Fried Chicken (6pcs)",
-          "price": 88
+          "price": 88,
+          "image": "/static/images/menu/kfc.jpg"
         }
       ]
     },
@@ -246,25 +261,29 @@
           "id": "asahi-dark",
           "name": "Asahi Dark",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/asahi-dark.jpg"
         },
         {
           "id": "asahi",
           "name": "Asahi Super Dry",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/asahi.jpg"
         },
         {
           "id": "vedett",
           "name": "Vedett Extra White",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/vedett.jpg"
         },
         {
           "id": "corona",
           "name": "Corona",
           "price": 79,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/corona.jpg"
         }
       ]
     },
@@ -277,17 +296,20 @@
         {
           "id": "bottle-tower",
           "name": "Bottle Beer Tower",
-          "price": 329
+          "price": 329,
+          "image": "/static/images/menu/bottle-tower.jpg"
         },
         {
           "id": "draft-tower",
           "name": "Draft Beer Tower",
-          "price": 349
+          "price": 349,
+          "image": "/static/images/menu/draft-tower.jpg"
         },
         {
           "id": "single-mix",
           "name": "Single Mix",
-          "price": 459
+          "price": 459,
+          "image": "/static/images/menu/single-mix.jpg"
         }
       ]
     },
@@ -301,31 +323,36 @@
           "id": "bella-g",
           "name": "Bella Storia Merlot",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/bella.jpg"
         },
         {
           "id": "lfe-cab-g",
           "name": "LFE Cabernet Sauvignon",
           "price": 79,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/lfe-cab.jpg"
         },
         {
           "id": "bella-b",
           "name": "Bella Storia Merlot",
           "price": 459,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/bella.jpg"
         },
         {
           "id": "lfe-cab-b",
           "name": "LFE Cabernet Sauvignon",
           "price": 399,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/lfe-cab.jpg"
         },
         {
           "id": "rose-b",
           "name": "St. Jean de Villecroze Rosé",
           "price": 459,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/rose-b.jpg"
         }
       ]
     },
@@ -339,37 +366,43 @@
           "id": "lfe-sav-g",
           "name": "LFE Sauvignon Blanc",
           "price": 79,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/lfe-sav.jpg"
         },
         {
           "id": "trebbiano-g",
           "name": "Terre Allegre Trebbiano",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/trebbiano.jpg"
         },
         {
           "id": "moscato-b",
           "name": "Borgo Imperiale Moscato",
           "price": 459,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/moscato-b.jpg"
         },
         {
           "id": "chaos-b",
           "name": "Dacastello Chaos & Kosmos Sparkling",
           "price": 459,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/chaos-b.jpg"
         },
         {
           "id": "lfe-sav-b",
           "name": "LFE Sauvignon Blanc",
           "price": 399,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/lfe-sav.jpg"
         },
         {
           "id": "trebbiano-b",
           "name": "Terre Allegre Trebbiano",
           "price": 459,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/trebbiano.jpg"
         }
       ]
     },
@@ -383,37 +416,43 @@
           "id": "belvedere-g",
           "name": "Belvedere",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/belvedere.jpg"
         },
         {
           "id": "grey-goose-g",
           "name": "Grey Goose",
           "price": 129,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/grey-goose.jpg"
         },
         {
           "id": "jessy-vodka-g",
           "name": "Jessy's Barrel",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/jessy-vodka.jpg"
         },
         {
           "id": "belvedere-b",
           "name": "Belvedere",
           "price": 1699,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/belvedere.jpg"
         },
         {
           "id": "grey-goose-b",
           "name": "Grey Goose",
           "price": 1999,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/grey-goose.jpg"
         },
         {
           "id": "jessy-vodka-b",
           "name": "Jessy's Barrel",
           "price": 1099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/jessy-vodka.jpg"
         }
       ]
     },
@@ -427,61 +466,71 @@
           "id": "bombay-g",
           "name": "Bombay",
           "price": 109,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/bombay.jpg"
         },
         {
           "id": "hendricks-g",
           "name": "Hendrick's",
           "price": 119,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/hendricks.jpg"
         },
         {
           "id": "jessy-gin-g",
           "name": "Jessy's Barrel",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/jessy-gin.jpg"
         },
         {
           "id": "mg-rosa-g",
           "name": "MG Gin Rosa",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/mg-rosa.jpg"
         },
         {
           "id": "tanqueray-g",
           "name": "Tanqueray",
           "price": 109,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/tanqueray.jpg"
         },
         {
           "id": "bombay-b",
           "name": "Bombay",
           "price": 1599,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/bombay.jpg"
         },
         {
           "id": "hendricks-b",
           "name": "Hendrick's",
           "price": 1799,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/hendricks.jpg"
         },
         {
           "id": "jessy-gin-b",
           "name": "Jessy's Barrel",
           "price": 1099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/jessy-gin.jpg"
         },
         {
           "id": "mg-rosa-b",
           "name": "MG Gin Rosa",
           "price": 1499,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/mg-rosa.jpg"
         },
         {
           "id": "tanqueray-b",
           "name": "Tanqueray",
           "price": 1699,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/tanqueray.jpg"
         }
       ]
     },
@@ -495,85 +544,99 @@
           "id": "black-label-g",
           "name": "Black Label",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/black-label.jpg"
         },
         {
           "id": "claymore-g",
           "name": "Claymore",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/claymore.jpg"
         },
         {
           "id": "glenfiddich-g",
           "name": "Glenfiddich 12",
           "price": 109,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/glenfiddich.jpg"
         },
         {
           "id": "glenlivet-g",
           "name": "Glenlivet 12",
           "price": 109,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/glenlivet.jpg"
         },
         {
           "id": "jd-g",
           "name": "Jack Daniels",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/jd.jpg"
         },
         {
           "id": "makers-g",
           "name": "Maker's Mark",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/makers.jpg"
         },
         {
           "id": "singleton-g",
           "name": "Singleton 13",
           "price": 109,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/singleton.jpg"
         },
         {
           "id": "black-label-b",
           "name": "Black Label",
           "price": 1499,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/black-label.jpg"
         },
         {
           "id": "claymore-b",
           "name": "Claymore",
           "price": 1099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/claymore.jpg"
         },
         {
           "id": "glenfiddich-b",
           "name": "Glenfiddich 12",
           "price": 1699,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/glenfiddich.jpg"
         },
         {
           "id": "glenlivet-b",
           "name": "Glenlivet 12",
           "price": 1699,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/glenlivet.jpg"
         },
         {
           "id": "jd-b",
           "name": "Jack Daniels",
           "price": 1599,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/jd.jpg"
         },
         {
           "id": "makers-b",
           "name": "Maker's Mark",
           "price": 1599,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/makers.jpg"
         },
         {
           "id": "singleton-b",
           "name": "Singleton 13",
           "price": 1799,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/singleton.jpg"
         }
       ]
     },
@@ -587,49 +650,57 @@
           "id": "baileys-g",
           "name": "Baileys",
           "price": 79,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/baileys.jpg"
         },
         {
           "id": "jager-g",
           "name": "Jagermeister",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/jager.jpg"
         },
         {
           "id": "kahlua-g",
           "name": "Kahlua",
           "price": 79,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/kahlua.jpg"
         },
         {
           "id": "tequila-rose-g",
           "name": "Tequila Rose",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/tequila-rose.jpg"
         },
         {
           "id": "baileys-b",
           "name": "Baileys",
           "price": 1199,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/baileys.jpg"
         },
         {
           "id": "jager-b",
           "name": "Jagermeister",
           "price": 1399,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/jager.jpg"
         },
         {
           "id": "kahlua-b",
           "name": "Kahlua",
           "price": 1199,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/kahlua.jpg"
         },
         {
           "id": "tequila-rose-b",
           "name": "Tequila Rose",
           "price": 1399,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/tequila-rose.jpg"
         }
       ]
     },
@@ -643,19 +714,22 @@
           "id": "dom",
           "name": "Dom Perignon",
           "price": 3099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/dom.jpg"
         },
         {
           "id": "moet",
           "name": "Moet",
           "price": 1099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/moet.jpg"
         },
         {
           "id": "vcp",
           "name": "VCP",
           "price": 1099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/vcp.jpg"
         }
       ]
     },
@@ -669,37 +743,43 @@
           "id": "campo-g",
           "name": "Campo Azul Gran Classico Blanco",
           "price": 109,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/campo.jpg"
         },
         {
           "id": "cuervo-g",
           "name": "Jose Cuervo Silver",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/cuervo.jpg"
         },
         {
           "id": "patron-g",
           "name": "Patron Silver",
           "price": 129,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/patron.jpg"
         },
         {
           "id": "campo-b",
           "name": "Campo Azul Gran Classico Blanco",
           "price": 1499,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/campo.jpg"
         },
         {
           "id": "cuervo-b",
           "name": "Jose Cuervo Silver",
           "price": 1199,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/cuervo.jpg"
         },
         {
           "id": "patron-b",
           "name": "Patron Silver",
           "price": 1999,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/patron.jpg"
         }
       ]
     },
@@ -713,25 +793,29 @@
           "id": "jessy-rum-g",
           "name": "Jessy's Barrel",
           "price": 89,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/jessy-rum.jpg"
         },
         {
           "id": "myers-g",
           "name": "Myers",
           "price": 99,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/myers.jpg"
         },
         {
           "id": "jessy-rum-b",
           "name": "Jessy's Barrel",
           "price": 1099,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/jessy-rum.jpg"
         },
         {
           "id": "myers-b",
           "name": "Myers",
           "price": 1599,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/myers.jpg"
         }
       ]
     },
@@ -745,13 +829,15 @@
           "id": "vsop-g",
           "name": "VSOP",
           "price": 119,
-          "unit": "Glass"
+          "unit": "Glass",
+          "image": "/static/images/menu/vsop.jpg"
         },
         {
           "id": "vsop-b",
           "name": "VSOP",
           "price": 1799,
-          "unit": "Bottle"
+          "unit": "Bottle",
+          "image": "/static/images/menu/vsop.jpg"
         }
       ]
     }
