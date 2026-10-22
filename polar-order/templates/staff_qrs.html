@@ -1,35 +1,36 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="wrap">
-  <div class="topbar">
+<div class="wrap qr-print-page">
+  <div class="topbar no-print">
     <div class="brand">QR CODES</div>
     <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
   </div>
-  <div class="hero">
+  <div class="hero no-print">
     <h1>Seat QR codes</h1>
-    <p>Print for Tables 1–5, Bar 1–5, Terrace 1–8. Guests scan to order.</p>
+    <p>Print, cut, and place on each seat. Guests scan to order — no URL on the card.</p>
+    <button class="primary" type="button" onclick="window.print()" style="width:auto;margin-top:10px">Print cards</button>
   </div>
   <div class="qr-grid">
     {% for t in tables %}
     <div class="qr-card">
-      <strong>{{ t.label }}</strong>
-      <div><img src="/qr/{{ t.code }}.png" alt="{{ t.code }}" /></div>
-      <small>{{ base }}/t/{{ t.code }}</small>
+      <strong class="qr-seat">{{ t.label }}</strong>
+      <div class="qr-code"><img src="/qr/{{ t.code }}.png" alt="{{ t.label }} QR" /></div>
+      <div class="qr-cta">ORDER HERE</div>
     </div>
     {% endfor %}
   </div>
 
   {% if boss_links %}
-  <div class="hero" style="margin-top:28px">
+  <div class="hero no-print" style="margin-top:28px">
     <h1>Boss stations</h1>
-    <p>Print &amp; keep for Jon / Barry / Tim / Ziv — personal tabs, not guest sales.</p>
+    <p>Internal only — not for guest tables.</p>
   </div>
-  <div class="qr-grid">
+  <div class="qr-grid qr-grid-boss">
     {% for b in boss_links %}
-    <div class="qr-card">
-      <strong>{{ b.name }}</strong>
-      <div><img src="{{ b.qr }}" alt="{{ b.name }} boss QR" /></div>
-      <small>{{ b.url }}</small>
+    <div class="qr-card qr-card-boss">
+      <strong class="qr-seat">{{ b.name }}</strong>
+      <div class="qr-code"><img src="{{ b.qr }}" alt="{{ b.name }} boss QR" /></div>
+      <div class="qr-cta qr-cta-boss">BOSS ORDER</div>
     </div>
     {% endfor %}
   </div>

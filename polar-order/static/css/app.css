@@ -585,9 +585,59 @@ button, .cat-btn, .add-btn {
   background: white;
   color: #111;
   border-radius: 14px;
-  padding: 12px;
+  padding: 16px 12px 14px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
-.qr-card img { width: 140px; height: 140px; }
+.qr-card img { width: 148px; height: 148px; display: block; margin: 0 auto; }
+.qr-seat {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 780;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+.qr-cta {
+  margin-top: 10px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #111;
+}
+.qr-cta-boss {
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: #333;
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .no-print { display: none !important; }
+  .wrap.qr-print-page {
+    max-width: none;
+    padding: 8mm;
+    margin: 0;
+  }
+  .qr-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6mm;
+  }
+  .qr-card {
+    border: 1px dashed #999;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: none;
+    padding: 8mm 5mm 6mm;
+  }
+  .qr-card img { width: 42mm; height: 42mm; }
+  .qr-seat { font-size: 14pt; margin-bottom: 3mm; }
+  .qr-cta { font-size: 11pt; margin-top: 3mm; letter-spacing: 0.12em; }
+  .qr-grid-boss { margin-top: 8mm; }
+}
 .home-links a {
   display: block;
   padding: 16px;
