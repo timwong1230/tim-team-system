@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">STAFF ORDER</div>
+    <a class="pill" href="/staff/bill/{{ table.code }}?pin={{ pin }}">← Bill</a>
+  </div>
+  <div class="hero">
+    <h1>{{ table.label }}</h1>
+    {% if session and session.guest_name %}
+    <p>Ordering for <strong>{{ session.guest_name }}</strong> · party {{ session.party_size }}. Staff can send menu items for this table.</p>
+    {% else %}
+    <p>No check-in yet — enter guest name, then order for them.</p>
+    {% endif %}
+  </div>
+
+  {% if needs_checkin %}
+  <div class="card" id="staffCheckin">
+    <h3 style="margin-top:0">Guest check-in</h3>
+    <label class="muted" for="staffGuestName">Guest name</label>
+    <input class="field" id="staffGuestName" type="text" maxlength="40" placeholder="Name / nickname" value="Walk-in" />
+    <label class="muted" for="staffPartySize">Party size</label>
+    <input class="field" id="staffPartySize" type="number" min="1" max="30" value="2" />
+  </div>
+  {% endif %}
+
+  <div class="promo">
+    <div class="promo-now"><strong>Now: {{ promo.label }}</strong></div>
+  </div>
+
+  <div class="cats" id="cats">
+    {% for cat in menu %}
+    <button class="cat-btn {% if loop.first %}active{% endif %}" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
+    {% endfor %}
+  </div>
+
+  {% for cat in menu %}
+  <section class="section" id="cat-{{ cat.id }}">
+    <h2>{{ cat.name }}</h2>
+    {% set ns = namespace(last_unit=None) %}
+    {% for item in cat['items'] %}
+    {% if cat.split_serve and item['unit'] in ('Glass', 'Bottle') and item['unit'] != ns.last_unit %}
+    <h3 class="serve-heading">{{ item['unit'] }}</h3>
+    {% set ns.last_unit = item['unit'] %}
+    {% endif %}
+    <article
+      class="item{% if not item['image'] %} no-photo{% endif %}"
+      data-id="{{ item['id'] }}"
+      data-name="{{ item['name'] }}{% if item['unit'] %} ({{ item['unit'] }}){% endif %}"
+      data-price="{{ item['display_price'] }}"
+      data-list-price="{{ item['price'] }}"
+      data-promo-type="{{ item['promo_type'] }}"
+      data-combo-price="{{ item['combo_price'] if item['combo_price'] is not none else '' }}"
+      data-allow-note="{{ 1 if item['allow_note'] else 0 }}"
+    >
+      <div class="item-photo">
+        {% if item['image'] %}
+        <img src="{{ item['image'] }}" alt="{{ item['name'] }}" loading="lazy" />
+        {% else %}
+        <div class="item-photo-fallback" aria-hidden="true">P</div>
+        {% endif %}
+      </div>
+      <div class="item-body">
+        <div class="item-copy">
+          <h3>{{ item['name'] }}</h3>
+          {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
+          {% if item['unit'] %}<span class="chip chip-unit">{{ item['unit'] }}</span>{% endif %}
+          {% if item['combo_price'] is not none %}
+          <span class="chip">With Shisha ${{ '%.0f'|format(item['combo_price']) }}</span>
+          {% endif %}
+          {% if item['promo_tag'] %}<span class="chip chip-soft">{{ item['promo_tag'] }}</span>{% endif %}
+        </div>
+        <div class="item-foot">
+          <div class="price">
+            <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
+            {% if item['display_price'] < item['price'] %}
+            <div class="was">${{ '%.0f'|format(item['price']) }}</div>
+            {% endif %}
+          </div>
+          <button class="add-btn" type="button">Add</button>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+
+<div class="cart-bar" id="cartBar" style="display:none">
+  <div>
+    <div id="cartCount">0 items</div>
+    <strong id="cartTotal">$0</strong>
+  </div>
+  <button type="button" id="openCart">View cart</button>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-panel">
+    <div class="row">
+      <h2 style="margin:0">{{ table.label }} · staff order</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeCart" type="button">Close</button>
+    </div>
+    <div id="cartLines"></div>
+
+    <div class="nom-box" id="nomBox">
+      <strong>Not on Menu</strong>
+      <p class="muted" style="margin:6px 0 8px;font-size:0.85rem">Manual name + price for off-menu items.</p>
+      <label class="muted" for="nomName">Product name</label>
+      <input class="field" id="nomName" type="text" maxlength="80" placeholder="e.g. Guest bottle" />
+      <div class="nom-row">
+        <div>
+          <label class="muted" for="nomPrice">Price (HKD)</label>
+          <input class="field" id="nomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+        </div>
+        <div>
+          <label class="muted" for="nomQty">Qty</label>
+          <input class="field" id="nomQty" type="number" min="1" max="50" value="1" />
+        </div>
+      </div>
+      <button class="ghost" type="button" id="nomAdd" style="margin-top:0">Add Not on Menu</button>
+    </div>
+
+    <label class="muted">Note for bar</label>
+    <textarea class="field" id="orderNote" rows="2" placeholder="optional note"></textarea>
+    <button class="primary" id="submitOrder" type="button">Send order for table</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.POLAR_STAFF_ORDER = {
+    table: {{ table.code|tojson }},
+    pin: {{ pin|tojson }},
+    needsCheckin: {{ needs_checkin|tojson }},
+  };
+</script>
+<script src="/static/js/staff_order.js"></script>
+{% endblock %}

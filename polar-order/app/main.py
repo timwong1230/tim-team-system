@@ -95,6 +95,17 @@ class StaffCustomIn(BaseModel):
     note: str | None = None
 
 
+class StaffOrderIn(BaseModel):
+    """Staff places a full menu order on behalf of a guest table."""
+
+    pin: str
+    note: str | None = None
+    items: list[CartItemIn]
+    # Used when the table has no open session yet
+    guest_name: str | None = Field(default=None, max_length=40)
+    party_size: int | None = Field(default=None, ge=1, le=30)
+
+
 class WelcomeIn(BaseModel):
     guest_name: str = Field(min_length=1, max_length=40)
     party_size: int = Field(default=2, ge=1, le=30)
@@ -782,6 +793,40 @@ def _session_lines(conn: sqlite3.Connection, session_id: int) -> list[dict]:
     ]
 
 
+@app.get("/staff/order/{table_code}", response_class=HTMLResponse)
+def staff_order_page(request: Request, table_code: str, pin: str = ""):
+    """Staff menu — order for a guest table (not the guest QR phone)."""
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        # Boss personal tabs use /boss/{id}
+        boss_id = table_code.replace("BOSS", "").lower()
+        return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
+    session = get_open_session(conn, table["id"])
+    menu = _menu_payload(conn)
+    promo = current_promo()
+    conn.close()
+    return templates.TemplateResponse(
+        "staff_order.html",
+        {
+            "request": request,
+            "title": f"Order · {table['label']}",
+            "table": table,
+            "session": session,
+            "menu": menu,
+            "promo": promo,
+            "pin": pin,
+            "needs_checkin": not bool(session and session["guest_name"]),
+        },
+    )
+
+
 @app.get("/staff/bill/{table_code}", response_class=HTMLResponse)
 def staff_bill(request: Request, table_code: str, pin: str = "", discount: float = 0):
     if pin != STAFF_PIN:
@@ -915,6 +960,62 @@ async def staff_add_custom(table_code: str, body: StaffCustomIn):
     conn.close()
     await _broadcast({"type": "order.new", "data": payload})
     return {"ok": True, "order_id": order_id}
+
+
+@app.post("/api/staff/bill/{table_code}/orders")
+async def staff_place_order(table_code: str, body: StaffOrderIn):
+    """Staff places a full menu order for a customer table."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if not body.items:
+        raise HTTPException(400, "Cart is empty")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        raise HTTPException(400, "Use boss station to order for boss tabs")
+
+    session = get_open_session(conn, table["id"])
+    if not session or not session["guest_name"]:
+        name = (body.guest_name or "").strip() or "Walk-in"
+        party = int(body.party_size or 2)
+        try:
+            session = start_session(conn, table["id"], name, party_size=party)
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(400, str(e)) from e
+    elif body.party_size and body.party_size != session["party_size"]:
+        session = ensure_session(
+            conn,
+            table["id"],
+            party_size=body.party_size,
+            guest_name=session["guest_name"],
+        )
+
+    try:
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=body.items,
+            note=body.note,
+            created_by="Staff",
+        )
+    except HTTPException:
+        conn.close()
+        raise
+    conn.close()
+    await _broadcast({"type": "order.new", "data": payload})
+    return {
+        "ok": True,
+        "order_id": order_id,
+        "created_by": "Staff",
+        "guest_name": session["guest_name"],
+        "party_size": session["party_size"],
+    }
 
 
 @app.post("/api/staff/bill/{table_code}/close")
