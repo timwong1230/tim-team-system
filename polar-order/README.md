@@ -63,6 +63,7 @@ Menu seeded from `data/menu.json`.
 
 ## Staff extras
 
+- **Order for table:** Staff → Seats → **Order for table** (or Bill → **Order for this table**) — place full menu orders for a guest even if they are not using the QR phone
 - **Discount on bill:** enter `10` for 10% off (blank/0 = full price)
 - **PDF receipt:** generated when you mark paid
 - **Reports:** `/staff/reports` — nightly close, monthly sales, boss report

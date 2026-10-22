@@ -7,22 +7,26 @@
   </div>
   <div class="hero">
     <h1>Open seats</h1>
-    <p>Tables · Bar · Terrace. Demo practice and Boss tabs are separate from guest sales.</p>
+    <p>Tables · Bar · Terrace. Tap a seat for bill, or <strong>Order</strong> to place items for the guest.</p>
   </div>
   <div class="table-grid">
     {% for row in rows %}
-    <a class="table-tile" href="/staff/bill/{{ row.table.code }}?pin={{ pin }}">
-      <strong>{{ row.table.label }}</strong>
-      {% if row.session and row.session.guest_name %}
-        <div class="guest-name">{{ row.session.guest_name }}</div>
-      {% endif %}
-      {% if row.bill %}
-        <div class="amt">${{ '%.0f'|format(row.bill.total) }}</div>
-        <div class="muted">{{ row.open_orders }} open · party {{ row.session.party_size }}</div>
-      {% else %}
-        <div class="muted">No open session</div>
-      {% endif %}
-    </a>
+    <div class="table-tile" style="display:flex;flex-direction:column;gap:8px">
+      <a href="/staff/bill/{{ row.table.code }}?pin={{ pin }}" style="color:inherit;text-decoration:none">
+        <strong>{{ row.table.label }}</strong>
+        {% if row.session and row.session.guest_name %}
+          <div class="guest-name">{{ row.session.guest_name }}</div>
+        {% endif %}
+        {% if row.bill %}
+          <div class="amt">${{ '%.0f'|format(row.bill.total) }}</div>
+          <div class="muted">{{ row.open_orders }} open · party {{ row.session.party_size }}</div>
+        {% else %}
+          <div class="muted">No open session</div>
+        {% endif %}
+      </a>
+      <a class="ghost" style="display:block;text-align:center;padding:8px 10px;font-size:0.9rem"
+         href="/staff/order/{{ row.table.code }}?pin={{ pin }}">Order for table</a>
+    </div>
     {% endfor %}
   </div>
 

@@ -13,6 +13,12 @@
     <p>No open session</p>
     {% endif %}
   </div>
+  {% if not is_boss %}
+  <div class="actions" style="margin-bottom:16px">
+    <a class="primary" style="display:inline-block;width:auto;text-align:center"
+       href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for this table</a>
+  </div>
+  {% endif %}
 
   {% if bill %}
   {% if not is_boss %}
