@@ -1,26 +1,88 @@
 document.addEventListener("DOMContentLoaded", () => {
   const table = window.POLAR_TABLE;
-  const cart = new Map(); // itemId -> line
-
-  const cartBar = document.getElementById("cartBar");
-  const cartCount = document.getElementById("cartCount");
-  const cartTotal = document.getElementById("cartTotal");
-  const drawer = document.getElementById("drawer");
-  const cartLines = document.getElementById("cartLines");
   const toast = document.getElementById("toast");
-  if (!cartBar || !drawer) return;
 
   function showToast(msg) {
+    if (!toast) return;
     toast.textContent = msg;
     toast.classList.add("show");
     setTimeout(() => toast.classList.remove("show"), 2200);
   }
 
+  // Welcome: name → party size
+  if (!window.POLAR_READY) {
+    const nameInput = document.getElementById("guestName");
+    const partyInput = document.getElementById("partySize");
+    const stepName = document.getElementById("stepName");
+    const stepParty = document.getElementById("stepParty");
+    const hello = document.getElementById("welcomeHello");
+
+    document.getElementById("toParty")?.addEventListener("click", () => {
+      const name = (nameInput.value || "").trim();
+      if (!name) {
+        showToast("Please enter a name");
+        nameInput.focus();
+        return;
+      }
+      hello.textContent = `Hi ${name}`;
+      stepName.hidden = true;
+      stepParty.hidden = false;
+      partyInput.focus();
+    });
+
+    document.getElementById("backName")?.addEventListener("click", () => {
+      stepParty.hidden = true;
+      stepName.hidden = false;
+      nameInput.focus();
+    });
+
+    document.getElementById("startOrder")?.addEventListener("click", async () => {
+      const guest_name = (nameInput.value || "").trim();
+      const party_size = Number(partyInput.value || 1);
+      if (!guest_name) {
+        showToast("Please enter a name");
+        return;
+      }
+      const btn = document.getElementById("startOrder");
+      btn.disabled = true;
+      btn.textContent = "Opening…";
+      try {
+        const res = await fetch(`/api/t/${table}/welcome`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ guest_name, party_size }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        location.reload();
+      } catch (err) {
+        console.error(err);
+        showToast("Could not start — try again");
+        btn.disabled = false;
+        btn.textContent = "Start ordering";
+      }
+    });
+
+    nameInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("toParty")?.click();
+      }
+    });
+    return;
+  }
+
+  const cart = new Map();
+  const cartBar = document.getElementById("cartBar");
+  const cartCount = document.getElementById("cartCount");
+  const cartTotal = document.getElementById("cartTotal");
+  const drawer = document.getElementById("drawer");
+  const cartLines = document.getElementById("cartLines");
+  if (!cartBar || !drawer) return;
+
   function money(n) {
     return `$${Math.round(n)}`;
   }
 
-  /** Estimate line prices with Shisha → $40 snack combo (server is source of truth). */
   function pricedCart() {
     let shishaSlots = 0;
     for (const line of cart.values()) {
@@ -172,9 +234,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("submitOrder").addEventListener("click", async () => {
     if (!cart.size) return showToast("Cart is empty");
-    const partySize = Number(document.getElementById("partySize").value || 1);
     const payload = {
-      party_size: partySize,
       note: document.getElementById("orderNote").value || null,
       items: [...cart.values()].map((l) => ({
         item_id: l.id,

@@ -8,7 +8,7 @@
   <div class="hero">
     <h1>{{ table.label }}</h1>
     {% if session %}
-    <p>Session open · party {{ session.party_size }}</p>
+    <p>{% if session.guest_name %}{{ session.guest_name }} · {% endif %}party {{ session.party_size }}</p>
     {% else %}
     <p>No open session</p>
     {% endif %}

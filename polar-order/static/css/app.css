@@ -456,6 +456,57 @@ button, .cat-btn, .add-btn {
   background: var(--bg-elev);
   color: var(--text);
 }
+.welcome {
+  margin-top: 8px;
+}
+.welcome-step {
+  animation: welcomeIn 0.35s ease;
+}
+.welcome-hello {
+  margin: 0 0 14px;
+  font-size: 1.25rem;
+  font-weight: 650;
+  color: var(--gold-strong);
+}
+@keyframes welcomeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.boss-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.boss-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 22px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, rgba(212,192,140,0.12), rgba(16,24,42,0.95));
+  color: var(--text);
+  min-height: 110px;
+  justify-content: center;
+}
+.boss-tile strong {
+  font-size: 1.35rem;
+  letter-spacing: 0.02em;
+}
+.table-tile .guest-name {
+  color: var(--gold-strong);
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+select.field {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--gold) 50%),
+    linear-gradient(135deg, var(--gold) 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+}
 .toast {
   position: fixed;
   top: 16px;

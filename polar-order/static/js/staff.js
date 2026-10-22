@@ -46,7 +46,7 @@
           <div class="row">
             <div>
               <strong>${o.table_label}</strong>
-              <div class="muted">#${o.id}</div>
+              <div class="muted">#${o.id}${o.guest_name ? ` · ${o.guest_name}` : ""}${o.created_by ? ` · by ${o.created_by}` : ""}</div>
             </div>
             <span class="badge ${o.status}">${o.status}</span>
           </div>

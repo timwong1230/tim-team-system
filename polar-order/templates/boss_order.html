@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">POLAR</div>
+    <div class="pill">{{ boss.name }}</div>
+  </div>
+  <div class="hero">
+    <h1>{{ boss.name }}'s station</h1>
+    <p>Pick a seat, confirm guest, then send orders. Tagged as {{ boss.name }}.</p>
+  </div>
+
+  <label class="muted" for="seatSelect">Seat</label>
+  <select class="field" id="seatSelect">
+    <option value="">Select seat…</option>
+    {% for t in tables %}
+    <option value="{{ t.code }}"
+      data-guest="{{ t.guest_name or '' }}"
+      data-party="{{ t.party_size or 2 }}"
+      data-open="{{ 1 if t.has_session else 0 }}">
+      {{ t.label }}{% if t.guest_name %} · {{ t.guest_name }} ({{ t.party_size }}){% elif t.has_session %} · open{% else %} · free{% endif %}
+    </option>
+    {% endfor %}
+  </select>
+
+  <div id="guestPanel" hidden>
+    <label class="muted" for="bossGuestName">Guest name</label>
+    <input class="field" id="bossGuestName" type="text" maxlength="40" placeholder="Guest name / nickname" />
+    <label class="muted" for="bossPartySize">Party size</label>
+    <input class="field" id="bossPartySize" type="number" min="1" max="30" value="2" />
+  </div>
+
+  <div class="promo" style="margin-top:8px">
+    <div class="promo-now"><strong>Now: {{ promo.label }}</strong></div>
+  </div>
+
+  <div class="cats" id="cats">
+    {% for cat in menu %}
+    <button class="cat-btn {% if loop.first %}active{% endif %}" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
+    {% endfor %}
+  </div>
+
+  {% for cat in menu %}
+  <section class="section" id="cat-{{ cat.id }}">
+    <h2>{{ cat.name }}</h2>
+    {% for item in cat['items'] %}
+    <article
+      class="item{% if not item['image'] %} no-photo{% endif %}"
+      data-id="{{ item['id'] }}"
+      data-name="{{ item['name'] }}"
+      data-price="{{ item['display_price'] }}"
+      data-list-price="{{ item['price'] }}"
+      data-promo-type="{{ item['promo_type'] }}"
+      data-combo-price="{{ item['combo_price'] if item['combo_price'] is not none else '' }}"
+      data-allow-note="{{ 1 if item['allow_note'] else 0 }}"
+    >
+      <div class="item-photo">
+        {% if item['image'] %}
+        <img src="{{ item['image'] }}" alt="{{ item['name'] }}" loading="lazy" />
+        {% else %}
+        <div class="item-photo-fallback" aria-hidden="true">P</div>
+        {% endif %}
+      </div>
+      <div class="item-body">
+        <div class="item-copy">
+          <h3>{{ item['name'] }}</h3>
+          {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
+          {% if item['unit'] %}<p class="note unit">{{ item['unit'] }}</p>{% endif %}
+          {% if item['combo_price'] is not none %}
+          <span class="chip">With Shisha ${{ '%.0f'|format(item['combo_price']) }}</span>
+          {% endif %}
+          {% if item['promo_tag'] %}<span class="chip chip-soft">{{ item['promo_tag'] }}</span>{% endif %}
+        </div>
+        <div class="item-foot">
+          <div class="price">
+            <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
+            {% if item['display_price'] < item['price'] %}
+            <div class="was">${{ '%.0f'|format(item['price']) }}</div>
+            {% endif %}
+          </div>
+          <button class="add-btn" type="button">Add</button>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+
+<div class="cart-bar" id="cartBar" style="display:none">
+  <div>
+    <div id="cartCount">0 items</div>
+    <strong id="cartTotal">$0</strong>
+  </div>
+  <button type="button" id="openCart">View cart</button>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-panel">
+    <div class="row">
+      <h2 style="margin:0">{{ boss.name }} · order</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeCart" type="button">Close</button>
+    </div>
+    <div id="cartLines"></div>
+    <label class="muted">Note for staff</label>
+    <textarea class="field" id="orderNote" rows="2" placeholder="e.g. VIP / less ice"></textarea>
+    <button class="primary" id="submitOrder" type="button">Send order</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.POLAR_BOSS = {{ boss.id|tojson }};
+  window.POLAR_BOSS_NAME = {{ boss.name|tojson }};
+</script>
+<script src="/static/js/boss.js"></script>
+{% endblock %}

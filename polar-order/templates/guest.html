@@ -6,9 +6,32 @@
     <div class="pill">{{ table.label }}</div>
   </div>
 
+  {% if not ready %}
+  <div class="hero">
+    <h1>Welcome</h1>
+    <p>{{ table.label }} · Polar Lounge</p>
+  </div>
+
+  <div class="welcome" id="welcome">
+    <div class="welcome-step" id="stepName" data-step="name">
+      <label class="muted" for="guestName">What should we call you?</label>
+      <input class="field" id="guestName" type="text" maxlength="40" autocomplete="name" placeholder="Your name / nickname" value="{{ session.guest_name if session and session.guest_name else '' }}" />
+      <button class="primary" type="button" id="toParty">Continue</button>
+    </div>
+
+    <div class="welcome-step" id="stepParty" data-step="party" hidden>
+      <p class="welcome-hello" id="welcomeHello"></p>
+      <label class="muted" for="partySize">How many guests?</label>
+      <input class="field" id="partySize" type="number" min="1" max="30" value="{{ session.party_size if session else 2 }}" />
+      <button class="primary" type="button" id="startOrder">Start ordering</button>
+      <button class="ghost" type="button" id="backName">Back</button>
+    </div>
+  </div>
+
+  {% else %}
   <div class="hero">
     <h1>{{ table.label }}</h1>
-    <p>Order from your phone. Pay at the end with staff.</p>
+    <p>Hi {{ session.guest_name }} · party of {{ session.party_size }}. Order from your phone. Pay at the end with staff.</p>
   </div>
 
   <div class="promo">
@@ -28,9 +51,6 @@
     </div>
     <div class="promo-combo">With Regular Shisha: <strong>$40</strong> for any bar snack</div>
   </div>
-
-  <label class="muted">Party size</label>
-  <input class="field" id="partySize" type="number" min="1" max="30" value="{{ session.party_size if session else 2 }}" />
 
   <div class="cats" id="cats">
     {% for cat in menu %}
@@ -83,8 +103,10 @@
     {% endfor %}
   </section>
   {% endfor %}
+  {% endif %}
 </div>
 
+{% if ready %}
 <div class="cart-bar" id="cartBar" style="display:none">
   <div>
     <div id="cartCount">0 items</div>
@@ -105,11 +127,13 @@
     <button class="primary" id="submitOrder" type="button">Send to bar</button>
   </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
   window.POLAR_TABLE = {{ table.code|tojson }};
+  window.POLAR_READY = {{ 'true' if ready else 'false' }};
 </script>
 <script src="/static/js/guest.js"></script>
 {% endblock %}

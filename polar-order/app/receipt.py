@@ -26,6 +26,7 @@ def generate_receipt_pdf(
     lines: list[dict],
     bill: dict,
     closed_at_iso: str,
+    guest_name: str | None = None,
 ) -> str:
     RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
     path = RECEIPT_DIR / f"receipt-S{session_id}.pdf"
@@ -57,7 +58,9 @@ def generate_receipt_pdf(
     except Exception:
         closed_local = closed_at_iso
 
-    line(f"Table: {table_label}", bold=True, size=12)
+    line(f"Seat: {table_label}", bold=True, size=12)
+    if guest_name:
+        line(f"Guest: {guest_name}", bold=True, size=11)
     line(f"Session #{session_id} · Party {party_size}")
     line(f"Closed: {closed_local}")
     line(f"Receipt: R-{session_id:05d}")

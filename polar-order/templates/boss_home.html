@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">POLAR</div>
+    <div class="pill">Boss order</div>
+  </div>
+  <div class="hero">
+    <h1>Who is ordering?</h1>
+    <p>Each boss has a separate station. Orders are tagged with your name.</p>
+  </div>
+  <div class="boss-grid">
+    {% for b in bosses %}
+    <a class="boss-tile" href="/boss/{{ b.id }}">
+      <strong>{{ b.name }}</strong>
+      <span class="muted">Open station</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

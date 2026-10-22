@@ -6,10 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .seats import SEATS
+
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "polar_order.db"
 MENU_PATH = ROOT / "data" / "menu.json"
-TABLE_COUNT = 20
 
 
 def utc_now() -> str:
@@ -31,7 +32,10 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     migrations = [
+        ("tables", "zone", "TEXT"),
+        ("tables", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
         ("menu_items", "image", "TEXT"),
+        ("sessions", "guest_name", "TEXT"),
         ("sessions", "discount_percent", "REAL NOT NULL DEFAULT 0"),
         ("sessions", "subtotal", "REAL"),
         ("sessions", "snack_charge", "REAL"),
@@ -40,6 +44,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         ("sessions", "total", "REAL"),
         ("sessions", "receipt_path", "TEXT"),
         ("sessions", "business_date", "TEXT"),
+        ("orders", "created_by", "TEXT"),
     ]
     for table, col, decl in migrations:
         if not _column_exists(conn, table, col):
@@ -137,13 +142,47 @@ def init_db() -> None:
     conn.close()
 
 
+def _seat_id(seat: dict) -> int:
+    zone = seat["zone"]
+    num = int("".join(ch for ch in seat["code"] if ch.isdigit()) or "0")
+    if zone == "table":
+        return num  # 1-5
+    if zone == "bar":
+        return 10 + num  # 11-15
+    return 20 + num  # 21-28 terrace
+
+
 def _seed_tables(conn: sqlite3.Connection) -> None:
-    for i in range(1, TABLE_COUNT + 1):
-        code = f"T{i:02d}"
+    """Sync Polar seat map; deactivate seats no longer used."""
+    conn.execute("UPDATE tables SET active = 0")
+    wanted_codes = {s["code"] for s in SEATS}
+    # Free codes that will be claimed by new seat ids (avoid UNIQUE conflicts)
+    for seat in SEATS:
+        sid = _seat_id(seat)
         conn.execute(
-            "INSERT OR IGNORE INTO tables (id, code, label) VALUES (?, ?, ?)",
-            (i, code, f"Table {i}"),
+            "UPDATE tables SET code = 'OLD_' || id || '_' || code WHERE code = ? AND id != ?",
+            (seat["code"], sid),
         )
+    for seat in SEATS:
+        sid = _seat_id(seat)
+        conn.execute(
+            """
+            INSERT INTO tables (id, code, label, zone, sort_order, active)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(id) DO UPDATE SET
+              code=excluded.code,
+              label=excluded.label,
+              zone=excluded.zone,
+              sort_order=excluded.sort_order,
+              active=1
+            """,
+            (sid, seat["code"], seat["label"], seat["zone"], seat["sort"]),
+        )
+    # Keep any leftover historical rows inactive
+    conn.execute(
+        f"UPDATE tables SET active = 0 WHERE code NOT IN ({','.join('?' for _ in wanted_codes)})",
+        tuple(wanted_codes),
+    )
     conn.commit()
 
 
@@ -190,7 +229,16 @@ def load_menu_meta() -> dict[str, Any]:
 
 
 def get_table_by_code(conn: sqlite3.Connection, code: str) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM tables WHERE code = ?", (code.upper(),)).fetchone()
+    return conn.execute(
+        "SELECT * FROM tables WHERE UPPER(code) = ? AND active = 1",
+        (code.upper(),),
+    ).fetchone()
+
+
+def list_active_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM tables WHERE active = 1 ORDER BY sort_order ASC, id ASC"
+    ).fetchall()
 
 
 def get_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row | None:
@@ -200,24 +248,65 @@ def get_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row | N
     ).fetchone()
 
 
-def ensure_session(conn: sqlite3.Connection, table_id: int, party_size: int = 1) -> sqlite3.Row:
+def start_session(
+    conn: sqlite3.Connection,
+    table_id: int,
+    guest_name: str,
+    party_size: int = 1,
+) -> sqlite3.Row:
+    """Create or refresh open session with guest name + party size."""
+    name = (guest_name or "").strip()
+    if not name:
+        raise ValueError("Guest name required")
+    size = max(1, int(party_size or 1))
     session = get_open_session(conn, table_id)
     if session:
+        conn.execute(
+            "UPDATE sessions SET guest_name = ?, party_size = ? WHERE id = ?",
+            (name, size, session["id"]),
+        )
+        conn.commit()
+        return get_open_session(conn, table_id)
+    now = utc_now()
+    cur = conn.execute(
+        """
+        INSERT INTO sessions (table_id, party_size, guest_name, status, opened_at)
+        VALUES (?, ?, ?, 'open', ?)
+        """,
+        (table_id, size, name, now),
+    )
+    conn.commit()
+    return conn.execute("SELECT * FROM sessions WHERE id = ?", (cur.lastrowid,)).fetchone()
+
+
+def ensure_session(
+    conn: sqlite3.Connection,
+    table_id: int,
+    party_size: int = 1,
+    guest_name: str | None = None,
+) -> sqlite3.Row:
+    session = get_open_session(conn, table_id)
+    if session:
+        updates = []
+        params: list[Any] = []
         if party_size and party_size != session["party_size"]:
+            updates.append("party_size = ?")
+            params.append(party_size)
+        if guest_name and guest_name.strip() and guest_name.strip() != (session["guest_name"] or ""):
+            updates.append("guest_name = ?")
+            params.append(guest_name.strip())
+        if updates:
+            params.append(session["id"])
             conn.execute(
-                "UPDATE sessions SET party_size = ? WHERE id = ?",
-                (party_size, session["id"]),
+                f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?",
+                params,
             )
             conn.commit()
             session = get_open_session(conn, table_id)
         return session
-    now = utc_now()
-    cur = conn.execute(
-        "INSERT INTO sessions (table_id, party_size, status, opened_at) VALUES (?, ?, 'open', ?)",
-        (table_id, max(1, party_size), now),
-    )
-    conn.commit()
-    return conn.execute("SELECT * FROM sessions WHERE id = ?", (cur.lastrowid,)).fetchone()
+    if not guest_name or not guest_name.strip():
+        raise ValueError("Guest name required to open session")
+    return start_session(conn, table_id, guest_name, party_size)
 
 
 def publish_event(conn: sqlite3.Connection, kind: str, payload: dict[str, Any]) -> None:

@@ -25,8 +25,10 @@ from .db import (
     get_session,
     get_table_by_code,
     init_db,
+    list_active_tables,
     load_menu_meta,
     publish_event,
+    start_session,
     utc_now,
 )
 from .pricing import (
@@ -40,6 +42,7 @@ from .pricing import (
 )
 from .receipt import generate_receipt_pdf
 from .reports import daily_sales_report, item_purchase_report, monthly_sales_report
+from .seats import BOSSES, boss_by_id
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -66,8 +69,21 @@ class CartItemIn(BaseModel):
     note: str | None = None
 
 
+class WelcomeIn(BaseModel):
+    guest_name: str = Field(min_length=1, max_length=40)
+    party_size: int = Field(default=2, ge=1, le=30)
+
+
 class OrderIn(BaseModel):
-    party_size: int = Field(default=1, ge=1, le=30)
+    note: str | None = None
+    items: list[CartItemIn]
+    party_size: int | None = Field(default=None, ge=1, le=30)
+
+
+class BossOrderIn(BaseModel):
+    table_code: str
+    guest_name: str = Field(min_length=1, max_length=40)
+    party_size: int = Field(default=2, ge=1, le=30)
     note: str | None = None
     items: list[CartItemIn]
 
@@ -156,54 +172,22 @@ async def _broadcast(event: dict[str, Any]) -> None:
             _subscribers.remove(q)
 
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    return templates.TemplateResponse(
-        "home.html",
-        {"request": request, "title": "Polar Lounge Order"},
-    )
-
-
-@app.get("/t/{table_code}", response_class=HTMLResponse)
-def guest_table(request: Request, table_code: str):
-    conn = connect()
-    table = get_table_by_code(conn, table_code)
-    if not table:
-        conn.close()
-        raise HTTPException(404, "Table not found")
-    session = get_open_session(conn, table["id"])
-    menu = _menu_payload(conn)
-    promo = current_promo()
-    conn.close()
-    return templates.TemplateResponse(
-        "guest.html",
-        {
-            "request": request,
-            "table": table,
-            "session": session,
-            "menu": menu,
-            "promo": promo,
-            "title": f"Polar · {table['label']}",
-        },
-    )
-
-
-@app.post("/api/t/{table_code}/orders")
-async def place_order(table_code: str, body: OrderIn):
-    if not body.items:
+def _create_order(
+    conn: sqlite3.Connection,
+    *,
+    table: sqlite3.Row,
+    session: sqlite3.Row,
+    items: list[CartItemIn],
+    note: str | None,
+    created_by: str | None = None,
+) -> tuple[int, dict[str, Any]]:
+    if not items:
         raise HTTPException(400, "Cart is empty")
-    conn = connect()
-    table = get_table_by_code(conn, table_code)
-    if not table:
-        conn.close()
-        raise HTTPException(404, "Table not found")
-
-    session = ensure_session(conn, table["id"], body.party_size)
     promo = current_promo()
     now = utc_now()
 
     raw_entries = []
-    for entry in body.items:
+    for entry in items:
         item = conn.execute(
             """
             SELECT mi.*, mc.promo AS promo
@@ -214,7 +198,6 @@ async def place_order(table_code: str, body: OrderIn):
             (entry.item_id,),
         ).fetchone()
         if not item:
-            conn.close()
             raise HTTPException(400, f"Unknown item: {entry.item_id}")
         raw_entries.append(
             {
@@ -235,10 +218,10 @@ async def place_order(table_code: str, body: OrderIn):
 
     cur = conn.execute(
         """
-        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at)
-        VALUES (?, ?, 'new', ?, ?, ?)
+        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at, created_by)
+        VALUES (?, ?, 'new', ?, ?, ?, ?)
         """,
-        (session["id"], table["id"], body.note, now, now),
+        (session["id"], table["id"], note, now, now, created_by),
     )
     order_id = cur.lastrowid
     lines = []
@@ -269,18 +252,193 @@ async def place_order(table_code: str, body: OrderIn):
             }
         )
 
+    guest_name = session["guest_name"] if "guest_name" in session.keys() else None
     payload = {
         "order_id": order_id,
         "table_code": table["code"],
         "table_label": table["label"],
+        "guest_name": guest_name,
+        "created_by": created_by,
         "items": lines,
         "created_at": now,
     }
     publish_event(conn, "order.new", payload)
     conn.commit()
+    return order_id, payload
+
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request, "title": "Polar Lounge Order", "bosses": BOSSES},
+    )
+
+
+@app.get("/t/{table_code}", response_class=HTMLResponse)
+def guest_table(request: Request, table_code: str):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    ready = bool(session and session["guest_name"])
+    menu = _menu_payload(conn) if ready else []
+    promo = current_promo()
+    conn.close()
+    return templates.TemplateResponse(
+        "guest.html",
+        {
+            "request": request,
+            "table": table,
+            "session": session,
+            "menu": menu,
+            "promo": promo,
+            "ready": ready,
+            "title": f"Polar · {table['label']}",
+        },
+    )
+
+
+@app.post("/api/t/{table_code}/welcome")
+def guest_welcome(table_code: str, body: WelcomeIn):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    try:
+        session = start_session(
+            conn, table["id"], body.guest_name.strip(), body.party_size
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    conn.close()
+    return {
+        "ok": True,
+        "session_id": session["id"],
+        "guest_name": session["guest_name"],
+        "party_size": session["party_size"],
+    }
+
+
+@app.post("/api/t/{table_code}/orders")
+async def place_order(table_code: str, body: OrderIn):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+
+    session = get_open_session(conn, table["id"])
+    if not session or not session["guest_name"]:
+        conn.close()
+        raise HTTPException(400, "Please enter your name and party size first")
+
+    if body.party_size and body.party_size != session["party_size"]:
+        session = ensure_session(
+            conn,
+            table["id"],
+            party_size=body.party_size,
+            guest_name=session["guest_name"],
+        )
+
+    try:
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=body.items,
+            note=body.note,
+            created_by=None,
+        )
+    except HTTPException:
+        conn.close()
+        raise
     conn.close()
     await _broadcast({"type": "order.new", "data": payload})
     return {"ok": True, "order_id": order_id}
+
+
+@app.get("/boss", response_class=HTMLResponse)
+def boss_home(request: Request):
+    return templates.TemplateResponse(
+        "boss_home.html",
+        {"request": request, "title": "Boss order", "bosses": BOSSES},
+    )
+
+
+@app.get("/boss/{boss_id}", response_class=HTMLResponse)
+def boss_station(request: Request, boss_id: str):
+    boss = boss_by_id(boss_id)
+    if not boss:
+        raise HTTPException(404, "Boss not found")
+    conn = connect()
+    tables = list_active_tables(conn)
+    seat_rows = []
+    for t in tables:
+        session = get_open_session(conn, t["id"])
+        seat_rows.append(
+            {
+                "code": t["code"],
+                "label": t["label"],
+                "zone": t["zone"],
+                "has_session": bool(session),
+                "guest_name": session["guest_name"] if session else None,
+                "party_size": session["party_size"] if session else None,
+            }
+        )
+    menu = _menu_payload(conn)
+    promo = current_promo()
+    conn.close()
+    return templates.TemplateResponse(
+        "boss_order.html",
+        {
+            "request": request,
+            "title": f"{boss['name']} · Order",
+            "boss": boss,
+            "tables": seat_rows,
+            "menu": menu,
+            "promo": promo,
+        },
+    )
+
+
+@app.post("/api/boss/{boss_id}/orders")
+async def boss_place_order(boss_id: str, body: BossOrderIn):
+    boss = boss_by_id(boss_id)
+    if not boss:
+        raise HTTPException(404, "Boss not found")
+    if not body.items:
+        raise HTTPException(400, "Cart is empty")
+    conn = connect()
+    table = get_table_by_code(conn, body.table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Seat not found")
+    try:
+        session = start_session(
+            conn, table["id"], body.guest_name.strip(), body.party_size
+        )
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=body.items,
+            note=body.note,
+            created_by=boss["name"],
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    except HTTPException:
+        conn.close()
+        raise
+    conn.close()
+    await _broadcast({"type": "order.new", "data": payload})
+    return {"ok": True, "order_id": order_id, "created_by": boss["name"]}
 
 
 @app.get("/staff", response_class=HTMLResponse)
@@ -319,9 +477,11 @@ def staff_orders(pin: str = ""):
     conn = connect()
     orders = conn.execute(
         """
-        SELECT o.*, t.code AS table_code, t.label AS table_label
+        SELECT o.*, t.code AS table_code, t.label AS table_label,
+               s.guest_name AS guest_name
         FROM orders o
         JOIN tables t ON t.id = o.table_id
+        JOIN sessions s ON s.id = o.session_id
         WHERE o.status IN ('new', 'preparing', 'ready')
         ORDER BY
           CASE o.status WHEN 'new' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END,
@@ -340,6 +500,8 @@ def staff_orders(pin: str = ""):
                 "status": o["status"],
                 "table_code": o["table_code"],
                 "table_label": o["table_label"],
+                "guest_name": o["guest_name"],
+                "created_by": o["created_by"],
                 "note": o["note"],
                 "created_at": o["created_at"],
                 "items": [dict(i) for i in items],
@@ -383,7 +545,7 @@ def staff_tables(request: Request, pin: str = ""):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized — open from Staff board", status_code=401)
     conn = connect()
-    tables = conn.execute("SELECT * FROM tables WHERE active = 1 ORDER BY id ASC").fetchall()
+    tables = list_active_tables(conn)
     rows = []
     meta = load_menu_meta()
     for t in tables:
@@ -424,7 +586,7 @@ def staff_tables(request: Request, pin: str = ""):
     conn.close()
     return templates.TemplateResponse(
         "staff_tables.html",
-        {"request": request, "title": "Staff · Tables", "rows": rows, "pin": pin},
+        {"request": request, "title": "Staff · Seats", "rows": rows, "pin": pin},
     )
 
 
@@ -511,6 +673,7 @@ def close_bill(
     )
     now = utc_now()
     biz = business_date(datetime.now(HK)).isoformat()
+    guest_name = session["guest_name"] if session["guest_name"] else None
     receipt_rel = generate_receipt_pdf(
         session_id=session["id"],
         table_label=table["label"],
@@ -518,6 +681,7 @@ def close_bill(
         lines=lines,
         bill=bill,
         closed_at_iso=now,
+        guest_name=guest_name,
     )
     conn.execute(
         """
@@ -585,14 +749,14 @@ def staff_qrs(request: Request, pin: str = ""):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
     conn = connect()
-    tables = conn.execute("SELECT * FROM tables ORDER BY id").fetchall()
+    tables = list_active_tables(conn)
     conn.close()
     base = str(request.base_url).rstrip("/")
     return templates.TemplateResponse(
         "staff_qrs.html",
         {
             "request": request,
-            "title": "Table QR Codes",
+            "title": "Seat QR Codes",
             "tables": tables,
             "base": base,
             "pin": pin,

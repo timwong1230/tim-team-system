@@ -5,3 +5,4 @@ python-multipart==0.0.20
 qrcode[pil]==8.0
 pydantic==2.10.4
 reportlab==4.2.5
+pypdf==5.1.0
