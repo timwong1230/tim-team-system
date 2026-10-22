@@ -266,11 +266,12 @@ def list_active_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def list_guest_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Guest-facing seats only (exclude boss personal tabs)."""
+    """Real guest seats only (exclude boss tabs and staff Demo practice seat)."""
     return conn.execute(
         """
         SELECT * FROM tables
-        WHERE active = 1 AND COALESCE(zone, '') != 'boss'
+        WHERE active = 1
+          AND COALESCE(zone, '') NOT IN ('boss', 'demo')
         ORDER BY sort_order ASC, id ASC
         """
     ).fetchall()
