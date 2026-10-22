@@ -7,33 +7,42 @@
   </div>
   <div class="hero no-print">
     <h1>Seat QR codes</h1>
-    <p>Print, cut, and place on each seat. Guests scan to order — no URL on the card.</p>
+    <p>Print, cut, and place on each seat. Guests scan to order — no URL on the card. Layout is 3×3 per page.</p>
     <button class="primary" type="button" onclick="window.print()" style="width:auto;margin-top:10px">Print cards</button>
   </div>
-  <div class="qr-grid">
-    {% for t in tables %}
-    <div class="qr-card">
+
+  {% for page in tables|batch(9) %}
+  <section class="qr-sheet{% if loop.last and not boss_links %} qr-sheet-last{% endif %}">
+    {% for t in page %}
+    <article class="qr-card">
       <strong class="qr-seat">{{ t.label }}</strong>
-      <div class="qr-code"><img src="/qr/{{ t.code }}.png" alt="{{ t.label }} QR" /></div>
+      <div class="qr-code">
+        <img src="/qr/{{ t.code }}.png" width="200" height="200" alt="{{ t.label }} QR" />
+      </div>
       <div class="qr-cta">ORDER HERE</div>
-    </div>
+    </article>
     {% endfor %}
-  </div>
+  </section>
+  {% endfor %}
 
   {% if boss_links %}
   <div class="hero no-print" style="margin-top:28px">
     <h1>Boss stations</h1>
     <p>Internal only — not for guest tables.</p>
   </div>
-  <div class="qr-grid qr-grid-boss">
-    {% for b in boss_links %}
-    <div class="qr-card qr-card-boss">
+  {% for page in boss_links|batch(9) %}
+  <section class="qr-sheet qr-sheet-boss{% if loop.last %} qr-sheet-last{% endif %}">
+    {% for b in page %}
+    <article class="qr-card qr-card-boss">
       <strong class="qr-seat">{{ b.name }}</strong>
-      <div class="qr-code"><img src="{{ b.qr }}" alt="{{ b.name }} boss QR" /></div>
+      <div class="qr-code">
+        <img src="{{ b.qr }}" width="200" height="200" alt="{{ b.name }} boss QR" />
+      </div>
       <div class="qr-cta qr-cta-boss">BOSS ORDER</div>
-    </div>
+    </article>
     {% endfor %}
-  </div>
+  </section>
+  {% endfor %}
   {% endif %}
 </div>
 {% endblock %}
