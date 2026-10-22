@@ -6,13 +6,16 @@
     <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
   </div>
   <div class="hero">
-    <h1>Open tables</h1>
-    <p>Tap a table to see amount due. Payment is handled outside this system.</p>
+    <h1>Open seats</h1>
+    <p>Tables · Bar · Terrace. Boss tabs are separate (not guest sales).</p>
   </div>
   <div class="table-grid">
     {% for row in rows %}
     <a class="table-tile" href="/staff/bill/{{ row.table.code }}?pin={{ pin }}">
       <strong>{{ row.table.label }}</strong>
+      {% if row.session and row.session.guest_name %}
+        <div class="guest-name">{{ row.session.guest_name }}</div>
+      {% endif %}
       {% if row.bill %}
         <div class="amt">${{ '%.0f'|format(row.bill.total) }}</div>
         <div class="muted">{{ row.open_orders }} open · party {{ row.session.party_size }}</div>
@@ -22,5 +25,22 @@
     </a>
     {% endfor %}
   </div>
+
+  {% if boss_rows %}
+  <h2 style="margin:22px 0 10px;font-size:1rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">Boss tabs</h2>
+  <div class="table-grid">
+    {% for row in boss_rows %}
+    <a class="table-tile" href="/staff/bill/{{ row.table.code }}?pin={{ pin }}">
+      <strong>{{ row.table.label }}</strong>
+      {% if row.bill %}
+        <div class="amt">${{ '%.0f'|format(row.bill.total) }}</div>
+        <div class="muted">{{ row.open_orders }} open · not in sales</div>
+      {% else %}
+        <div class="muted">No open orders</div>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

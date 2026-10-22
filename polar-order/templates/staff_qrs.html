@@ -6,8 +6,8 @@
     <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
   </div>
   <div class="hero">
-    <h1>Table QR codes</h1>
-    <p>Print and place on each table. Guests scan to order.</p>
+    <h1>Seat QR codes</h1>
+    <p>Print for Tables 1–5, Bar 1–5, Terrace 1–8. Guests scan to order.</p>
   </div>
   <div class="qr-grid">
     {% for t in tables %}
@@ -18,5 +18,15 @@
     </div>
     {% endfor %}
   </div>
+
+  {% if boss_links %}
+  <h2 style="margin:28px 0 10px;font-size:1rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">Boss stations</h2>
+  <p class="muted">Bookmark or open these links — not guest sales.</p>
+  <div class="home-links">
+    {% for b in boss_links %}
+    <a href="{{ b.url }}">{{ b.name }} · {{ b.url }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

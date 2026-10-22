@@ -4,14 +4,17 @@ import asyncio
 import io
 import json
 import os
+import re
 import sqlite3
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import qrcode
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -20,15 +23,38 @@ from .db import (
     connect,
     ensure_session,
     get_open_session,
+    get_session,
     get_table_by_code,
     init_db,
+    list_active_tables,
+    list_guest_tables,
     load_menu_meta,
     publish_event,
+    start_session,
     utc_now,
 )
-from .pricing import compute_bill, current_promo, price_item
+from .pricing import (
+    SHISHA_COMBO_SNACK_PRICE,
+    SHISHA_REGULAR_ID,
+    business_date,
+    compute_bill,
+    current_promo,
+    price_item,
+    price_order_lines,
+)
+from .receipt import generate_receipt_pdf
+from .reports import (
+    daily_sales_report,
+    item_purchase_report,
+    monthly_boss_report,
+    monthly_sales_report,
+)
+from .ai_host import ask_ai
+from .paths import DATA_DIR, ROOT
+from .seats import BOSSES, boss_by_id, boss_seat_code
 
-ROOT = Path(__file__).resolve().parents[1]
+HK = ZoneInfo("Asia/Hong_Kong")
+
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
@@ -49,12 +75,80 @@ class CartItemIn(BaseModel):
     item_id: str
     qty: int = Field(ge=1, le=50)
     note: str | None = None
+    # Not on Menu — staff/guest typed name + price
+    custom_name: str | None = Field(default=None, max_length=80)
+    custom_price: float | None = Field(default=None, ge=0, le=50000)
+
+
+class StaffCustomIn(BaseModel):
+    pin: str
+    custom_name: str = Field(min_length=1, max_length=80)
+    custom_price: float = Field(ge=0, le=50000)
+    qty: int = Field(default=1, ge=1, le=50)
+    note: str | None = None
+
+
+class WelcomeIn(BaseModel):
+    guest_name: str = Field(min_length=1, max_length=40)
+    party_size: int = Field(default=2, ge=1, le=30)
+
+
+class StaffPartyIn(BaseModel):
+    pin: str
+    party_size: int = Field(ge=1, le=30)
 
 
 class OrderIn(BaseModel):
-    party_size: int = Field(default=1, ge=1, le=30)
     note: str | None = None
     items: list[CartItemIn]
+    party_size: int | None = Field(default=None, ge=1, le=30)
+    # Order for HIM/HER — bill stays on this table; deliver to another seat
+    deliver_to: str | None = None
+    gift_message: str | None = Field(default=None, max_length=200)
+
+
+class BossOrderIn(BaseModel):
+    note: str | None = None
+    items: list[CartItemIn]
+
+
+class AskAIIn(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    history: list[dict[str, str]] = Field(default_factory=list)
+
+
+def _session_shisha_combo_slots(conn: sqlite3.Connection, session_id: int) -> int:
+    """Unused shisha→$40 snack slots already earned in this open session."""
+    shisha = conn.execute(
+        """
+        SELECT COALESCE(SUM(oi.qty), 0) AS c
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.session_id = ? AND o.status != 'cancelled'
+          AND oi.item_id = ?
+        """,
+        (session_id, SHISHA_REGULAR_ID),
+    ).fetchone()["c"]
+    combo_snacks = conn.execute(
+        """
+        SELECT COALESCE(SUM(oi.qty), 0) AS c
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.session_id = ? AND o.status != 'cancelled'
+          AND oi.category_id = 'snacks'
+          AND oi.unit_price <= ?
+        """,
+        (session_id, SHISHA_COMBO_SNACK_PRICE),
+    ).fetchone()["c"]
+    return max(0, int(shisha) - int(combo_snacks))
+
+
+def _serve_rank(unit: str | None) -> int:
+    if unit == "Glass":
+        return 0
+    if unit == "Bottle":
+        return 1
+    return 2
 
 
 def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -65,33 +159,45 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     out = []
     for cat in cats:
         items = conn.execute(
-            "SELECT * FROM menu_items WHERE category_id = ? AND available = 1 ORDER BY name ASC",
+            "SELECT * FROM menu_items WHERE category_id = ? AND available = 1",
             (cat["id"],),
         ).fetchall()
         row_items = []
         for item in items:
-            final, tag = price_item(float(item["price"]), cat["promo"], promo)
-            # Meditation shisha price only for Regular Shisha
-            if item["id"] != "shisha-regular" and cat["promo"] == "shisha":
-                final, tag = float(item["price"]), None
-            row_items.append(
-                {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "price": float(item["price"]),
-                    "display_price": final,
-                    "unit": item["unit"],
-                    "note": item["note"],
-                    "allow_note": bool(item["allow_note"]),
-                    "promo_tag": tag,
-                }
+            final, tag = price_item(
+                float(item["price"]),
+                cat["promo"],
+                promo,
+                item_id=item["id"],
             )
+            row = {
+                "id": item["id"],
+                "name": item["name"],
+                "price": float(item["price"]),
+                "display_price": final,
+                "unit": item["unit"],
+                "note": item["note"],
+                "allow_note": bool(item["allow_note"]),
+                "promo_tag": tag,
+                "image": item["image"],
+                "promo_type": cat["promo"],
+                "combo_price": None,
+            }
+            if cat["promo"] == "snacks":
+                row["combo_price"] = SHISHA_COMBO_SNACK_PRICE
+            row_items.append(row)
+        row_items.sort(
+            key=lambda r: (_serve_rank(r.get("unit")), (r["name"] or "").lower(), r["id"])
+        )
+        units = {r.get("unit") for r in row_items if r.get("unit")}
         out.append(
             {
                 "id": cat["id"],
                 "name": cat["name"],
                 "promo": cat["promo"],
                 "items": row_items,
+                # Guest UI shows Glass / Bottle section headers when both exist.
+                "split_serve": "Glass" in units and "Bottle" in units,
             }
         )
     return out
@@ -109,63 +215,52 @@ async def _broadcast(event: dict[str, Any]) -> None:
             _subscribers.remove(q)
 
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    return templates.TemplateResponse(
-        "home.html",
-        {"request": request, "title": "Polar Lounge Order"},
-    )
-
-
-@app.get("/t/{table_code}", response_class=HTMLResponse)
-def guest_table(request: Request, table_code: str):
-    conn = connect()
-    table = get_table_by_code(conn, table_code)
-    if not table:
-        conn.close()
-        raise HTTPException(404, "Table not found")
-    session = get_open_session(conn, table["id"])
-    menu = _menu_payload(conn)
-    promo = current_promo()
-    conn.close()
-    return templates.TemplateResponse(
-        "guest.html",
-        {
-            "request": request,
-            "table": table,
-            "session": session,
-            "menu": menu,
-            "promo": promo,
-            "title": f"Polar · {table['label']}",
-        },
-    )
-
-
-@app.post("/api/t/{table_code}/orders")
-async def place_order(table_code: str, body: OrderIn):
-    if not body.items:
+def _create_order(
+    conn: sqlite3.Connection,
+    *,
+    table: sqlite3.Row,
+    session: sqlite3.Row,
+    items: list[CartItemIn],
+    note: str | None,
+    created_by: str | None = None,
+    deliver_table: sqlite3.Row | None = None,
+    gift_message: str | None = None,
+) -> tuple[int, dict[str, Any]]:
+    if not items:
         raise HTTPException(400, "Cart is empty")
-    conn = connect()
-    table = get_table_by_code(conn, table_code)
-    if not table:
-        conn.close()
-        raise HTTPException(404, "Table not found")
-
-    session = ensure_session(conn, table["id"], body.party_size)
     promo = current_promo()
     now = utc_now()
 
-    cur = conn.execute(
-        """
-        INSERT INTO orders (session_id, table_id, status, note, created_at, updated_at)
-        VALUES (?, ?, 'new', ?, ?, ?)
-        """,
-        (session["id"], table["id"], body.note, now, now),
-    )
-    order_id = cur.lastrowid
-    lines = []
+    raw_entries = []
+    for entry in items:
+        custom_name = (entry.custom_name or "").strip()
+        is_custom = (
+            entry.item_id in ("not-on-menu", "custom", "nom")
+            or bool(custom_name)
+            or (entry.item_id or "").startswith("nom-")
+        )
+        if is_custom:
+            if not custom_name:
+                raise HTTPException(400, "Not on Menu needs a product name")
+            if entry.custom_price is None:
+                raise HTTPException(400, "Not on Menu needs a price")
+            price = round(float(entry.custom_price), 1)
+            if price < 0:
+                raise HTTPException(400, "Invalid price")
+            slug = re.sub(r"[^a-z0-9]+", "-", custom_name.lower()).strip("-")[:40] or "item"
+            raw_entries.append(
+                {
+                    "item_id": f"nom-{slug}",
+                    "name": custom_name,
+                    "category_id": "not-on-menu",
+                    "promo": "none",
+                    "base_price": price,
+                    "qty": entry.qty,
+                    "note": entry.note,
+                }
+            )
+            continue
 
-    for entry in body.items:
         item = conn.execute(
             """
             SELECT mi.*, mc.promo AS promo
@@ -176,17 +271,50 @@ async def place_order(table_code: str, body: OrderIn):
             (entry.item_id,),
         ).fetchone()
         if not item:
-            conn.rollback()
-            conn.close()
             raise HTTPException(400, f"Unknown item: {entry.item_id}")
+        raw_entries.append(
+            {
+                "item_id": item["id"],
+                "name": item["name"],
+                "category_id": item["category_id"],
+                "promo": item["promo"],
+                "base_price": float(item["price"]),
+                "qty": entry.qty,
+                "note": entry.note,
+            }
+        )
 
-        unit, tag = price_item(float(item["price"]), item["promo"], promo)
-        if item["id"] != "shisha-regular" and item["promo"] == "shisha":
-            unit, tag = float(item["price"]), None
-        line_total = round(unit * entry.qty, 1)
-        note = entry.note
-        if tag:
-            note = f"[{tag}] {note or ''}".strip()
+    extra_slots = _session_shisha_combo_slots(conn, session["id"])
+    priced_lines = price_order_lines(
+        raw_entries, promo=promo, extra_shisha_slots=extra_slots
+    )
+
+    deliver_id = deliver_table["id"] if deliver_table else None
+    gift = (gift_message or "").strip() or None
+    if gift and len(gift) > 200:
+        gift = gift[:200]
+
+    cur = conn.execute(
+        """
+        INSERT INTO orders
+        (session_id, table_id, status, note, created_at, updated_at, created_by,
+         deliver_table_id, gift_message)
+        VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session["id"],
+            table["id"],
+            note,
+            now,
+            now,
+            created_by,
+            deliver_id,
+            gift,
+        ),
+    )
+    order_id = cur.lastrowid
+    lines = []
+    for row in priced_lines:
         conn.execute(
             """
             INSERT INTO order_items
@@ -195,30 +323,256 @@ async def place_order(table_code: str, body: OrderIn):
             """,
             (
                 order_id,
-                item["id"],
-                item["name"],
-                item["category_id"],
-                item["promo"],
-                entry.qty,
-                unit,
-                line_total,
-                note,
+                row["item_id"],
+                row["item_name"],
+                row["category_id"],
+                row["promo"],
+                row["qty"],
+                row["unit_price"],
+                row["line_total"],
+                row.get("note"),
             ),
         )
-        lines.append({"name": item["name"], "qty": entry.qty, "line_total": line_total})
+        lines.append(
+            {
+                "name": row["item_name"],
+                "qty": row["qty"],
+                "line_total": row["line_total"],
+            }
+        )
 
+    guest_name = session["guest_name"] if "guest_name" in session.keys() else None
     payload = {
         "order_id": order_id,
         "table_code": table["code"],
         "table_label": table["label"],
+        "guest_name": guest_name,
+        "created_by": created_by,
+        "deliver_to_code": deliver_table["code"] if deliver_table else None,
+        "deliver_to_label": deliver_table["label"] if deliver_table else None,
+        "gift_message": gift,
         "items": lines,
         "created_at": now,
     }
     publish_event(conn, "order.new", payload)
     conn.commit()
+    return order_id, payload
+
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request, "title": "Polar Lounge Order", "bosses": BOSSES},
+    )
+
+
+@app.get("/t/{table_code}", response_class=HTMLResponse)
+def guest_table(request: Request, table_code: str):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        # Boss tabs are not guest QR seats
+        boss_id = table_code.replace("BOSS", "").lower()
+        return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
+    session = get_open_session(conn, table["id"])
+    ready = bool(session and session["guest_name"])
+    menu = _menu_payload(conn) if ready else []
+    promo = current_promo()
+    other_seats = []
+    if ready:
+        for t in list_guest_tables(conn):
+            if t["id"] == table["id"]:
+                continue
+            other_seats.append({"code": t["code"], "label": t["label"]})
+    conn.close()
+    return templates.TemplateResponse(
+        "guest.html",
+        {
+            "request": request,
+            "table": table,
+            "session": session,
+            "menu": menu,
+            "promo": promo,
+            "ready": ready,
+            "other_seats": other_seats,
+            "title": f"Polar · {table['label']}",
+        },
+    )
+
+
+@app.post("/api/t/{table_code}/welcome")
+def guest_welcome(table_code: str, body: WelcomeIn):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    try:
+        session = start_session(
+            conn, table["id"], body.guest_name.strip(), body.party_size
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    conn.close()
+    return {
+        "ok": True,
+        "session_id": session["id"],
+        "guest_name": session["guest_name"],
+        "party_size": session["party_size"],
+    }
+
+
+@app.post("/api/t/{table_code}/orders")
+async def place_order(table_code: str, body: OrderIn):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        raise HTTPException(400, "Use boss station to order")
+
+    session = get_open_session(conn, table["id"])
+    if not session or not session["guest_name"]:
+        conn.close()
+        raise HTTPException(400, "Please enter your name and party size first")
+
+    if body.party_size and body.party_size != session["party_size"]:
+        session = ensure_session(
+            conn,
+            table["id"],
+            party_size=body.party_size,
+            guest_name=session["guest_name"],
+        )
+
+    deliver_table = None
+    gift = (body.gift_message or "").strip() or None
+    if body.deliver_to:
+        deliver_table = get_table_by_code(conn, body.deliver_to)
+        if not deliver_table or (deliver_table["zone"] or "") == "boss":
+            conn.close()
+            raise HTTPException(400, "Invalid delivery seat")
+        if deliver_table["id"] == table["id"]:
+            conn.close()
+            raise HTTPException(400, "Pick a different seat to treat")
+        if not gift:
+            conn.close()
+            raise HTTPException(400, "Add a short message for them")
+
+    try:
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=body.items,
+            note=body.note,
+            created_by=None,
+            deliver_table=deliver_table,
+            gift_message=gift,
+        )
+    except HTTPException:
+        conn.close()
+        raise
     conn.close()
     await _broadcast({"type": "order.new", "data": payload})
     return {"ok": True, "order_id": order_id}
+
+
+@app.post("/api/t/{table_code}/ask-ai")
+def guest_ask_ai(table_code: str, body: AskAIIn):
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table or (table["zone"] or "") == "boss":
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    guest_name = session["guest_name"] if session else None
+    result = ask_ai(
+        conn,
+        message=body.message.strip(),
+        history=body.history,
+        guest_name=guest_name,
+    )
+    conn.close()
+    return {"ok": True, **result}
+
+
+@app.get("/boss", response_class=HTMLResponse)
+def boss_home(request: Request):
+    return templates.TemplateResponse(
+        "boss_home.html",
+        {"request": request, "title": "Boss order", "bosses": BOSSES},
+    )
+
+
+@app.get("/boss/{boss_id}", response_class=HTMLResponse)
+def boss_station(request: Request, boss_id: str):
+    boss = boss_by_id(boss_id)
+    if not boss:
+        raise HTTPException(404, "Boss not found")
+    seat_code = boss_seat_code(boss_id)
+    conn = connect()
+    table = get_table_by_code(conn, seat_code) if seat_code else None
+    if not table:
+        conn.close()
+        raise HTTPException(500, "Boss seat not seeded")
+    # Keep an open personal tab so staff can see running total
+    start_session(conn, table["id"], boss["name"], party_size=1)
+    menu = _menu_payload(conn)
+    promo = current_promo()
+    conn.close()
+    return templates.TemplateResponse(
+        "boss_order.html",
+        {
+            "request": request,
+            "title": f"{boss['name']} · Order",
+            "boss": boss,
+            "seat_code": table["code"],
+            "menu": menu,
+            "promo": promo,
+        },
+    )
+
+
+@app.post("/api/boss/{boss_id}/orders")
+async def boss_place_order(boss_id: str, body: BossOrderIn):
+    boss = boss_by_id(boss_id)
+    if not boss:
+        raise HTTPException(404, "Boss not found")
+    if not body.items:
+        raise HTTPException(400, "Cart is empty")
+    seat_code = boss_seat_code(boss_id)
+    conn = connect()
+    table = get_table_by_code(conn, seat_code) if seat_code else None
+    if not table:
+        conn.close()
+        raise HTTPException(500, "Boss seat not seeded")
+    try:
+        session = start_session(conn, table["id"], boss["name"], party_size=1)
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=body.items,
+            note=body.note,
+            created_by=boss["name"],
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    except HTTPException:
+        conn.close()
+        raise
+    conn.close()
+    await _broadcast({"type": "order.new", "data": payload})
+    return {"ok": True, "order_id": order_id, "created_by": boss["name"]}
 
 
 @app.get("/staff", response_class=HTMLResponse)
@@ -257,9 +611,13 @@ def staff_orders(pin: str = ""):
     conn = connect()
     orders = conn.execute(
         """
-        SELECT o.*, t.code AS table_code, t.label AS table_label
+        SELECT o.*, t.code AS table_code, t.label AS table_label,
+               s.guest_name AS guest_name,
+               dt.code AS deliver_to_code, dt.label AS deliver_to_label
         FROM orders o
         JOIN tables t ON t.id = o.table_id
+        JOIN sessions s ON s.id = o.session_id
+        LEFT JOIN tables dt ON dt.id = o.deliver_table_id
         WHERE o.status IN ('new', 'preparing', 'ready')
         ORDER BY
           CASE o.status WHEN 'new' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END,
@@ -278,8 +636,13 @@ def staff_orders(pin: str = ""):
                 "status": o["status"],
                 "table_code": o["table_code"],
                 "table_label": o["table_label"],
+                "guest_name": o["guest_name"],
+                "created_by": o["created_by"],
                 "note": o["note"],
                 "created_at": o["created_at"],
+                "deliver_to_code": o["deliver_to_code"],
+                "deliver_to_label": o["deliver_to_label"],
+                "gift_message": o["gift_message"],
                 "items": [dict(i) for i in items],
             }
         )
@@ -321,8 +684,9 @@ def staff_tables(request: Request, pin: str = ""):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized — open from Staff board", status_code=401)
     conn = connect()
-    tables = conn.execute("SELECT * FROM tables WHERE active = 1 ORDER BY id ASC").fetchall()
+    tables = list_active_tables(conn)
     rows = []
+    boss_rows = []
     meta = load_menu_meta()
     for t in tables:
         session = get_open_session(conn, t["id"])
@@ -345,29 +709,68 @@ def staff_tables(request: Request, pin: str = ""):
                 """,
                 (session["id"],),
             ).fetchone()["c"]
-            bill = compute_bill(
-                [dict(x) for x in lines],
-                session["party_size"],
-                meta["service_charge_rate"],
-                meta["snack_charge_per_head"],
-            )
-        rows.append(
-            {
-                "table": t,
-                "session": session,
-                "bill": bill,
-                "open_orders": open_orders,
-            }
-        )
+            # Boss tabs: show product total only (no guest snack/service)
+            if (t["zone"] or "") == "boss":
+                prod = round(sum(float(x["line_total"]) for x in lines), 1)
+                bill = {
+                    "total": prod,
+                    "subtotal": prod,
+                    "snack_charge": 0,
+                    "service_charge": 0,
+                    "discount_amount": 0,
+                    "discount_percent": 0,
+                    "party_size": 1,
+                    "service_charge_rate": 0,
+                }
+            else:
+                bill = compute_bill(
+                    [dict(x) for x in lines],
+                    session["party_size"],
+                    meta["service_charge_rate"],
+                    meta["snack_charge_per_head"],
+                )
+        entry = {
+            "table": t,
+            "session": session,
+            "bill": bill,
+            "open_orders": open_orders,
+            "is_boss": (t["zone"] or "") == "boss",
+        }
+        if entry["is_boss"]:
+            boss_rows.append(entry)
+        else:
+            rows.append(entry)
     conn.close()
     return templates.TemplateResponse(
         "staff_tables.html",
-        {"request": request, "title": "Staff · Tables", "rows": rows, "pin": pin},
+        {
+            "request": request,
+            "title": "Staff · Seats",
+            "rows": rows,
+            "boss_rows": boss_rows,
+            "pin": pin,
+        },
     )
 
 
+def _session_lines(conn: sqlite3.Connection, session_id: int) -> list[dict]:
+    return [
+        dict(x)
+        for x in conn.execute(
+            """
+            SELECT oi.*, o.id AS order_id, o.created_at
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE o.session_id = ? AND o.status != 'cancelled'
+            ORDER BY o.id ASC, oi.id ASC
+            """,
+            (session_id,),
+        ).fetchall()
+    ]
+
+
 @app.get("/staff/bill/{table_code}", response_class=HTMLResponse)
-def staff_bill(request: Request, table_code: str, pin: str = ""):
+def staff_bill(request: Request, table_code: str, pin: str = "", discount: float = 0):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
     conn = connect()
@@ -379,26 +782,29 @@ def staff_bill(request: Request, table_code: str, pin: str = ""):
     meta = load_menu_meta()
     lines: list[dict] = []
     bill = None
+    is_boss = (table["zone"] or "") == "boss"
     if session:
-        lines = [
-            dict(x)
-            for x in conn.execute(
-                """
-                SELECT oi.*, o.id AS order_id, o.created_at
-                FROM order_items oi
-                JOIN orders o ON o.id = oi.order_id
-                WHERE o.session_id = ? AND o.status != 'cancelled'
-                ORDER BY o.id ASC, oi.id ASC
-                """,
-                (session["id"],),
-            ).fetchall()
-        ]
-        bill = compute_bill(
-            lines,
-            session["party_size"],
-            meta["service_charge_rate"],
-            meta["snack_charge_per_head"],
-        )
+        lines = _session_lines(conn, session["id"])
+        if is_boss:
+            prod = round(sum(float(x["line_total"]) for x in lines), 1)
+            bill = {
+                "total": prod,
+                "subtotal": prod,
+                "snack_charge": 0,
+                "service_charge": 0,
+                "discount_amount": 0,
+                "discount_percent": 0,
+                "party_size": 1,
+                "service_charge_rate": 0,
+            }
+        else:
+            bill = compute_bill(
+                lines,
+                session["party_size"],
+                meta["service_charge_rate"],
+                meta["snack_charge_per_head"],
+                discount_percent=discount,
+            )
     conn.close()
     return templates.TemplateResponse(
         "staff_bill.html",
@@ -410,12 +816,101 @@ def staff_bill(request: Request, table_code: str, pin: str = ""):
             "lines": lines,
             "bill": bill,
             "pin": pin,
+            "discount": discount or 0,
+            "is_boss": is_boss,
+            "snack_per_head": meta["snack_charge_per_head"],
         },
     )
 
 
+@app.post("/api/staff/bill/{table_code}/party")
+def staff_update_party(table_code: str, body: StaffPartyIn):
+    """Staff confirms / corrects party size before close (affects snack charge)."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        return {"ok": True, "party_size": 1, "bill": None}
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session")
+    size = max(1, min(30, int(body.party_size)))
+    conn.execute(
+        "UPDATE sessions SET party_size = ? WHERE id = ?",
+        (size, session["id"]),
+    )
+    conn.commit()
+    session = get_open_session(conn, table["id"])
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = compute_bill(
+        lines,
+        session["party_size"],
+        meta["service_charge_rate"],
+        meta["snack_charge_per_head"],
+        discount_percent=0,
+    )
+    conn.close()
+    return {
+        "ok": True,
+        "party_size": session["party_size"],
+        "guest_name": session["guest_name"],
+        "bill": bill,
+    }
+
+
+@app.post("/api/staff/bill/{table_code}/custom")
+async def staff_add_custom(table_code: str, body: StaffCustomIn):
+    """Staff adds a Not on Menu line to the open session."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session — guest must check in first")
+    try:
+        order_id, payload = _create_order(
+            conn,
+            table=table,
+            session=session,
+            items=[
+                CartItemIn(
+                    item_id="not-on-menu",
+                    qty=body.qty,
+                    note=body.note,
+                    custom_name=body.custom_name.strip(),
+                    custom_price=body.custom_price,
+                )
+            ],
+            note="Not on Menu (staff)",
+            created_by="Staff",
+        )
+    except HTTPException:
+        conn.close()
+        raise
+    conn.close()
+    await _broadcast({"type": "order.new", "data": payload})
+    return {"ok": True, "order_id": order_id}
+
+
 @app.post("/api/staff/bill/{table_code}/close")
-def close_bill(table_code: str, pin: str = Form(...)):
+def close_bill(
+    table_code: str,
+    pin: str = Form(...),
+    discount_percent: float = Form(0),
+    party_size: int | None = Form(None),
+):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     conn = connect()
@@ -427,10 +922,78 @@ def close_bill(table_code: str, pin: str = Form(...)):
     if not session:
         conn.close()
         return {"ok": True, "message": "No open session"}
+
+    is_boss = (table["zone"] or "") == "boss"
+    if not is_boss and party_size is not None:
+        size = max(1, min(30, int(party_size)))
+        conn.execute(
+            "UPDATE sessions SET party_size = ? WHERE id = ?",
+            (size, session["id"]),
+        )
+        conn.commit()
+        session = get_open_session(conn, table["id"])
+
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    if is_boss:
+        prod = round(sum(float(x["line_total"]) for x in lines), 1)
+        bill = {
+            "total": prod,
+            "subtotal": prod,
+            "snack_charge": 0,
+            "service_charge": 0,
+            "discount_amount": 0,
+            "discount_percent": 0,
+            "party_size": 1,
+            "service_charge_rate": 0,
+        }
+    else:
+        bill = compute_bill(
+            lines,
+            session["party_size"],
+            meta["service_charge_rate"],
+            meta["snack_charge_per_head"],
+            discount_percent=discount_percent,
+        )
     now = utc_now()
+    biz = business_date(datetime.now(HK)).isoformat()
+    guest_name = session["guest_name"] if session["guest_name"] else None
+    receipt_rel = generate_receipt_pdf(
+        session_id=session["id"],
+        table_label=table["label"],
+        party_size=session["party_size"] if not is_boss else 1,
+        lines=lines,
+        bill=bill,
+        closed_at_iso=now,
+        guest_name=guest_name,
+    )
     conn.execute(
-        "UPDATE sessions SET status = 'closed', closed_at = ? WHERE id = ?",
-        (now, session["id"]),
+        """
+        UPDATE sessions SET
+          status = 'closed',
+          closed_at = ?,
+          discount_percent = ?,
+          subtotal = ?,
+          snack_charge = ?,
+          service_charge = ?,
+          discount_amount = ?,
+          total = ?,
+          receipt_path = ?,
+          business_date = ?
+        WHERE id = ?
+        """,
+        (
+            now,
+            bill["discount_percent"],
+            bill["subtotal"],
+            bill["snack_charge"],
+            bill["service_charge"],
+            bill["discount_amount"],
+            bill["total"],
+            receipt_rel,
+            biz,
+            session["id"],
+        ),
     )
     conn.execute(
         "UPDATE orders SET status = 'served', updated_at = ? WHERE session_id = ? AND status != 'cancelled'",
@@ -438,7 +1001,35 @@ def close_bill(table_code: str, pin: str = Form(...)):
     )
     conn.commit()
     conn.close()
-    return {"ok": True}
+    return {
+        "ok": True,
+        "session_id": session["id"],
+        "total": bill["total"],
+        "receipt_url": f"/staff/receipt/{session['id']}?pin={pin}",
+    }
+
+
+@app.get("/staff/receipt/{session_id}")
+def staff_receipt(session_id: int, pin: str = ""):
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    session = get_session(conn, session_id)
+    conn.close()
+    if not session or not session["receipt_path"]:
+        raise HTTPException(404, "Receipt not found")
+    # New receipts live under DATA_DIR; keep ROOT fallback for older rows.
+    rel = session["receipt_path"]
+    path = DATA_DIR / rel
+    if not path.exists():
+        path = ROOT / rel
+    if not path.exists():
+        raise HTTPException(404, "Receipt file missing")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"Polar-Receipt-S{session_id}.pdf",
+    )
 
 
 @app.get("/staff/qrs", response_class=HTMLResponse)
@@ -446,15 +1037,19 @@ def staff_qrs(request: Request, pin: str = ""):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
     conn = connect()
-    tables = conn.execute("SELECT * FROM tables ORDER BY id").fetchall()
+    tables = list_guest_tables(conn)
     conn.close()
     base = str(request.base_url).rstrip("/")
+    boss_links = [
+        {"name": b["name"], "url": f"{base}/boss/{b['id']}"} for b in BOSSES
+    ]
     return templates.TemplateResponse(
         "staff_qrs.html",
         {
             "request": request,
-            "title": "Table QR Codes",
+            "title": "Seat QR Codes",
             "tables": tables,
+            "boss_links": boss_links,
             "base": base,
             "pin": pin,
         },
@@ -497,6 +1092,50 @@ async def sse_events(pin: str = ""):
                 _subscribers.remove(queue)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/staff/reports", response_class=HTMLResponse)
+def staff_reports(request: Request, pin: str = "", day: str = "", month: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    today_biz = business_date(datetime.now(HK))
+    if day:
+        try:
+            biz = date.fromisoformat(day)
+        except ValueError:
+            biz = today_biz
+    else:
+        biz = today_biz
+
+    if month:
+        try:
+            y_str, m_str = month.split("-")
+            year, mon = int(y_str), int(m_str)
+        except Exception:
+            year, mon = today_biz.year, today_biz.month
+    else:
+        year, mon = today_biz.year, today_biz.month
+
+    conn = connect()
+    daily = daily_sales_report(conn, biz)
+    monthly = monthly_sales_report(conn, year, mon)
+    items = item_purchase_report(conn, year=year, month=mon)
+    bosses = monthly_boss_report(conn, year, mon)
+    conn.close()
+    return templates.TemplateResponse(
+        "staff_reports.html",
+        {
+            "request": request,
+            "title": "Reports",
+            "pin": pin,
+            "daily": daily,
+            "monthly": monthly,
+            "items": items,
+            "bosses": bosses,
+            "day": biz.isoformat(),
+            "month": f"{year}-{mon:02d}",
+        },
+    )
 
 
 @app.get("/health")

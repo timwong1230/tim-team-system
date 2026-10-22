@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 data/polar_order.db
 data/*.db
+data/receipts/
 docs/*.pdf
 docs/menu-pages/
 docs/DOWNLOAD-REPORT.md
+docs/Polar-Menu-Final.pdf
 .DS_Store

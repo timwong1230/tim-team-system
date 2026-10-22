@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">REPORTS</div>
+    <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
+  </div>
+  <div class="hero">
+    <h1>Sales reports</h1>
+    <p>Business day = 2pm → 2am next day (Hong Kong time).</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Nightly close</h3>
+    <form method="get" action="/staff/reports" class="row" style="gap:8px;flex-wrap:wrap">
+      <input type="hidden" name="pin" value="{{ pin }}" />
+      <input class="field" style="margin:0;max-width:180px" type="date" name="day" value="{{ day }}" />
+      <input type="hidden" name="month" value="{{ month }}" />
+      <button class="primary" style="width:auto;padding:12px 16px" type="submit">Load day</button>
+    </form>
+    <p class="muted">{{ daily.window }}</p>
+    <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(daily.gross_sales) }}</div>
+    <div class="muted">{{ daily.session_count }} closed tables</div>
+    {% for s in daily.sessions %}
+    <div class="cart-line">
+      <div>
+        <strong>{{ s.table }}</strong>
+        <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}</div>
+      </div>
+      <div>
+        ${{ '%.0f'|format(s.total) }}
+        {% if s.receipt_path %}
+        <div><a href="/staff/receipt/{{ s.session_id }}?pin={{ pin }}">PDF</a></div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">No closed sessions for this business day yet.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Monthly sales</h3>
+    <form method="get" action="/staff/reports" class="row" style="gap:8px;flex-wrap:wrap">
+      <input type="hidden" name="pin" value="{{ pin }}" />
+      <input type="hidden" name="day" value="{{ day }}" />
+      <input class="field" style="margin:0;max-width:180px" type="month" name="month" value="{{ month }}" />
+      <button class="primary" style="width:auto;padding:12px 16px" type="submit">Load month</button>
+    </form>
+    <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(monthly.gross_sales) }}</div>
+    <div class="muted">{{ monthly.session_count }} sessions · {{ monthly.label }}</div>
+    {% for d in monthly.days %}
+    <div class="cart-line">
+      <div><strong>{{ d.business_date }}</strong><div class="muted">{{ d.session_count }} tables</div></div>
+      <div>${{ '%.0f'|format(d.gross_sales) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Monthly Boss Report</h3>
+    <p class="muted">{{ bosses.label }} · not included in guest sales above</p>
+    <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(bosses.gross_total) }}</div>
+    {% for b in bosses.bosses %}
+    <div class="cart-line" style="align-items:flex-start">
+      <div>
+        <strong>{{ b.boss_name }}</strong>
+        <div class="muted">{{ b.order_count }} orders · {{ b.item_qty }} items</div>
+        {% for i in b.item_rows[:6] %}
+        <div class="muted">{{ i.qty }}× {{ i.item_name }} · ${{ '%.0f'|format(i.revenue) }}</div>
+        {% endfor %}
+      </div>
+      <div>${{ '%.0f'|format(b.total) }}</div>
+    </div>
+    {% else %}
+    <p class="muted">No boss orders this month.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Purchase · by category</h3>
+    <p class="muted">{{ items.label }}</p>
+    {% for c in items.by_category %}
+    <div class="cart-line">
+      <div><strong>{{ c.category_name }}</strong><div class="muted">{{ c.qty }} sold</div></div>
+      <div>${{ '%.0f'|format(c.revenue) }}</div>
+    </div>
+    {% else %}
+    <p class="muted">No item sales this month.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Purchase · by item</h3>
+    {% for i in items.by_item %}
+    <div class="cart-line">
+      <div>
+        <strong>{{ i.item_name }}</strong>
+        <div class="muted">{{ i.category_name }} · {{ i.qty }} sold</div>
+      </div>
+      <div>${{ '%.0f'|format(i.revenue) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

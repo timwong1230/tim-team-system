@@ -1,28 +1,70 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="wrap">
+<div class="wrap{% if not ready %} wrap-welcome{% endif %}">
+  {% if not ready %}
+  <div class="hero hero-welcome">
+    <div class="welcome-logo-wrap">
+      <img
+        class="welcome-logo"
+        src="/static/images/polar-logo.png"
+        alt="Polar Lounge"
+        width="180"
+        height="180"
+      />
+    </div>
+    <p class="brand-lounge welcome-brand">POLAR LOUNGE</p>
+    <h1>WELCOME TO POLAR</h1>
+    <p class="welcome-seat">{{ table.label }}</p>
+  </div>
+
+  <div class="welcome" id="welcome">
+    <div class="welcome-step" id="stepName" data-step="name">
+      <label class="welcome-ask" for="guestName">What should we call you?</label>
+      <input class="field" id="guestName" type="text" maxlength="40" autocomplete="name" placeholder="Your name / nickname" value="{{ session.guest_name if session and session.guest_name else '' }}" />
+      <button class="primary" type="button" id="toParty">Continue</button>
+    </div>
+
+    <div class="welcome-step" id="stepParty" data-step="party" hidden>
+      <p class="welcome-hello" id="welcomeHello"></p>
+      <label class="muted" for="partySize">How many guests?</label>
+      <input class="field" id="partySize" type="number" min="1" max="30" value="{{ session.party_size if session else 2 }}" />
+      <button class="primary" type="button" id="startOrder">Start ordering</button>
+      <button class="ghost" type="button" id="backName">Back</button>
+    </div>
+  </div>
+
+  {% else %}
   <div class="topbar">
     <div class="brand">POLAR</div>
     <div class="pill">{{ table.label }}</div>
   </div>
-
   <div class="hero">
     <h1>{{ table.label }}</h1>
-    <p>Order from your phone. Pay at the end with staff.</p>
+    <p>Hi {{ session.guest_name }} · party of {{ session.party_size }}. Order from your phone. Pay at the end with staff.</p>
   </div>
 
-  {% if promo.label %}
   <div class="promo">
-    <strong>{{ promo.label }}</strong>
-    <div class="muted">{{ promo.window }}
-      {% if promo.drinks_off %} · Drinks {{ (promo.drinks_off * 100)|int }}% off{% endif %}
-      {% if promo.shisha_price %} · Shisha ${{ '%.0f'|format(promo.shisha_price) }}{% endif %}
+    <div class="promo-now">
+      <strong>Now: {{ promo.label }}</strong>
     </div>
+    <div class="promo-block">
+      <p class="promo-title">2–5pm: Meditation Hour</p>
+      <p class="promo-detail">Shisha $250 · Drinks 30% off</p>
+    </div>
+    <div class="promo-block">
+      <p class="promo-title">5–8pm: Happy Hour</p>
+      <p class="promo-detail">Drinks 20% off</p>
+    </div>
+    <div class="promo-block">
+      <p class="promo-title">After 8pm: Regular pricing</p>
+    </div>
+    <div class="promo-combo">With Regular Shisha: <strong>$40</strong> for any bar snack</div>
   </div>
-  {% endif %}
 
-  <label class="muted">Party size</label>
-  <input class="field" id="partySize" type="number" min="1" max="30" value="{{ session.party_size if session else 2 }}" />
+  <div class="play-row">
+    <button type="button" class="play-btn" id="openAskAI">Ask AI</button>
+    <button type="button" class="play-btn play-btn-soft" id="jumpGift">Order for HIM/HER</button>
+  </div>
 
   <div class="cats" id="cats">
     {% for cat in menu %}
@@ -33,26 +75,57 @@
   {% for cat in menu %}
   <section class="section" id="cat-{{ cat.id }}">
     <h2>{{ cat.name }}</h2>
+    {% set ns = namespace(last_unit=None) %}
     {% for item in cat['items'] %}
-    <article class="item" data-id="{{ item['id'] }}" data-name="{{ item['name'] }}" data-price="{{ item['display_price'] }}" data-allow-note="{{ 1 if item['allow_note'] else 0 }}">
-      <div>
-        <h3>{{ item['name'] }}</h3>
-        {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
-        {% if item['unit'] %}<p class="note">{{ item['unit'] }}</p>{% endif %}
-      </div>
-      <div class="price">
-        <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
-        {% if item['display_price'] < item['price'] %}
-        <div class="was">${{ '%.0f'|format(item['price']) }}</div>
+    {% if cat.split_serve and item['unit'] in ('Glass', 'Bottle') and item['unit'] != ns.last_unit %}
+    <h3 class="serve-heading">{{ item['unit'] }}</h3>
+    {% set ns.last_unit = item['unit'] %}
+    {% endif %}
+    <article
+      class="item{% if not item['image'] %} no-photo{% endif %}"
+      data-id="{{ item['id'] }}"
+      data-name="{{ item['name'] }}{% if item['unit'] %} ({{ item['unit'] }}){% endif %}"
+      data-price="{{ item['display_price'] }}"
+      data-list-price="{{ item['price'] }}"
+      data-promo-type="{{ item['promo_type'] }}"
+      data-combo-price="{{ item['combo_price'] if item['combo_price'] is not none else '' }}"
+      data-allow-note="{{ 1 if item['allow_note'] else 0 }}"
+    >
+      <div class="item-photo">
+        {% if item['image'] %}
+        <img src="{{ item['image'] }}" alt="{{ item['name'] }}" loading="lazy" />
+        {% else %}
+        <div class="item-photo-fallback" aria-hidden="true">P</div>
         {% endif %}
-        <button class="add-btn" type="button">Add</button>
+      </div>
+      <div class="item-body">
+        <div class="item-copy">
+          <h3>{{ item['name'] }}</h3>
+          {% if item['note'] %}<p class="note">{{ item['note'] }}</p>{% endif %}
+          {% if item['unit'] %}<span class="chip chip-unit">{{ item['unit'] }}</span>{% endif %}
+          {% if item['combo_price'] is not none %}
+          <span class="chip">With Shisha ${{ '%.0f'|format(item['combo_price']) }}</span>
+          {% endif %}
+          {% if item['promo_tag'] %}<span class="chip chip-soft">{{ item['promo_tag'] }}</span>{% endif %}
+        </div>
+        <div class="item-foot">
+          <div class="price">
+            <div class="now">${{ '%.0f'|format(item['display_price']) }}</div>
+            {% if item['display_price'] < item['price'] %}
+            <div class="was">${{ '%.0f'|format(item['price']) }}</div>
+            {% endif %}
+          </div>
+          <button class="add-btn" type="button">Add</button>
+        </div>
       </div>
     </article>
     {% endfor %}
   </section>
   {% endfor %}
+  {% endif %}
 </div>
 
+{% if ready %}
 <div class="cart-bar" id="cartBar" style="display:none">
   <div>
     <div id="cartCount">0 items</div>
@@ -68,16 +141,83 @@
       <button class="ghost" style="width:auto;padding:8px 12px" id="closeCart" type="button">Close</button>
     </div>
     <div id="cartLines"></div>
+
+    <div class="nom-box" id="nomBox">
+      <strong>Not on Menu</strong>
+      <p class="muted" style="margin:6px 0 8px;font-size:0.85rem">Off-menu item — usually entered by staff. Name + price.</p>
+      <label class="muted" for="nomName">Product name</label>
+      <input class="field" id="nomName" type="text" maxlength="80" placeholder="e.g. Guest bottle / special request" />
+      <div class="nom-row">
+        <div>
+          <label class="muted" for="nomPrice">Price (HKD)</label>
+          <input class="field" id="nomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+        </div>
+        <div>
+          <label class="muted" for="nomQty">Qty</label>
+          <input class="field" id="nomQty" type="number" min="1" max="50" value="1" />
+        </div>
+      </div>
+      <button class="ghost" type="button" id="nomAdd" style="margin-top:0">Add Not on Menu</button>
+    </div>
+
     <label class="muted">Note for staff</label>
     <textarea class="field" id="orderNote" rows="2" placeholder="e.g. less ice / flavour notes"></textarea>
-    <button class="primary" id="submitOrder" type="button">Send to bar</button>
+
+    <p class="muted" id="orderTargetHint" style="margin:4px 0 10px">Sending to <strong>{{ table.label }}</strong> (your table).</p>
+
+    <div class="gift-box" id="giftBox">
+      <label class="gift-toggle">
+        <input type="checkbox" id="giftToggle" />
+        <span>Order for HIM/HER instead</span>
+      </label>
+      <p class="muted" style="margin:8px 0 0;font-size:0.85rem">Leave unticked = order for your table. Tick only to treat another seat.</p>
+      <div id="giftFields" hidden>
+        <p class="muted" style="margin:10px 0 8px">Bill stays on {{ table.label }}. Staff deliver to them with your note.</p>
+        <label class="muted" for="giftSeat">Send to</label>
+        <select class="field" id="giftSeat">
+          <option value="">Pick a seat…</option>
+          {% for s in other_seats %}
+          <option value="{{ s.code }}">{{ s.label }}</option>
+          {% endfor %}
+        </select>
+        <label class="muted" for="giftMessage">Say something</label>
+        <textarea class="field" id="giftMessage" rows="2" maxlength="200" placeholder="e.g. nice to meet you"></textarea>
+      </div>
+    </div>
+
+    <button class="primary" id="submitOrder" type="button">Send to {{ table.label }}</button>
   </div>
 </div>
+
+<div class="drawer" id="aiDrawer">
+  <div class="drawer-panel ai-panel">
+    <div class="row">
+      <h2 style="margin:0">Ask AI</h2>
+      <button class="ghost" style="width:auto;padding:8px 12px" id="closeAskAI" type="button">Close</button>
+    </div>
+    <p class="muted" style="margin-top:0">Pick a mood — I’ll mix Shisha + drinks from our menu.</p>
+    <div class="ai-chips">
+      <button type="button" class="ai-chip" data-q="Happy">Happy</button>
+      <button type="button" class="ai-chip" data-q="Sad">Sad</button>
+      <button type="button" class="ai-chip" data-q="Calm">Calm</button>
+      <button type="button" class="ai-chip" data-q="Celebration">Celebration</button>
+      <button type="button" class="ai-chip" data-q="Non alcoholic">Non alcoholic</button>
+    </div>
+    <div class="ai-thread" id="aiThread"></div>
+    <form class="ai-compose" id="aiForm">
+      <input class="field" id="aiInput" type="text" maxlength="500" placeholder="e.g. romantic, not too strong…" autocomplete="off" />
+      <button class="primary" type="submit" id="aiSend">Ask</button>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
   window.POLAR_TABLE = {{ table.code|tojson }};
+  window.POLAR_READY = {{ 'true' if ready else 'false' }};
+  window.POLAR_GUEST = {{ (session.guest_name if session and session.guest_name else '')|tojson }};
 </script>
 <script src="/static/js/guest.js"></script>
 {% endblock %}

@@ -41,15 +41,24 @@
           </div>`
           )
           .join("");
+        const gift = o.deliver_to_label
+          ? `<div class="gift-banner">
+              <strong>Treat → ${o.deliver_to_label}</strong>
+              <div>From ${o.table_label}${o.guest_name ? ` (${o.guest_name})` : ""}</div>
+              ${o.gift_message ? `<div class="gift-msg">“${o.gift_message}”</div>` : ""}
+              <div class="muted">Deliver to ${o.deliver_to_label}. Tell them it’s from ${o.table_label}.</div>
+            </div>`
+          : "";
         return `
-        <article class="card ${o.status}">
+        <article class="card ${o.status}${o.deliver_to_label ? " gift-order" : ""}">
           <div class="row">
             <div>
-              <strong>${o.table_label}</strong>
-              <div class="muted">#${o.id}</div>
+              <strong>${o.deliver_to_label ? `${o.table_label} → ${o.deliver_to_label}` : o.table_label}</strong>
+              <div class="muted">#${o.id}${o.guest_name ? ` · ${o.guest_name}` : ""}${o.created_by ? ` · by ${o.created_by}` : ""}</div>
             </div>
             <span class="badge ${o.status}">${o.status}</span>
           </div>
+          ${gift}
           ${o.note ? `<p class="muted">${o.note}</p>` : ""}
           ${items}
           <div class="actions">

@@ -8,19 +8,53 @@
   <div class="hero">
     <h1>{{ table.label }}</h1>
     {% if session %}
-    <p>Session open · party {{ session.party_size }}</p>
+    <p>{% if session.guest_name %}{{ session.guest_name }} · {% endif %}party {{ session.party_size }}</p>
     {% else %}
     <p>No open session</p>
     {% endif %}
   </div>
 
   {% if bill %}
-  <div class="bill-total">${{ '%.0f'|format(bill.total) }}</div>
-  <div class="card">
-    <div class="row"><span>Subtotal</span><span>${{ '%.0f'|format(bill.subtotal) }}</span></div>
-    <div class="row"><span>Snack charge ({{ bill.party_size }} × $10)</span><span>${{ '%.0f'|format(bill.snack_charge) }}</span></div>
-    <div class="row"><span>Service {{ (bill.service_charge_rate * 100)|int }}%</span><span>${{ '%.0f'|format(bill.service_charge) }}</span></div>
-    <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span>${{ '%.0f'|format(bill.total) }}</span></div>
+  {% if not is_boss %}
+  <div class="card party-confirm" id="partyConfirm">
+    <h3 style="margin-top:0">Confirm party size</h3>
+    <p class="muted" style="margin-top:0">
+      Bar snacks are charged per head (${{ '%.0f'|format(snack_per_head) }} × guests). Confirm before closing.
+    </p>
+    <label class="muted" for="partyInput">Guests (party size)</label>
+    <div class="party-row">
+      <input class="field" id="partyInput" type="number" min="1" max="30" step="1" value="{{ bill.party_size }}" />
+      <button class="ghost" type="button" id="partySave">Update</button>
+    </div>
+    <p class="muted" id="partyHint" style="margin-bottom:0">Snack charge = party × ${{ '%.0f'|format(snack_per_head) }}</p>
+  </div>
+  {% endif %}
+
+  <label class="muted">Discount % (blank / 0 = full price · 10 = 10% off)</label>
+  <input class="field" id="discountInput" type="number" min="0" max="100" step="1" value="{{ discount|int if discount else '' }}" placeholder="0" />
+
+  <div class="bill-total" id="billTotal">${{ '%.0f'|format(bill.total) }}</div>
+  <div class="card" id="billCard"
+       data-subtotal="{{ bill.subtotal }}"
+       data-snack="{{ bill.snack_charge }}"
+       data-service="{{ bill.service_charge }}"
+       data-rate="{{ bill.service_charge_rate }}"
+       data-snack-head="{{ snack_per_head }}"
+       data-is-boss="{{ 1 if is_boss else 0 }}">
+    <div class="row"><span>Subtotal (products)</span><span id="vSub">${{ '%.0f'|format(bill.subtotal) }}</span></div>
+    <div class="row" id="discRow" style="{% if not bill.discount_percent %}display:none{% endif %}">
+      <span id="discLabel">Discount {{ bill.discount_percent|int }}% (products + snacks)</span>
+      <span id="vDisc">-${{ '%.0f'|format(bill.discount_amount) }}</span>
+    </div>
+    <div class="row" id="snackRow" style="{% if is_boss %}display:none{% endif %}">
+      <span id="snackLabel">Snack charge ({{ bill.party_size }} × ${{ '%.0f'|format(snack_per_head) }})</span>
+      <span id="vSnack">${{ '%.0f'|format(bill.snack_charge) }}</span>
+    </div>
+    <div class="row" id="svcRow" style="{% if is_boss %}display:none{% endif %}">
+      <span>Service {{ (bill.service_charge_rate * 100)|int }}% (on full price)</span>
+      <span id="vSvc">${{ '%.0f'|format(bill.service_charge) }}</span>
+    </div>
+    <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span id="vTotal">${{ '%.0f'|format(bill.total) }}</span></div>
   </div>
   <p class="muted">Collect payment with your third-party POS / terminal, then mark paid.</p>
 
@@ -30,6 +64,7 @@
     <div class="cart-line">
       <div>
         <strong>{{ line.qty }}× {{ line.item_name }}</strong>
+        {% if line.category_id == 'not-on-menu' %}<div class="muted">Not on Menu</div>{% endif %}
         {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
       </div>
       <div>${{ '%.0f'|format(line.line_total) }}</div>
@@ -37,22 +72,167 @@
     {% endfor %}
   </div>
 
+  <div class="card nom-box">
+    <h3 style="margin-top:0">Not on Menu</h3>
+    <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price).</p>
+    <label class="muted" for="staffNomName">Product name</label>
+    <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="staffNomPrice">Price (HKD)</label>
+        <input class="field" id="staffNomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+      </div>
+      <div>
+        <label class="muted" for="staffNomQty">Qty</label>
+        <input class="field" id="staffNomQty" type="number" min="1" max="50" value="1" />
+      </div>
+    </div>
+    <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
+  </div>
+
   <form method="post" action="/api/staff/bill/{{ table.code }}/close" id="closeForm">
     <input type="hidden" name="pin" value="{{ pin }}" />
-    <button class="primary" type="submit">Mark paid & close table</button>
+    <input type="hidden" name="discount_percent" id="discountHidden" value="{{ discount|int if discount else 0 }}" />
+    <input type="hidden" name="party_size" id="partyHidden" value="{{ bill.party_size }}" />
+    <button class="primary" type="submit">Mark paid & open PDF receipt</button>
   </form>
   {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
+  const money = (n) => '$' + Math.round(n);
+  const input = document.getElementById('discountInput');
+  const partyInput = document.getElementById('partyInput');
+  const card = document.getElementById('billCard');
+  const isBoss = card && Number(card.dataset.isBoss) === 1;
+
+  function partySize() {
+    if (isBoss || !partyInput) return 1;
+    let p = Number(partyInput.value || 1);
+    if (Number.isNaN(p)) p = 1;
+    return Math.max(1, Math.min(30, Math.round(p)));
+  }
+
+  function recalc() {
+    if (!card) return;
+    const subtotal = Number(card.dataset.subtotal);
+    const rate = Number(card.dataset.rate || 0);
+    const snackHead = Number(card.dataset.snackHead || 10);
+    const party = partySize();
+    const snack = isBoss ? 0 : party * snackHead;
+    const service = isBoss ? 0 : (subtotal + snack) * rate;
+    let d = Number(input.value || 0);
+    if (Number.isNaN(d)) d = 0;
+    d = Math.max(0, Math.min(100, d));
+    const discAmt = (subtotal + snack) * (d / 100);
+    const total = subtotal + snack + service - discAmt;
+    document.getElementById('billTotal').textContent = money(total);
+    document.getElementById('vTotal').textContent = money(total);
+    document.getElementById('discountHidden').value = d;
+    document.getElementById('partyHidden').value = party;
+    if (!isBoss) {
+      document.getElementById('vSnack').textContent = money(snack);
+      document.getElementById('vSvc').textContent = money(service);
+      document.getElementById('snackLabel').textContent =
+        `Snack charge (${party} × $${Math.round(snackHead)})`;
+      const hint = document.getElementById('partyHint');
+      if (hint) {
+        hint.textContent = `Snack charge = ${party} × $${Math.round(snackHead)} → $${Math.round(snack)}`;
+      }
+    }
+    const row = document.getElementById('discRow');
+    if (d > 0) {
+      row.style.display = 'flex';
+      document.getElementById('discLabel').textContent = `Discount ${d}% (products + snacks)`;
+      document.getElementById('vDisc').textContent = '-' + money(discAmt);
+    } else {
+      row.style.display = 'none';
+    }
+  }
+  input?.addEventListener('input', recalc);
+  partyInput?.addEventListener('input', recalc);
+
+  document.getElementById('partySave')?.addEventListener('click', async () => {
+    const party_size = partySize();
+    partyInput.value = party_size;
+    const res = await fetch('/api/staff/bill/{{ table.code }}/party', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: {{ pin|tojson }}, party_size }),
+    });
+    if (!res.ok) {
+      alert('Failed to update party size');
+      return;
+    }
+    const data = await res.json();
+    if (data.bill) {
+      card.dataset.snack = data.bill.snack_charge;
+      card.dataset.service = data.bill.service_charge;
+    }
+    recalc();
+    const hero = document.querySelector('.hero p');
+    if (hero && data.guest_name !== undefined) {
+      const name = data.guest_name ? `${data.guest_name} · ` : '';
+      hero.textContent = `${name}party ${party_size}`;
+    } else if (hero) {
+      hero.textContent = hero.textContent.replace(/party\s+\d+/, `party ${party_size}`);
+    }
+  });
+
+  document.getElementById('staffNomAdd')?.addEventListener('click', async () => {
+    const name = (document.getElementById('staffNomName').value || '').trim();
+    const price = Number(document.getElementById('staffNomPrice').value);
+    const qty = Number(document.getElementById('staffNomQty').value || 1);
+    if (!name) return alert('Enter product name');
+    if (Number.isNaN(price) || price < 0) return alert('Enter a valid price');
+    const res = await fetch('/api/staff/bill/{{ table.code }}/custom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pin: {{ pin|tojson }},
+        custom_name: name,
+        custom_price: price,
+        qty: qty,
+      }),
+    });
+    if (!res.ok) {
+      alert('Failed to add');
+      return;
+    }
+    location.reload();
+  });
+
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!confirm('Close table after payment collected?')) return;
+    recalc();
+    const party = partySize();
+    if (!isBoss) {
+      const ok = confirm(
+        `Confirm party size: ${party} guest(s)?\n\nSnack charge = ${party} × $10.\nClose table after payment collected?`
+      );
+      if (!ok) return;
+      // Persist party size before close
+      await fetch('/api/staff/bill/{{ table.code }}/party', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party }),
+      });
+    } else if (!confirm('Close table after payment collected?')) {
+      return;
+    }
     const fd = new FormData(e.target);
     const res = await fetch(e.target.action, { method: 'POST', body: fd });
-    if (res.ok) location.href = '/staff/tables?pin={{ pin }}';
-    else alert('Failed to close');
+    const data = await res.json();
+    if (res.ok && data.receipt_url) {
+      window.location.href = data.receipt_url;
+    } else if (res.ok) {
+      location.href = '/staff/tables?pin={{ pin }}';
+    } else {
+      alert('Failed to close');
+    }
   });
+
+  recalc();
 </script>
 {% endblock %}
