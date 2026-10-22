@@ -15,6 +15,33 @@ from .pricing import current_promo
 OPENAI_KEY = os.getenv("POLAR_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
 OPENAI_MODEL = os.getenv("POLAR_OPENAI_MODEL", "gpt-4o-mini")
 
+# Mood → ordered category groups (first groups preferred).
+COCKTAIL_CATS = ("celestial",)
+SPIRIT_CATS = ("vodka", "gin", "whisky", "liqueur", "tequila", "rum", "cognac")
+MOOD_PLAYBOOK: dict[str, tuple[str, tuple[tuple[str, ...], ...]]] = {
+    # key → (vibe label, ordered category groups)
+    "happy": ("a happy night", (("shisha",), COCKTAIL_CATS, SPIRIT_CATS)),
+    "sad": ("a heavier mood", (("shisha",), SPIRIT_CATS, COCKTAIL_CATS)),
+    "calm": ("a calm unwind", (("shisha",), COCKTAIL_CATS, ("beer",))),
+    "celebration": ("a celebration", (("shisha",), ("champagne",), ("tower",))),
+    "non_alcoholic": (
+        "zero-proof vibes",
+        (("shisha",), ("teas",), ("non-alcohol",)),
+    ),
+}
+
+ALCOHOL_CATS = {
+    "celestial",
+    "beer",
+    "tower",
+    "wine",
+    "red-wine",
+    "white-wine",
+    *SPIRIT_CATS,
+    "champagne",
+}
+ZERO_PROOF_CATS = {"non-alcohol", "teas"}
+
 
 def bestsellers(conn: sqlite3.Connection, limit: int = 8) -> list[dict[str, Any]]:
     rows = conn.execute(
@@ -78,26 +105,121 @@ def menu_catalog(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return out
 
 
-# Categories with alcohol (never suggest Coke / soft drinks for these)
-ALCOHOL_CATS = {
-    "celestial",
-    "beer",
-    "tower",
-    "wine",
-    "red-wine",
-    "white-wine",
-    "vodka",
-    "gin",
-    "whisky",
-    "liqueur",
-    "champagne",
-    "tequila",
-    "rum",
-    "cognac",
-}
-WINE_CATS = {"wine", "red-wine", "white-wine"}
-ZERO_PROOF_CATS = {"non-alcohol", "teas"}
-NON_DRINK_CATS = {"shisha", "snacks"}
+def _detect_mood(text: str) -> str | None:
+    """Return playbook mood key from free text / chip labels."""
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    # Explicit chip / keyword mapping (order matters for overlaps).
+    if any(
+        k in t
+        for k in (
+            "non alcoholic",
+            "non-alcoholic",
+            "non alcohol",
+            "no alcohol",
+            "zero-proof",
+            "zero proof",
+            "mocktail",
+            "唔飲酒",
+            "無酒精",
+            "冇酒",
+            "soft drink",
+        )
+    ):
+        return "non_alcoholic"
+    if any(
+        k in t
+        for k in (
+            "celebration",
+            "celebrate",
+            "party",
+            "birthday",
+            "慶祝",
+            "派對",
+            "cheers",
+        )
+    ):
+        return "celebration"
+    if any(k in t for k in ("sad", "down", "blue", "傷心", "唔開心", "emo", "breakup")):
+        return "sad"
+    if any(k in t for k in ("calm", "chill", "relax", "放鬆", "累", "tired", "zen")):
+        return "calm"
+    if any(k in t for k in ("happy", "開心", "歡樂", "fun", "good mood", "excited")):
+        return "happy"
+    return None
+
+
+# Not vibe picks — skip in mood recommendations
+SKIP_AI_IDS = {"shisha-change", "not-on-menu"}
+
+
+def _rank_in_group(item: dict[str, Any]) -> tuple:
+    """Prefer Regular Shisha, Glass serves, then name."""
+    iid = item.get("id") or ""
+    unit = item.get("unit") or ""
+    shisha_rank = 0 if iid == "shisha-regular" else 1
+    unit_rank = 0 if unit == "Glass" else (1 if unit == "Bottle" else 0)
+    return (shisha_rank, unit_rank, (item.get("name") or "").lower())
+
+
+def _best_in_group(
+    flat: list[dict[str, Any]],
+    hot: list[dict[str, Any]],
+    group: tuple[str, ...],
+    seen: set[str],
+) -> dict[str, Any] | None:
+    by_id = {x["id"]: x for x in flat}
+
+    def ok(item: dict[str, Any] | None) -> bool:
+        return bool(
+            item
+            and item["id"] not in seen
+            and item["id"] not in SKIP_AI_IDS
+            and item["category_id"] in group
+        )
+
+    hot_hits = [by_id[h["item_id"]] for h in hot if ok(by_id.get(h["item_id"]))]
+    if hot_hits:
+        hot_hits.sort(key=_rank_in_group)
+        return hot_hits[0]
+    pool = [x for x in flat if ok(x)]
+    if not pool:
+        return None
+    pool.sort(key=_rank_in_group)
+    return pool[0]
+
+
+def _picks_for_groups(
+    flat: list[dict[str, Any]],
+    hot: list[dict[str, Any]],
+    groups: tuple[tuple[str, ...], ...],
+    *,
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    """One from each group in order, then a second pass to fill to `limit`."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def add(item: dict[str, Any] | None) -> None:
+        if not item or item["id"] in seen:
+            return
+        seen.add(item["id"])
+        out.append(item)
+
+    # Pass 1: exactly one pick per group (preserves Happy/Sad/… order)
+    for group in groups:
+        if len(out) >= limit:
+            break
+        add(_best_in_group(flat, hot, group, seen))
+
+    # Pass 2: second pick from each group until full
+    for group in groups:
+        if len(out) >= limit:
+            break
+        add(_best_in_group(flat, hot, group, seen))
+
+    return out[:limit]
 
 
 def _local_reply(
@@ -125,165 +247,41 @@ def _local_reply(
     def is_alcohol(x: dict) -> bool:
         return x["category_id"] in ALCOHOL_CATS
 
-    def hot_in_cats(cats: set[str], n=3) -> list[dict]:
-        out = []
-        for h in hot:
-            item = by_id.get(h["item_id"])
-            if item and item["category_id"] in cats:
-                out.append(item)
-            if len(out) >= n:
-                break
-        return out
-
-    wants_zero = any(
-        k in text
-        for k in (
-            "no alcohol",
-            "non-alcohol",
-            "non alcohol",
-            "mocktail",
-            "唔飲酒",
-            "無酒精",
-            "冇酒",
-        )
-    )
-    # "alcoholic" / "alcohol" / "drinks" — but not when asking for zero-proof
-    wants_alcohol = (not wants_zero) and any(
-        k in text
-        for k in (
-            "alcoholic",
-            "alcohol",
-            "cocktail",
-            "cocktails",
-            "飲酒",
-            "有酒精",
-            "酒類",
-            "酒精",
-            "with alcohol",
-            "booze",
-            "spirits",
-            "beer",
-            "wine",
-            "whisky",
-            "whiskey",
-            "gin",
-            "vodka",
-            "champagne",
-            "tequila",
-            "rum",
-        )
-    )
-
+    mood = _detect_mood(text)
     mood_picks: list[dict] = []
-    vibe = "something tasty"
+    vibe = "a Polar night"
     hot_for_line: list[dict] = []
 
-    if any(k in text for k in ("shisha", "hookah", "smoke", "雲")):
+    if mood and mood in MOOD_PLAYBOOK:
+        vibe, groups = MOOD_PLAYBOOK[mood]
+        mood_picks = _picks_for_groups(flat, hot, groups, limit=4)
+        allowed = {c for g in groups for c in g}
+        hot_for_line = []
+        for h in hot:
+            item = by_id.get(h["item_id"])
+            if item and item["category_id"] in allowed:
+                hot_for_line.append(item)
+            if len(hot_for_line) >= 3:
+                break
+    elif any(k in text for k in ("shisha", "hookah", "smoke", "雲")):
         vibe = "a proper Polar session"
-        mood_picks = pick(lambda x: x["category_id"] == "shisha", 2) + pick(
-            lambda x: x["category_id"] == "snacks", 2
+        mood_picks = _picks_for_groups(
+            flat, hot, (("shisha",), COCKTAIL_CATS, ("snacks",)), limit=4
         )
-    elif wants_zero:
-        vibe = "zero-proof vibes"
-        mood_picks = pick(lambda x: x["category_id"] in ZERO_PROOF_CATS, 4)
-        hot_for_line = hot_in_cats(ZERO_PROOF_CATS)
-    elif wants_alcohol and any(
-        k in text for k in ("sweet", "fruity", "lychee", "芒果", "甜", "果")
-    ):
-        vibe = "a sweet alcoholic sip"
-        mood_picks = pick(
-            lambda x: is_alcohol(x)
-            and any(
-                w in (x["note"] + x["name"]).lower()
-                for w in ("lychee", "strawberry", "passion", "mango", "pineapple", "berry")
-            ),
-            4,
-        ) or pick(lambda x: x["category_id"] == "celestial", 3)
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
-    elif wants_alcohol and any(
-        k in text for k in ("bitter", "strong", "smoky", "濃", "烈")
-    ):
-        vibe = "something bold with alcohol"
-        mood_picks = pick(
-            lambda x: x["category_id"] in ("whisky", "cognac", "rum", "tequila")
-            or (is_alcohol(x) and "smoky" in (x["note"] + x["name"]).lower()),
-            4,
-        ) or pick(is_alcohol, 3)
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
-    elif wants_alcohol:
-        vibe = "alcoholic drinks"
-        # Prefer signatures + a spirit/beer/wine, never soft drinks
-        mood_picks = pick(lambda x: x["category_id"] == "celestial", 2)
-        mood_picks += hot_in_cats(ALCOHOL_CATS, 2)
-        mood_picks += pick(
-            lambda x: x["category_id"]
-            in (*WINE_CATS, "beer", "champagne", "gin", "vodka"),
-            2,
-        )
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
-    elif any(k in text for k in ("sweet", "fruity", "lychee", "芒果", "甜", "果")):
-        vibe = "something sweet & fruity"
-        mood_picks = pick(
-            lambda x: is_alcohol(x)
-            and any(
-                w in (x["note"] + x["name"]).lower()
-                for w in ("lychee", "strawberry", "passion", "mango", "pineapple", "berry")
-            ),
-            3,
-        )
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
-    elif any(k in text for k in ("celebrate", "party", "開心", "慶祝", "birthday")):
-        vibe = "a celebratory night"
-        mood_picks = pick(lambda x: x["category_id"] in ("celestial", "champagne", "tower"), 3)
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
-    elif any(k in text for k in ("chill", "relax", "tired", "calm", "放鬆", "累")):
-        vibe = "a chill unwind"
-        mood_picks = pick(
-            lambda x: x["category_id"] in ("celestial", *WINE_CATS)
-            or "sooth" in (x["note"] + x["name"]).lower()
-            or "rose" in (x["note"] + x["name"]).lower(),
-            3,
-        )
-        hot_for_line = hot_in_cats(ALCOHOL_CATS | ZERO_PROOF_CATS)
-    elif any(k in text for k in ("date", "romantic", "impress", "約會", "浪漫")):
-        vibe = "a little romance"
-        mood_picks = pick(
-            lambda x: x["category_id"] in ("celestial", "champagne", *WINE_CATS),
-            3,
-        )
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
-    elif any(k in text for k in ("bitter", "strong", "smoky", "濃", "烈")):
-        vibe = "something bold"
-        mood_picks = pick(
-            lambda x: x["category_id"] in ("whisky", "celestial")
-            or "smoky" in (x["note"] + x["name"]).lower(),
-            3,
-        )
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
     elif any(k in text for k in ("hungry", "snack", "food", "eat", "肚餓", "小食")):
         vibe = "snacks first"
         mood_picks = pick(lambda x: x["category_id"] == "snacks", 4)
-        hot_for_line = hot_in_cats({"snacks"})
     elif any(k in text for k in ("hot", "best", "popular", "sell", "熱銷", "人氣", "recommend")):
         vibe = "what people keep ordering"
         hot_ids = {h["item_id"] for h in hot}
         mood_picks = [x for x in flat if x["id"] in hot_ids][:4]
         hot_for_line = [by_id[h["item_id"]] for h in hot if h["item_id"] in by_id][:3]
     else:
-        # default: signatures, not random soft-drink smoke-test bestsellers
-        vibe = "a Polar night"
-        mood_picks = pick(lambda x: x["category_id"] == "celestial", 2)
-        mood_picks += hot_in_cats(ALCOHOL_CATS, 2)
-        hot_for_line = hot_in_cats(ALCOHOL_CATS)
+        # Default → Happy playbook (shisha + cocktail + spirits)
+        vibe, groups = MOOD_PLAYBOOK["happy"]
+        mood_picks = _picks_for_groups(flat, hot, groups, limit=4)
 
-    # If user asked for alcohol, hard-filter soft drinks / snacks / shisha out
-    if wants_alcohol and not wants_zero:
-        mood_picks = [x for x in mood_picks if is_alcohol(x)]
-        if not mood_picks:
-            mood_picks = pick(is_alcohol, 4)
-
-    # dedupe
-    seen = set()
+    seen: set[str] = set()
     suggestions = []
     for x in mood_picks:
         if x["id"] in seen:
@@ -292,7 +290,8 @@ def _local_reply(
         suggestions.append(
             {
                 "item_id": x["id"],
-                "name": x["name"],
+                "name": x["name"]
+                + (f" ({x['unit']})" if x.get("unit") in ("Glass", "Bottle") else ""),
                 "price": x["price"],
                 "why": x["note"] or x["category"],
             }
@@ -301,8 +300,7 @@ def _local_reply(
             break
 
     if not suggestions:
-        fallback = pick(is_alcohol if wants_alcohol else lambda _: True, 3)
-        for x in fallback:
+        for x in pick(lambda _: True, 3):
             suggestions.append(
                 {
                     "item_id": x["id"],
@@ -315,13 +313,13 @@ def _local_reply(
     hot_line = ""
     if hot_for_line:
         names = ", ".join(h["name"] for h in hot_for_line[:3])
-        hot_line = f" Popular with alcohol tonight: {names}." if wants_alcohol else f" Tonight’s crowd favourites: {names}."
+        hot_line = f" Tonight’s crowd favourites: {names}."
 
     promo_line = f" Promo window now: {promo.get('label', 'regular')}."
     reply = (
         f"Hey {name} — I’m your Polar host. For {vibe}, I’d go with these from our menu."
-        f"{hot_line}{promo_line} Tap Add if one calls to you, or tell me your mood "
-        f"(alcoholic / chill / celebrate / sweet / strong / shisha / no alcohol)."
+        f"{hot_line}{promo_line} Tap Add if one calls to you, or pick a mood chip "
+        f"(Happy / Sad / Calm / Celebration / Non alcoholic)."
     )
     return {"reply": reply, "suggestions": suggestions, "source": "polar-host"}
 
@@ -350,13 +348,17 @@ def _openai_reply(
     hot_txt = ", ".join(f"{h['name']}({h['qty']})" for h in hot) or "none yet"
     system = (
         "You are Polar Lounge's playful in-house host AI in Causeway Bay. "
-        "Help guests choose drinks/food from ONLY the menu below. "
+        "Help guests choose from ONLY the menu below. "
         "Be warm, short (3-6 sentences), bilingual OK (EN + casual Cantonese words). "
-        "Use bestsellers when relevant. Never invent items. "
-        "CRITICAL: If the guest asks for alcoholic / alcohol / cocktails / 飲酒, "
-        "ONLY suggest items from alcohol categories (Celestial, beer, wine, spirits, "
-        "champagne, etc). NEVER suggest Coke, soft drinks, teas, snacks, or non-alcohol. "
-        "If they ask for no alcohol, only suggest non-alcohol / teas. "
+        "Never invent items.\n"
+        "MOOD PLAYBOOK (follow category order; include ~1 item from each group when possible):\n"
+        "- Happy → Shisha, Cocktail (Celestial), Spirits\n"
+        "- Sad → Shisha, Spirits, Cocktail (Celestial)\n"
+        "- Calm → Shisha, Cocktail (Celestial), Beer\n"
+        "- Celebration → Shisha, Champagne, Tower\n"
+        "- Non alcoholic → Shisha, Tea (Special Teas), Soft drinks (Non Alcohol)\n"
+        "Spirits = Vodka/Gin/Whisky/Liqueur/Tequila/Rum/Cognac. Cocktail = Celestial Signatures.\n"
+        "If mood is Happy/Sad/Calm/Celebration, DO include Shisha — do not replace it with soft drinks.\n"
         "When recommending, end with a JSON block on its own line like:\n"
         'SUGGESTIONS: [{"item_id":"...","name":"...","price":123,"why":"..."}]\n'
         "Max 4 suggestions. item_id must match menu ids.\n\n"
@@ -394,7 +396,13 @@ def _openai_reply(
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         content = data["choices"][0]["message"]["content"]
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, TimeoutError, json.JSONDecodeError):
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        KeyError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ):
         return None
 
     suggestions: list[dict] = []
@@ -421,8 +429,16 @@ def _openai_reply(
         except (json.JSONDecodeError, TypeError, AttributeError):
             suggestions = []
 
-    if not suggestions:
-        # fall back to local picks based on same message
+    # Prefer local playbook suggestions when mood chips are used (deterministic).
+    mood = _detect_mood(message)
+    if mood:
+        local = _local_reply(
+            message, catalog=catalog, hot=hot, guest_name=guest_name, promo=promo
+        )
+        suggestions = local["suggestions"]
+        if not reply.strip():
+            reply = local["reply"]
+    elif not suggestions:
         local = _local_reply(
             message, catalog=catalog, hot=hot, guest_name=guest_name, promo=promo
         )
@@ -442,6 +458,15 @@ def ask_ai(
     hot = bestsellers(conn)
     promo = current_promo()
     history = history or []
+    # Mood chips use the deterministic playbook (no OpenAI drift).
+    if _detect_mood(message):
+        return _local_reply(
+            message,
+            catalog=catalog,
+            hot=hot,
+            guest_name=guest_name,
+            promo=promo,
+        )
     ai = _openai_reply(
         message,
         history,
