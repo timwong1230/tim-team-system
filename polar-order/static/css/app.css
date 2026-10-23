@@ -256,31 +256,63 @@ button.pill-action:active {
   color: var(--text);
 }
 .promo-combo strong { color: var(--gold-strong); }
+.cat-hub {
+  margin: 4px 0 18px;
+}
+.cat-subhub {
+  margin-top: 8px;
+}
+.cat-hub-label {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .cats {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  margin-bottom: 14px;
-  scrollbar-width: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 8px;
 }
-.cats::-webkit-scrollbar { display: none; }
+.cats .cat-btn:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 .cat-btn {
-  flex: 0 0 auto;
   border: 1px solid var(--line);
-  background: var(--bg-elev);
+  background: linear-gradient(160deg, rgba(212,192,140,0.12), var(--bg-elev));
   color: var(--text);
-  border-radius: 999px;
-  padding: 8px 14px;
+  border-radius: 14px;
+  padding: 18px 14px;
   cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  min-height: 64px;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
+.cat-btn:active { transform: scale(0.98); }
 .cat-btn.active {
   background: var(--gold);
   color: #14110a;
   border-color: transparent;
-  font-weight: 650;
+  font-weight: 700;
 }
 .section { margin-bottom: 22px; }
+.section-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.section-head .cat-back {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+.section-head h2,
 .section h2 {
   margin: 0 0 10px;
   font-size: 1rem;
@@ -288,6 +320,7 @@ button.pill-action:active {
   text-transform: uppercase;
   color: var(--gold);
 }
+.section-head h2 { margin: 0; }
 .serve-heading {
   margin: 16px 0 8px;
   padding: 6px 0 4px;

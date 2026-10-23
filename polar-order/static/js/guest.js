@@ -336,12 +336,67 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  const catHub = document.getElementById("catHub");
+  const subHubs = Array.from(document.querySelectorAll(".cat-subhub"));
+  const productSections = Array.from(document.querySelectorAll(".section-products"));
+
+  function hideAllNavPanels() {
+    if (catHub) catHub.hidden = true;
+    subHubs.forEach((hub) => {
+      hub.hidden = true;
+    });
+    productSections.forEach((sec) => {
+      sec.hidden = true;
+    });
+    document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
+  }
+
+  function showRootHub() {
+    hideAllNavPanels();
+    if (catHub) catHub.hidden = false;
+    catHub?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openSubHub(groupId) {
+    const hub = document.getElementById(`sub-${groupId}`);
+    if (!hub) return;
+    hideAllNavPanels();
+    hub.hidden = false;
+    document.querySelectorAll(`.cat-btn[data-group="${groupId}"]`).forEach((b) => {
+      b.classList.add("active");
+    });
+    hub.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openLeaf(targetId) {
+    const section = document.getElementById(targetId);
+    if (!section) return;
+    hideAllNavPanels();
+    section.hidden = false;
+    document.querySelectorAll(`.cat-btn[data-target="${targetId}"]`).forEach((b) => {
+      b.classList.add("active");
+    });
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      const el = document.getElementById(btn.dataset.target);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (btn.dataset.navKind === "group" && btn.dataset.group) {
+        openSubHub(btn.dataset.group);
+        return;
+      }
+      if (btn.dataset.target) openLeaf(btn.dataset.target);
+    });
+  });
+
+  document.querySelectorAll("[data-nav-back]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.dataset.navBack;
+      if (mode === "sub" && btn.dataset.parent) {
+        openSubHub(btn.dataset.parent);
+        return;
+      }
+      showRootHub();
     });
   });
 
