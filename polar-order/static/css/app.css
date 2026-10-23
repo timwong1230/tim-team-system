@@ -16,6 +16,11 @@
 }
 
 * { box-sizing: border-box; }
+/* iOS Safari: any later display: rule must not un-hide product panels */
+[hidden],
+.is-nav-hidden {
+  display: none !important;
+}
 html, body {
   margin: 0;
   padding: 0;
@@ -43,6 +48,8 @@ input, select, textarea, button {
 button, .cat-btn, .add-btn {
   -webkit-tap-highlight-color: rgba(212, 192, 140, 0.25);
   touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .topbar {
   display: flex;
@@ -216,17 +223,41 @@ button.pill-action:active {
   padding: 16px;
   margin-bottom: 18px;
 }
+.promo-details {
+  margin-top: 4px;
+}
+.promo-details > summary {
+  list-style: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(212, 192, 140, 0.25);
+}
+.promo-details > summary::-webkit-details-marker { display: none; }
 .promo-now {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.promo-details[open] .promo-now {
   margin-bottom: 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(212,192,140,0.18);
 }
 .promo-now strong {
   display: block;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--text);
   line-height: 1.3;
+}
+.promo-more {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--gold);
+  letter-spacing: 0.04em;
 }
 .promo-block {
   margin: 0 0 12px;
@@ -279,6 +310,10 @@ button.pill-action:active {
   grid-column: 1 / -1;
 }
 .cat-btn {
+  position: relative;
+  z-index: 1;
+  -webkit-appearance: none;
+  appearance: none;
   border: 1px solid var(--line);
   background: linear-gradient(160deg, rgba(212,192,140,0.12), var(--bg-elev));
   color: var(--text);
@@ -290,6 +325,7 @@ button.pill-action:active {
   letter-spacing: 0.04em;
   text-align: left;
   min-height: 64px;
+  width: 100%;
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 .cat-btn:active { transform: scale(0.98); }

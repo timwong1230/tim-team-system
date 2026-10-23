@@ -46,6 +46,12 @@ def test_guest_nested_hub_and_staff_transfer():
         html = page.text
         assert 'id="catHub"' in html
         assert "Choose a category" in html
+        # Cache-bust static assets for iPhone Safari
+        assert f"app.css?v={main.ASSET_VERSION}" in html
+        assert f"guest.js?v={main.ASSET_VERSION}" in html
+        assert "promo-details" in html
+        # Hub appears before promo so phone users see categories first
+        assert html.index("catHub") < html.index("promo-details")
         # Top-level only — not every DB category at once
         assert "Celestial Signature Cocktails" in html
         assert "Spirit" in html
@@ -65,6 +71,9 @@ def test_guest_nested_hub_and_staff_transfer():
         # Flat old cat buttons for every DB category should not be the root hub
         assert html.count('data-nav-kind="group"') >= 4
         assert html.count('data-nav-kind="products"') >= 9
+
+        headers = client.get("/t/TABLE1").headers
+        assert "no-store" in (headers.get("cache-control") or "").lower()
 
         conn = db.connect()
         tree = guest_nav.build_guest_nav(main._menu_payload(conn))

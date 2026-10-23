@@ -71,6 +71,9 @@ HK = ZoneInfo("Asia/Hong_Kong")
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
+# Bump when shipping guest UI/CSS/JS so iPhone Safari cannot keep a stale bundle.
+ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261023c").strip() or "20261023c"
+templates.env.globals["asset_v"] = ASSET_VERSION
 _subscribers: list[asyncio.Queue] = []
 
 
@@ -87,6 +90,23 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Polar Lounge Order", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _html_no_cache(request: Request, call_next):
+    """Stop Safari / QR WebViews from serving a stale guest menu HTML shell."""
+    response = await call_next(request)
+    content_type = response.headers.get("content-type", "")
+    path = request.url.path or ""
+    if "text/html" in content_type or path.startswith("/t/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    elif path.startswith("/static/"):
+        # Versioned URLs (?v=) are the real bust; keep CDN revalidation honest.
+        response.headers.setdefault("Cache-Control", "public, max-age=300, must-revalidate")
+    return response
+
+
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
 

@@ -340,65 +340,95 @@ document.addEventListener("DOMContentLoaded", () => {
   const subHubs = Array.from(document.querySelectorAll(".cat-subhub"));
   const productSections = Array.from(document.querySelectorAll(".section-products"));
 
+  function setNavHidden(el, hide) {
+    if (!el) return;
+    el.hidden = hide;
+    el.classList.toggle("is-nav-hidden", hide);
+    // iOS Safari: force layout so taps hit the newly shown panel
+    el.style.display = hide ? "none" : "";
+  }
+
   function hideAllNavPanels() {
-    if (catHub) catHub.hidden = true;
-    subHubs.forEach((hub) => {
-      hub.hidden = true;
-    });
-    productSections.forEach((sec) => {
-      sec.hidden = true;
-    });
+    setNavHidden(catHub, true);
+    subHubs.forEach((hub) => setNavHidden(hub, true));
+    productSections.forEach((sec) => setNavHidden(sec, true));
     document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
   }
 
   function showRootHub() {
     hideAllNavPanels();
-    if (catHub) catHub.hidden = false;
-    catHub?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setNavHidden(catHub, false);
+    try {
+      catHub?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (_) {
+      catHub?.scrollIntoView(true);
+    }
   }
 
   function openSubHub(groupId) {
     const hub = document.getElementById(`sub-${groupId}`);
     if (!hub) return;
     hideAllNavPanels();
-    hub.hidden = false;
+    setNavHidden(hub, false);
     document.querySelectorAll(`.cat-btn[data-group="${groupId}"]`).forEach((b) => {
       b.classList.add("active");
     });
-    hub.scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+      hub.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (_) {
+      hub.scrollIntoView(true);
+    }
   }
 
   function openLeaf(targetId) {
     const section = document.getElementById(targetId);
     if (!section) return;
     hideAllNavPanels();
-    section.hidden = false;
+    setNavHidden(section, false);
     document.querySelectorAll(`.cat-btn[data-target="${targetId}"]`).forEach((b) => {
       b.classList.add("active");
     });
-    section.scrollIntoView({ behavior: "smooth", block: "start" });
+    try {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (_) {
+      section.scrollIntoView(true);
+    }
   }
 
-  document.querySelectorAll(".cat-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.navKind === "group" && btn.dataset.group) {
-        openSubHub(btn.dataset.group);
+  // Event delegation — more reliable on iOS than per-button listeners
+  document.addEventListener(
+    "click",
+    (e) => {
+      const back = e.target.closest("[data-nav-back]");
+      if (back) {
+        e.preventDefault();
+        const mode = back.getAttribute("data-nav-back");
+        const parent = back.getAttribute("data-parent");
+        if (mode === "sub" && parent) {
+          openSubHub(parent);
+          return;
+        }
+        showRootHub();
         return;
       }
-      if (btn.dataset.target) openLeaf(btn.dataset.target);
-    });
-  });
+      const btn = e.target.closest(".cat-btn");
+      if (!btn) return;
+      e.preventDefault();
+      const kind = btn.getAttribute("data-nav-kind") || "";
+      const group = btn.getAttribute("data-group");
+      const target = btn.getAttribute("data-target");
+      if (kind === "group" && group) {
+        openSubHub(group);
+        return;
+      }
+      if (target) openLeaf(target);
+    },
+    false
+  );
 
-  document.querySelectorAll("[data-nav-back]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const mode = btn.dataset.navBack;
-      if (mode === "sub" && btn.dataset.parent) {
-        openSubHub(btn.dataset.parent);
-        return;
-      }
-      showRootHub();
-    });
-  });
+  // Ensure initial state even if HTML hidden attr was stripped by a quirky WebView
+  hideAllNavPanels();
+  setNavHidden(catHub, false);
 
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
