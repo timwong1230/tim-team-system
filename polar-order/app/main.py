@@ -35,6 +35,7 @@ from .db import (
     publish_event,
     reset_operational_data,
     start_session,
+    transfer_open_session,
     utc_now,
 )
 from .ops_constants import CLAIM_PRESETS, PAYMENT_METHODS
@@ -124,6 +125,11 @@ class WelcomeIn(BaseModel):
 class StaffPartyIn(BaseModel):
     pin: str
     party_size: int = Field(ge=1, le=30)
+
+
+class StaffTransferIn(BaseModel):
+    pin: str
+    target_table: str = Field(min_length=1, max_length=40)
 
 
 class OrderIn(BaseModel):
@@ -920,6 +926,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
     lines: list[dict] = []
     bill = None
     is_boss = (table["zone"] or "") == "boss"
+    transfer_targets: list[sqlite3.Row] = []
     if session:
         lines = _session_lines(conn, session["id"])
         if is_boss:
@@ -942,6 +949,12 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
                 meta["snack_charge_per_head"],
                 discount_percent=discount,
             )
+            for t in list_guest_tables(conn):
+                if t["id"] == table["id"]:
+                    continue
+                if get_open_session(conn, t["id"]):
+                    continue
+                transfer_targets.append(t)
     conn.close()
     return templates.TemplateResponse(
         "staff_bill.html",
@@ -957,6 +970,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "discount": discount or 0,
             "is_boss": is_boss,
             "snack_per_head": meta["snack_charge_per_head"],
+            "transfer_targets": transfer_targets,
         },
     )
 
@@ -1000,6 +1014,56 @@ def staff_update_party(table_code: str, body: StaffPartyIn):
         "party_size": session["party_size"],
         "guest_name": session["guest_name"],
         "bill": bill,
+    }
+
+
+@app.post("/api/staff/bill/{table_code}/transfer")
+async def staff_transfer_table(table_code: str, body: StaffTransferIn):
+    """Move an open guest session (and its orders) to another empty guest table."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    source = get_table_by_code(conn, table_code)
+    if not source:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    zone = (source["zone"] or "").strip().lower()
+    if zone in ("boss", "demo"):
+        conn.close()
+        raise HTTPException(400, "Cannot transfer boss or demo seats")
+    target = get_table_by_code(conn, body.target_table.strip().upper())
+    if not target:
+        conn.close()
+        raise HTTPException(404, "Target table not found")
+    target_zone = (target["zone"] or "").strip().lower()
+    if target_zone in ("boss", "demo"):
+        conn.close()
+        raise HTTPException(400, "Target must be a guest table")
+    session = get_open_session(conn, source["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session on this table")
+    try:
+        moved = transfer_open_session(conn, source["id"], target["id"])
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    payload = {
+        "from_table": source["code"],
+        "to_table": target["code"],
+        "session_id": moved["id"],
+        "guest_name": moved["guest_name"],
+    }
+    publish_event(conn, "session.transfer", payload)
+    conn.close()
+    await _broadcast({"type": "session.transfer", "data": payload})
+    return {
+        "ok": True,
+        "from_table": source["code"],
+        "to_table": target["code"],
+        "to_label": target["label"],
+        "session_id": moved["id"],
+        "redirect": f"/staff/bill/{target['code']}?pin={body.pin}",
     }
 
 

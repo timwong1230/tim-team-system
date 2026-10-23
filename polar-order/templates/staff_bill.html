@@ -21,6 +21,25 @@
   {% endif %}
 
   {% if bill %}
+  {% if not is_boss and transfer_targets %}
+  <div class="card transfer-box" id="transferBox">
+    <h3 style="margin-top:0">Move to another table</h3>
+    <p class="muted" style="margin-top:0">
+      Transfer this open bill and all orders (e.g. guests moved seats). Target must be empty.
+    </p>
+    <label class="muted" for="transferTarget">Move to</label>
+    <div class="party-row">
+      <select class="field" id="transferTarget">
+        <option value="">Pick a table…</option>
+        {% for t in transfer_targets %}
+        <option value="{{ t.code }}">{{ t.label }}</option>
+        {% endfor %}
+      </select>
+      <button class="ghost" type="button" id="transferBtn">Transfer</button>
+    </div>
+  </div>
+  {% endif %}
+
   {% if not is_boss %}
   <div class="card party-confirm" id="partyConfirm">
     <h3 style="margin-top:0">Confirm party size</h3>
@@ -198,6 +217,31 @@
     } else if (hero) {
       hero.textContent = hero.textContent.replace(/party\s+\d+/, `party ${party_size}`);
     }
+  });
+
+  document.getElementById('transferBtn')?.addEventListener('click', async () => {
+    const sel = document.getElementById('transferTarget');
+    const target = (sel?.value || '').trim();
+    if (!target) {
+      alert('Pick a target table');
+      return;
+    }
+    const label = sel.selectedOptions[0]?.textContent || target;
+    if (!confirm(`Move all orders from {{ table.label }} → ${label}?`)) return;
+    const btn = document.getElementById('transferBtn');
+    btn.disabled = true;
+    const res = await fetch('/api/staff/bill/{{ table.code }}/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: {{ pin|tojson }}, target_table: target }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.detail || 'Transfer failed');
+      btn.disabled = false;
+      return;
+    }
+    location.href = data.redirect || `/staff/bill/${target}?pin={{ pin }}`;
   });
 
   document.getElementById('staffNomAdd')?.addEventListener('click', async () => {

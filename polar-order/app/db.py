@@ -322,6 +322,34 @@ def get_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row | N
     ).fetchone()
 
 
+def transfer_open_session(
+    conn: sqlite3.Connection,
+    from_table_id: int,
+    to_table_id: int,
+) -> sqlite3.Row:
+    """Move an open session and all its orders to another guest table."""
+    if from_table_id == to_table_id:
+        raise ValueError("Source and target table are the same")
+    source = get_open_session(conn, from_table_id)
+    if not source:
+        raise ValueError("No open session on source table")
+    if get_open_session(conn, to_table_id):
+        raise ValueError("Target table already has an open session")
+    conn.execute(
+        "UPDATE sessions SET table_id = ? WHERE id = ?",
+        (to_table_id, source["id"]),
+    )
+    conn.execute(
+        "UPDATE orders SET table_id = ? WHERE session_id = ?",
+        (to_table_id, source["id"]),
+    )
+    conn.commit()
+    moved = get_open_session(conn, to_table_id)
+    if not moved:
+        raise RuntimeError("Transfer failed")
+    return moved
+
+
 def start_session(
     conn: sqlite3.Connection,
     table_id: int,

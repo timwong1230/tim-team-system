@@ -336,13 +336,39 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  const catHub = document.getElementById("catHub");
+  const productSections = Array.from(document.querySelectorAll(".section-products"));
+
+  function showCategoryHub() {
+    productSections.forEach((sec) => {
+      sec.hidden = true;
+    });
+    if (catHub) catHub.hidden = false;
+    document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
+    catHub?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openCategory(targetId) {
+    const section = document.getElementById(targetId);
+    if (!section) return;
+    if (catHub) catHub.hidden = true;
+    productSections.forEach((sec) => {
+      sec.hidden = sec !== section;
+    });
+    document.querySelectorAll(".cat-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.target === targetId);
+    });
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      const el = document.getElementById(btn.dataset.target);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      openCategory(btn.dataset.target);
     });
+  });
+
+  document.querySelectorAll("[data-back]").forEach((btn) => {
+    btn.addEventListener("click", showCategoryHub);
   });
 
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
