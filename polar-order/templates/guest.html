@@ -72,21 +72,53 @@
   <div class="cat-hub" id="catHub">
     <p class="cat-hub-label">Choose a category</p>
     <div class="cats" id="cats">
-      {% for cat in menu %}
-      <button type="button" class="cat-btn" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
+      {% for node in guest_nav.roots %}
+      <button
+        type="button"
+        class="cat-btn"
+        data-nav-kind="{{ node.kind }}"
+        {% if node.kind == 'group' %}data-group="{{ node.id }}"{% else %}data-target="{{ node.target }}"{% endif %}
+      >{{ node.name }}</button>
       {% endfor %}
     </div>
   </div>
 
-  {% for cat in menu %}
-  <section class="section section-products" id="cat-{{ cat.id }}" hidden>
+  {% for node in guest_nav.roots if node.kind == 'group' %}
+  <div class="cat-hub cat-subhub" id="sub-{{ node.id }}" hidden>
     <div class="section-head">
-      <button type="button" class="ghost cat-back" data-back>← Categories</button>
-      <h2>{{ cat.name }}</h2>
+      <button type="button" class="ghost cat-back" data-nav-back="root">← Categories</button>
+      <h2>{{ node.name }}</h2>
+    </div>
+    <p class="cat-hub-label">Choose a type</p>
+    <div class="cats">
+      {% for child in node.children %}
+      <button type="button" class="cat-btn" data-nav-kind="products" data-target="{{ child.target }}" data-parent="{{ node.id }}">
+        {{ child.name }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {% for leaf in guest_nav.leaves %}
+  <section
+    class="section section-products"
+    id="leaf-{{ leaf.id }}"
+    data-parent="{{ leaf.parent_id or '' }}"
+    hidden
+  >
+    <div class="section-head">
+      <button
+        type="button"
+        class="ghost cat-back"
+        data-nav-back="{% if leaf.parent_id %}sub{% else %}root{% endif %}"
+        {% if leaf.parent_id %}data-parent="{{ leaf.parent_id }}"{% endif %}
+      >{% if leaf.parent_name %}← {{ leaf.parent_name }}{% else %}← Categories{% endif %}</button>
+      <h2>{{ leaf.name }}</h2>
     </div>
     {% set ns = namespace(last_unit=None) %}
-    {% for item in cat['items'] %}
-    {% if cat.split_serve and item['unit'] in ('Glass', 'Bottle') and item['unit'] != ns.last_unit %}
+    {% for item in leaf['items'] %}
+    {% if leaf.split_serve and item['unit'] in ('Glass', 'Bottle') and item['unit'] != ns.last_unit %}
     <h3 class="serve-heading">{{ item['unit'] }}</h3>
     {% set ns.last_unit = item['unit'] %}
     {% endif %}
@@ -139,6 +171,8 @@
         </div>
       </div>
     </article>
+    {% else %}
+    <p class="muted">No items in this category right now.</p>
     {% endfor %}
   </section>
   {% endfor %}

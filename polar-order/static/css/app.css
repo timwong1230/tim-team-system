@@ -259,6 +259,9 @@ button.pill-action:active {
 .cat-hub {
   margin: 4px 0 18px;
 }
+.cat-subhub {
+  margin-top: 8px;
+}
 .cat-hub-label {
   margin: 0 0 10px;
   font-size: 0.85rem;
@@ -271,6 +274,9 @@ button.pill-action:active {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-bottom: 8px;
+}
+.cats .cat-btn:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 .cat-btn {
   border: 1px solid var(--line);

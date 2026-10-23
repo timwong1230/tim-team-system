@@ -56,6 +56,7 @@ from .reports import (
     monthly_sales_report,
 )
 from .ai_host import ask_ai
+from .guest_nav import build_guest_nav
 from .paths import DATA_DIR, ROOT
 from .seats import BOSSES, boss_by_id, boss_seat_code
 from .spirits import (
@@ -422,6 +423,7 @@ def guest_table(request: Request, table_code: str):
     session = get_open_session(conn, table["id"])
     ready = bool(session and session["guest_name"])
     menu = _menu_payload(conn) if ready else []
+    guest_nav = build_guest_nav(menu) if ready else {"roots": [], "leaves": []}
     single_mix_spirits = list_spirit_glass_options(conn) if ready else []
     promo = current_promo()
     other_seats = []
@@ -438,6 +440,7 @@ def guest_table(request: Request, table_code: str):
             "table": table,
             "session": session,
             "menu": menu,
+            "guest_nav": guest_nav,
             "promo": promo,
             "ready": ready,
             "other_seats": other_seats,
