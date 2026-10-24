@@ -175,7 +175,7 @@
         },
         {
           "id": "sprite",
-          "name": "Sprite",
+          "name": "7up",
           "price": 59,
           "unit": "Glass",
           "image": "/static/images/menu/sprite.jpg"
@@ -189,7 +189,7 @@
         },
         {
           "id": "pellegrino",
-          "name": "S. Pellegrino Sparkling Water",
+          "name": "Chang Soda Water",
           "price": 98,
           "unit": "Bottle",
           "image": "/static/images/menu/pellegrino.jpg"
@@ -428,7 +428,7 @@
         },
         {
           "id": "jessy-vodka-g",
-          "name": "Jessy's Barrel",
+          "name": "Krupnik",
           "price": 89,
           "unit": "Glass",
           "image": "/static/images/menu/jessy-vodka.jpg"
@@ -449,7 +449,7 @@
         },
         {
           "id": "jessy-vodka-b",
-          "name": "Jessy's Barrel",
+          "name": "Krupnik",
           "price": 1099,
           "unit": "Bottle",
           "image": "/static/images/menu/jessy-vodka.jpg"
@@ -748,7 +748,7 @@
         },
         {
           "id": "cuervo-g",
-          "name": "Jose Cuervo Silver",
+          "name": "El Tio Juan Blanco",
           "price": 89,
           "unit": "Glass",
           "image": "/static/images/menu/cuervo.jpg"
@@ -769,7 +769,7 @@
         },
         {
           "id": "cuervo-b",
-          "name": "Jose Cuervo Silver",
+          "name": "El Tio Juan Blanco",
           "price": 1199,
           "unit": "Bottle",
           "image": "/static/images/menu/cuervo.jpg"
