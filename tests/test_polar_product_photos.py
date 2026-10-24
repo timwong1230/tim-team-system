@@ -32,6 +32,7 @@ def test_key_product_photos_and_renames():
     menu_dir = _POLAR / "static" / "images" / "menu"
     for name in (
         "shisha-regular.jpg",
+        "aj.jpg",
         "corona.jpg",
         "grey-goose.jpg",
         "patron.jpg",
