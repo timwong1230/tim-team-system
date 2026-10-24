@@ -72,7 +72,7 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
 # Bump when shipping guest UI/CSS/JS so iPhone Safari cannot keep a stale bundle.
-ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261023c").strip() or "20261023c"
+ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261024a").strip() or "20261024a"
 templates.env.globals["asset_v"] = ASSET_VERSION
 _subscribers: list[asyncio.Queue] = []
 
@@ -228,6 +228,10 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             serve = spirit_serve_for(cat["id"], item["unit"])
             if item["id"] == SINGLE_MIX_ITEM_ID:
                 serve = single_mix_serve(list_spirit_glass_options(conn))
+            image = item["image"] or ""
+            if image and "v=" not in image:
+                sep = "&" if "?" in image else "?"
+                image = f"{image}{sep}v={ASSET_VERSION}"
             row = {
                 "id": item["id"],
                 "name": item["name"],
@@ -237,7 +241,7 @@ def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "note": item["note"],
                 "allow_note": bool(item["allow_note"]),
                 "promo_tag": tag,
-                "image": item["image"],
+                "image": image or None,
                 "promo_type": cat["promo"],
                 "combo_price": None,
                 "serve": serve,
