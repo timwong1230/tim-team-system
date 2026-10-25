@@ -6449,8 +6449,15 @@ def page_prospect_list():
                 out.append({"name": name, "premium": prem, "rate": rate_val})
         return out
 
-    def _clear_add_sales_form() -> None:
-        """Reset add-form fields after submit so next prospect starts blank."""
+    def _request_clear_add_sales_form() -> None:
+        """Flag a reset — must apply BEFORE widgets are created on the next run."""
+        st.session_state["pl_as_clear"] = True
+        st.session_state["pl_as_keep_open"] = True  # keep expander open for next entry
+
+    def _apply_clear_add_sales_form() -> None:
+        """Wipe add-form widget keys before they are instantiated."""
+        if not st.session_state.pop("pl_as_clear", False):
+            return
         for p in PRODUCT_CATALOG:
             st.session_state.pop(f"pl_as_{p['key']}", None)
         for i in range(3):
@@ -6459,7 +6466,6 @@ def page_prospect_list():
             st.session_state.pop(f"pl_as_orate_{i}", None)
         st.session_state.pop("pl_as_name", None)
         st.session_state["pl_as_ff"] = pr.factfind_template()
-        st.session_state["pl_as_keep_open"] = True  # keep expander open for next entry
 
     with tab_sales:
         sales = all_rows[all_rows["list_type"] == pr.LIST_SALES] if not all_rows.empty else all_rows
@@ -6489,6 +6495,8 @@ def page_prospect_list():
                 st.text(f"{p['group']} · {p['label']}: {p['rate']*100:g}%{mark}")
 
         if can_edit:
+            # Clear must run before any pl_as_* widgets are created
+            _apply_clear_add_sales_form()
             keep_open = bool(st.session_state.pop("pl_as_keep_open", False))
             with st.expander("＋ 新增準客戶（簽單）", expanded=keep_open):
                 aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
@@ -6540,7 +6548,7 @@ def page_prospect_list():
                                 f"${calc_fyc(premiums, others=others, ytd_fyc=ytd_fyc):,.2f}",
                                 icon="✅",
                             )
-                            _clear_add_sales_form()
+                            _request_clear_add_sales_form()
                             st.rerun()
                     except Exception as e:
                         st.error(str(e))
