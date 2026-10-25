@@ -152,6 +152,25 @@ def init_db() -> None:
             payload TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS bookings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guest_name TEXT NOT NULL,
+            party_size INTEGER NOT NULL DEFAULT 2,
+            booking_date TEXT NOT NULL,
+            booking_time TEXT NOT NULL,
+            note TEXT,
+            status TEXT NOT NULL DEFAULT 'confirmed',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.commit()
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_bookings_date
+        ON bookings (booking_date, booking_time)
         """
     )
     conn.commit()
@@ -460,8 +479,172 @@ def delete_claim(conn: sqlite3.Connection, claim_id: int) -> bool:
     return cur.rowcount > 0
 
 
+def list_bookings_for_month(
+    conn: sqlite3.Connection,
+    year: int,
+    month: int,
+    *,
+    include_cancelled: bool = False,
+) -> list[sqlite3.Row]:
+    prefix = f"{year:04d}-{month:02d}"
+    if include_cancelled:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM bookings
+                WHERE booking_date LIKE ?
+                ORDER BY booking_date ASC, booking_time ASC, id ASC
+                """,
+                (f"{prefix}%",),
+            ).fetchall()
+        )
+    return list(
+        conn.execute(
+            """
+            SELECT * FROM bookings
+            WHERE booking_date LIKE ?
+              AND status != 'cancelled'
+            ORDER BY booking_date ASC, booking_time ASC, id ASC
+            """,
+            (f"{prefix}%",),
+        ).fetchall()
+    )
+
+
+def list_bookings_for_date(
+    conn: sqlite3.Connection,
+    booking_date: str,
+    *,
+    include_cancelled: bool = False,
+) -> list[sqlite3.Row]:
+    if include_cancelled:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM bookings
+                WHERE booking_date = ?
+                ORDER BY booking_time ASC, id ASC
+                """,
+                (booking_date,),
+            ).fetchall()
+        )
+    return list(
+        conn.execute(
+            """
+            SELECT * FROM bookings
+            WHERE booking_date = ?
+              AND status != 'cancelled'
+            ORDER BY booking_time ASC, id ASC
+            """,
+            (booking_date,),
+        ).fetchall()
+    )
+
+
+def get_booking(conn: sqlite3.Connection, booking_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+
+
+def create_booking(
+    conn: sqlite3.Connection,
+    *,
+    guest_name: str,
+    party_size: int,
+    booking_date: str,
+    booking_time: str,
+    note: str | None = None,
+) -> sqlite3.Row:
+    name = (guest_name or "").strip()
+    if not name:
+        raise ValueError("Guest name required")
+    size = max(1, min(50, int(party_size or 1)))
+    now = utc_now()
+    cur = conn.execute(
+        """
+        INSERT INTO bookings (
+            guest_name, party_size, booking_date, booking_time, note,
+            status, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)
+        """,
+        (name, size, booking_date, booking_time, (note or "").strip() or None, now, now),
+    )
+    conn.commit()
+    row = get_booking(conn, int(cur.lastrowid))
+    if not row:
+        raise RuntimeError("Failed to create booking")
+    return row
+
+
+def update_booking(
+    conn: sqlite3.Connection,
+    booking_id: int,
+    *,
+    guest_name: str,
+    party_size: int,
+    booking_date: str,
+    booking_time: str,
+    note: str | None = None,
+) -> sqlite3.Row:
+    existing = get_booking(conn, booking_id)
+    if not existing:
+        raise ValueError("Booking not found")
+    name = (guest_name or "").strip()
+    if not name:
+        raise ValueError("Guest name required")
+    size = max(1, min(50, int(party_size or 1)))
+    conn.execute(
+        """
+        UPDATE bookings SET
+            guest_name = ?,
+            party_size = ?,
+            booking_date = ?,
+            booking_time = ?,
+            note = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            name,
+            size,
+            booking_date,
+            booking_time,
+            (note or "").strip() or None,
+            utc_now(),
+            booking_id,
+        ),
+    )
+    conn.commit()
+    row = get_booking(conn, booking_id)
+    if not row:
+        raise RuntimeError("Failed to update booking")
+    return row
+
+
+def set_booking_status(
+    conn: sqlite3.Connection,
+    booking_id: int,
+    status: str,
+) -> sqlite3.Row:
+    allowed = {"confirmed", "cancelled", "seated", "no_show"}
+    if status not in allowed:
+        raise ValueError("Invalid status")
+    existing = get_booking(conn, booking_id)
+    if not existing:
+        raise ValueError("Booking not found")
+    conn.execute(
+        "UPDATE bookings SET status = ?, updated_at = ? WHERE id = ?",
+        (status, utc_now(), booking_id),
+    )
+    conn.commit()
+    row = get_booking(conn, booking_id)
+    if not row:
+        raise RuntimeError("Failed to update booking status")
+    return row
+
+
 def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
-    """Wipe orders/sessions/events/claims/receipts. Keeps seats + menu intact."""
+    """Wipe orders/sessions/events/claims/receipts. Keeps seats + menu + bookings."""
     from .paths import RECEIPT_DIR
 
     counts = {
