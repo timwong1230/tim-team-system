@@ -296,7 +296,8 @@
     const res = await fetch(e.target.action, { method: 'POST', body: fd });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.receipt_url) {
-      window.location.href = data.receipt_url;
+      window.open(data.receipt_url, '_blank', 'noopener,noreferrer');
+      location.href = '/staff/tables?pin={{ pin }}';
     } else if (res.ok) {
       location.href = '/staff/tables?pin={{ pin }}';
     } else {
