@@ -119,6 +119,9 @@ def _normalize_df(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     if expected_cols:
         ordered = expected_cols + [c for c in df.columns if c not in expected_cols]
         df = df[ordered]
+    if "id" in df.columns and not df.empty:
+        df = df.copy()
+        df["id"] = df["id"].map(cache_store.normalize_id)
     return df
 
 
@@ -289,9 +292,41 @@ def _with_sheet_retry(fn, retries: int = MAX_RETRIES):
         raise last
 
 
+def _find_sheet_row_by_id(ws, row_id) -> int | None:
+    """1-based sheet row for ``id`` column only — never match quarter/year/etc."""
+    target = cache_store.normalize_id(row_id)
+    if not target:
+        return None
+    headers = list(ws.row_values(1) or [])
+    if not headers:
+        return None
+    try:
+        id_col = headers.index("id") + 1
+    except ValueError:
+        id_col = 1
+    values = ws.col_values(id_col) or []
+    for idx, raw in enumerate(values):
+        if idx == 0:
+            continue  # header
+        if cache_store.normalize_id(raw) == target:
+            return idx + 1  # 1-based
+    return None
+
+
+def _restore_sheet_cache(sheet_name: str) -> None:
+    """Undo optimistic cache when Sheets write missed the real row."""
+    fresh = _fetch_sheet_from_gs(sheet_name)
+    if fresh is not None:
+        cache_store.save_sheet(sheet_name, fresh, source="sheets")
+    else:
+        soft_invalidate(sheet_name)
+
+
 def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, row_id=None):
     """Write to Sheets, with optimistic local cache update first."""
     data_dict = dict(data_dict or {})
+    if row_id is not None:
+        row_id = cache_store.normalize_id(row_id) or row_id
 
     # --- Optimistic local update (UI stays fast even if Sheets lags) ---
     if action == "INSERT":
@@ -308,6 +343,7 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
         }:
             if "id" not in data_dict or not data_dict["id"]:
                 data_dict["id"] = cache_store.next_id(sheet_name)
+            data_dict["id"] = cache_store.normalize_id(data_dict["id"]) or data_dict["id"]
         cache_store.upsert_row_cache(sheet_name, data_dict)
     elif action == "UPDATE" and row_id is not None:
         row = {"id": row_id, **data_dict}
@@ -331,18 +367,20 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
             _with_sheet_retry(_insert)
 
         elif action == "UPDATE":
+            sheet_row = _with_sheet_retry(lambda: _find_sheet_row_by_id(ws, row_id))
+            if not sheet_row:
+                _restore_sheet_cache(sheet_name)
+                cache_store.touch_status(False, f"update_missing_id:{row_id}")
+                st.error("搵唔到呢筆資料（可能已被刪除）。已還原雲端版本，請重新整理後再試。")
+                return False
 
             def _update():
-                cell = ws.find(str(row_id))
-                if not cell:
-                    return
                 headers = ws.row_values(1)
-                # Batch update cells in one API call when possible
                 cells = []
                 for col, val in data_dict.items():
                     if col in headers:
                         cells.append(
-                            gspread.Cell(cell.row, headers.index(col) + 1, str(val))
+                            gspread.Cell(sheet_row, headers.index(col) + 1, str(val))
                         )
                 if cells:
                     ws.update_cells(cells, value_input_option="USER_ENTERED")
@@ -350,11 +388,15 @@ def run_query_gs(action: str, sheet_name: str, data_dict: dict | None = None, ro
             _with_sheet_retry(_update)
 
         elif action == "DELETE":
+            sheet_row = _with_sheet_retry(lambda: _find_sheet_row_by_id(ws, row_id))
+            if not sheet_row:
+                _restore_sheet_cache(sheet_name)
+                cache_store.touch_status(False, f"delete_missing_id:{row_id}")
+                st.error("搵唔到呢筆資料刪除。已還原雲端版本，請重新整理後再試。")
+                return False
 
             def _delete():
-                cell = ws.find(str(row_id))
-                if cell:
-                    ws.delete_rows(cell.row)
+                ws.delete_rows(sheet_row)
 
             _with_sheet_retry(_delete)
 

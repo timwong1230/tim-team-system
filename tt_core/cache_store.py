@@ -145,6 +145,34 @@ def invalidate_memory(sheet_name: str | None = None) -> None:
             _MEMORY.pop(sheet_name, None)
 
 
+def normalize_id(value: Any) -> str:
+    """Canonical row id: ``1``, ``1.0``, ``\"1.0\"`` → ``\"1\"`` so cache/Sheets match."""
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "nat"}:
+        return ""
+    try:
+        num = float(text)
+        if num.is_integer():
+            return str(int(num))
+    except (TypeError, ValueError):
+        pass
+    return text
+
+
+def _id_mask(series: pd.Series, row_id: Any) -> pd.Series:
+    target = normalize_id(row_id)
+    if not target:
+        return pd.Series([False] * len(series), index=series.index)
+    return series.map(normalize_id) == target
+
+
 def upsert_row_cache(sheet_name: str, row: dict, id_field: str = "id") -> pd.DataFrame:
     """Optimistically merge a row into cached sheet (by id if present)."""
     df, _ = load_sheet(sheet_name)
@@ -152,11 +180,13 @@ def upsert_row_cache(sheet_name: str, row: dict, id_field: str = "id") -> pd.Dat
         df = pd.DataFrame([row])
     else:
         row = {k: str(v) if v is not None else "" for k, v in row.items()}
+        if id_field in row:
+            row[id_field] = normalize_id(row[id_field]) or row[id_field]
         for col in row:
             if col not in df.columns:
                 df[col] = ""
-        if id_field in row and id_field in df.columns and str(row[id_field]):
-            mask = df[id_field].astype(str) == str(row[id_field])
+        if id_field in row and id_field in df.columns and normalize_id(row[id_field]):
+            mask = _id_mask(df[id_field], row[id_field])
             if mask.any():
                 for k, v in row.items():
                     df.loc[mask, k] = v
@@ -172,7 +202,7 @@ def delete_row_cache(sheet_name: str, row_id: Any, id_field: str = "id") -> None
     df, _ = load_sheet(sheet_name)
     if df is None or id_field not in df.columns:
         return
-    df = df[df[id_field].astype(str) != str(row_id)].copy()
+    df = df[~_id_mask(df[id_field], row_id)].copy()
     save_sheet(sheet_name, df, source="optimistic")
 
 
@@ -180,5 +210,5 @@ def next_id(sheet_name: str) -> int:
     df, _ = load_sheet(sheet_name)
     if df is None or df.empty or "id" not in df.columns:
         return 1
-    ids = pd.to_numeric(df["id"], errors="coerce").dropna()
+    ids = pd.to_numeric(df["id"].map(normalize_id), errors="coerce").dropna()
     return int(ids.max()) + 1 if not ids.empty else 1

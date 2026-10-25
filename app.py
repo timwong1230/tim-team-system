@@ -6600,7 +6600,7 @@ def page_prospect_list():
                             with c1:
                                 if st.button("儲存", key=f"pl_save_s_{rid}", use_container_width=True):
                                     try:
-                                        pr.update_prospect(
+                                        ok = pr.update_prospect(
                                             rid,
                                             {
                                                 "factfind": ff_val,
@@ -6609,8 +6609,11 @@ def page_prospect_list():
                                                 "ytd_fyc": ytd_fyc,
                                             },
                                         )
-                                        st.toast("已儲存", icon="✅")
-                                        st.rerun()
+                                        if ok:
+                                            st.toast("已儲存", icon="✅")
+                                            st.rerun()
+                                        else:
+                                            st.error("儲存失敗——未寫入雲端，請再試或撳「重新整理數據」。")
                                     except Exception as e:
                                         st.error(str(e))
                             with c2:
@@ -6620,7 +6623,7 @@ def page_prospect_list():
                                     use_container_width=True,
                                 ):
                                     try:
-                                        pr.update_prospect(
+                                        ok = pr.update_prospect(
                                             rid,
                                             {
                                                 "premiums": premiums,
@@ -6629,14 +6632,20 @@ def page_prospect_list():
                                                 "factfind": ff_val,
                                             },
                                         )
-                                        st.toast("已按而家 Extra 10 重計 FYC", icon="✅")
-                                        st.rerun()
+                                        if ok:
+                                            st.toast("已按而家 Extra 10 重計 FYC", icon="✅")
+                                            st.rerun()
+                                        else:
+                                            st.error("重計失敗——未寫入雲端，請再試。")
                                     except Exception as e:
                                         st.error(str(e))
                             with c3:
                                 if st.button("刪除", key=f"pl_del_s_{rid}", use_container_width=True):
-                                    pr.delete_prospect(rid)
-                                    st.rerun()
+                                    if pr.delete_prospect(rid):
+                                        st.toast("已刪除", icon="🗑️")
+                                        st.rerun()
+                                    else:
+                                        st.error("刪除失敗——未寫入雲端，請再試或撳「重新整理數據」。")
                     st.divider()
 
     with tab_recruit:
@@ -6717,18 +6726,24 @@ def page_prospect_list():
                             with c_edit[1]:
                                 if st.button("儲存", key=f"pl_save_r_{rid}", use_container_width=True):
                                     try:
-                                        pr.update_prospect(
+                                        ok = pr.update_prospect(
                                             rid,
                                             {"factfind": ff_val, "recruit_category": new_cat},
                                         )
-                                        st.toast("已儲存", icon="✅")
-                                        st.rerun()
+                                        if ok:
+                                            st.toast("已儲存", icon="✅")
+                                            st.rerun()
+                                        else:
+                                            st.error("儲存失敗——未寫入雲端，請再試或撳「重新整理數據」。")
                                     except Exception as e:
                                         st.error(str(e))
                             with c_edit[2]:
                                 if st.button("刪除", key=f"pl_del_r_{rid}", use_container_width=True):
-                                    pr.delete_prospect(rid)
-                                    st.rerun()
+                                    if pr.delete_prospect(rid):
+                                        st.toast("已刪除", icon="🗑️")
+                                        st.rerun()
+                                    else:
+                                        st.error("刪除失敗——未寫入雲端，請再試或撳「重新整理數據」。")
                     st.divider()
 
 
