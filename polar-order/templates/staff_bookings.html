@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">BOOKINGS</div>
+    <a class="pill" href="/staff/board?pin={{ pin }}">← Board</a>
+  </div>
+  <div class="hero">
+    <h1>Booking Schedule</h1>
+    <p>Upcoming reservations by day. Add guest name, date, time, party size, and notes (phone / requests).</p>
+  </div>
+
+  <div class="booking-month-nav">
+    <a class="ghost" href="/staff/bookings?pin={{ pin }}&month={{ prev_month }}&day={{ selected }}">← Prev</a>
+    <strong>{{ month_label }}</strong>
+    <a class="ghost" href="/staff/bookings?pin={{ pin }}&month={{ next_month }}&day={{ selected }}">Next →</a>
+  </div>
+  <p class="muted" style="margin-top:0">{{ month_count }} booking{{ 's' if month_count != 1 else '' }} this month</p>
+
+  <div class="booking-cal" role="grid" aria-label="Booking calendar">
+    <div class="booking-cal-head">Mon</div>
+    <div class="booking-cal-head">Tue</div>
+    <div class="booking-cal-head">Wed</div>
+    <div class="booking-cal-head">Thu</div>
+    <div class="booking-cal-head">Fri</div>
+    <div class="booking-cal-head">Sat</div>
+    <div class="booking-cal-head">Sun</div>
+    {% for cell in cells %}
+      {% if cell.empty %}
+      <div class="booking-cal-cell empty"></div>
+      {% else %}
+      <a
+        class="booking-cal-cell{% if cell.iso == selected %} selected{% endif %}{% if cell.iso == today %} today{% endif %}{% if cell.count %} has-bookings{% endif %}"
+        href="/staff/bookings?pin={{ pin }}&month={{ month_label }}&day={{ cell.iso }}"
+      >
+        <span class="booking-cal-day">{{ cell.day }}</span>
+        {% if cell.count %}
+        <span class="booking-cal-count">{{ cell.count }}</span>
+        {% endif %}
+      </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="card booking-day-panel">
+    <h3 style="margin-top:0">{{ selected }}</h3>
+    {% if day_bookings %}
+    <div class="booking-list">
+      {% for b in day_bookings %}
+      <article class="booking-item" data-id="{{ b.id }}">
+        <div class="booking-item-main">
+          <strong>{{ b.booking_time }} · {{ b.guest_name }}</strong>
+          <div class="muted">Party {{ b.party_size }} · {{ b.status }}</div>
+          {% if b.note %}<div class="booking-note">{{ b.note }}</div>{% endif %}
+        </div>
+        <div class="booking-item-actions">
+          <button type="button" class="ghost booking-edit" data-id="{{ b.id }}">Edit</button>
+          <button type="button" class="ghost booking-cancel" data-id="{{ b.id }}">Cancel</button>
+        </div>
+        <script type="application/json" class="booking-json">{{ b|tojson }}</script>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No bookings this day.</p>
+    {% endif %}
+  </div>
+
+  <div class="card booking-form-card">
+    <h3 style="margin-top:0" id="bookingFormTitle">Add booking</h3>
+    <input type="hidden" id="bookingId" value="" />
+    <label class="muted" for="bkName">Guest name</label>
+    <input class="field" id="bkName" type="text" maxlength="80" placeholder="Guest name" autocomplete="name" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="bkDate">Date</label>
+        <input class="field" id="bkDate" type="date" value="{{ selected }}" />
+      </div>
+      <div>
+        <label class="muted" for="bkTime">Time</label>
+        <input class="field" id="bkTime" type="time" value="20:00" />
+      </div>
+    </div>
+    <label class="muted" for="bkParty">Party size</label>
+    <input class="field" id="bkParty" type="number" min="1" max="50" value="2" />
+    <label class="muted" for="bkNote">Note (phone / requests)</label>
+    <textarea class="field" id="bkNote" rows="2" maxlength="500" placeholder="e.g. +852 9123 4567 · window seat"></textarea>
+    <div class="actions" style="margin-top:8px">
+      <button class="primary" type="button" id="bkSave">Save booking</button>
+      <button class="ghost" type="button" id="bkReset" style="width:auto">Clear</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const PIN = {{ pin|tojson }};
+  const formTitle = document.getElementById('bookingFormTitle');
+  const bookingId = document.getElementById('bookingId');
+  const bkName = document.getElementById('bkName');
+  const bkDate = document.getElementById('bkDate');
+  const bkTime = document.getElementById('bkTime');
+  const bkParty = document.getElementById('bkParty');
+  const bkNote = document.getElementById('bkNote');
+
+  function resetForm() {
+    bookingId.value = '';
+    formTitle.textContent = 'Add booking';
+    bkName.value = '';
+    bkDate.value = {{ selected|tojson }};
+    bkTime.value = '20:00';
+    bkParty.value = '2';
+    bkNote.value = '';
+  }
+
+  function fillForm(b) {
+    bookingId.value = String(b.id);
+    formTitle.textContent = 'Edit booking #' + b.id;
+    bkName.value = b.guest_name || '';
+    bkDate.value = b.booking_date || '';
+    bkTime.value = (b.booking_time || '20:00').slice(0, 5);
+    bkParty.value = b.party_size || 2;
+    bkNote.value = b.note || '';
+    document.querySelector('.booking-form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.getElementById('bkReset')?.addEventListener('click', resetForm);
+
+  document.getElementById('bkSave')?.addEventListener('click', async () => {
+    const payload = {
+      pin: PIN,
+      guest_name: (bkName.value || '').trim(),
+      party_size: Number(bkParty.value || 2),
+      booking_date: bkDate.value,
+      booking_time: bkTime.value,
+      note: (bkNote.value || '').trim() || null,
+    };
+    if (!payload.guest_name) return alert('Enter guest name');
+    if (!payload.booking_date) return alert('Pick a date');
+    if (!payload.booking_time) return alert('Pick a time');
+    const id = (bookingId.value || '').trim();
+    const url = id ? `/api/staff/bookings/${id}` : '/api/staff/bookings';
+    const method = id ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.detail || 'Save failed');
+      return;
+    }
+    const day = data.booking?.booking_date || payload.booking_date;
+    const month = day.slice(0, 7);
+    location.href = `/staff/bookings?pin=${encodeURIComponent(PIN)}&month=${month}&day=${day}`;
+  });
+
+  document.querySelectorAll('.booking-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.booking-item');
+      const raw = item?.querySelector('.booking-json')?.textContent || '{}';
+      try {
+        fillForm(JSON.parse(raw));
+      } catch (e) {
+        alert('Could not load booking');
+      }
+    });
+  });
+
+  document.querySelectorAll('.booking-cancel').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      if (!id) return;
+      if (!confirm('Cancel this booking?')) return;
+      const res = await fetch(`/api/staff/bookings/${id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: PIN, status: 'cancelled' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.detail || 'Cancel failed');
+        return;
+      }
+      location.reload();
+    });
+  });
+</script>
+{% endblock %}

@@ -7,7 +7,7 @@ import os
 import re
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from .db import (
     add_claim,
     connect,
+    create_booking,
     delete_claim,
     ensure_session,
     get_open_session,
@@ -29,13 +30,17 @@ from .db import (
     get_table_by_code,
     init_db,
     list_active_tables,
+    list_bookings_for_date,
+    list_bookings_for_month,
     list_claims,
     list_guest_tables,
     load_menu_meta,
     publish_event,
     reset_operational_data,
+    set_booking_status,
     start_session,
     transfer_open_session,
+    update_booking,
     utc_now,
 )
 from .ops_constants import CLAIM_PRESETS, PAYMENT_METHODS
@@ -1456,6 +1461,219 @@ class ClaimBody(BaseModel):
     category: str = ""
     custom_name: str = ""
     amount: float = Field(..., gt=0, le=500000)
+
+
+class BookingIn(BaseModel):
+    pin: str
+    guest_name: str = Field(min_length=1, max_length=80)
+    party_size: int = Field(default=2, ge=1, le=50)
+    booking_date: str
+    booking_time: str
+    note: str | None = Field(default=None, max_length=500)
+
+
+class BookingStatusIn(BaseModel):
+    pin: str
+    status: str
+
+
+def _parse_booking_date(value: str) -> date:
+    try:
+        return date.fromisoformat((value or "").strip())
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid date (use YYYY-MM-DD)") from exc
+
+
+def _parse_booking_time(value: str) -> str:
+    raw = (value or "").strip()
+    # Accept HH:MM or HH:MM:SS from <input type="time">
+    parts = raw.split(":")
+    if len(parts) < 2:
+        raise HTTPException(400, "Invalid time (use HH:MM)")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid time (use HH:MM)") from exc
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        raise HTTPException(400, "Invalid time (use HH:MM)")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _booking_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "guest_name": row["guest_name"],
+        "party_size": row["party_size"],
+        "booking_date": row["booking_date"],
+        "booking_time": row["booking_time"],
+        "note": row["note"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _month_calendar_cells(year: int, month: int, counts: dict[str, int]) -> list[dict[str, Any]]:
+    """Build a Mon–Sun calendar grid for the staff bookings view."""
+    first = date(year, month, 1)
+    # Monday=0 … Sunday=6
+    start_pad = first.weekday()
+    if month == 12:
+        next_month = date(year + 1, 1, 1)
+    else:
+        next_month = date(year, month + 1, 1)
+    days_in_month = (next_month - first).days
+    cells: list[dict[str, Any]] = []
+    for _ in range(start_pad):
+        cells.append({"empty": True})
+    for day_n in range(1, days_in_month + 1):
+        d = date(year, month, day_n)
+        iso = d.isoformat()
+        cells.append(
+            {
+                "empty": False,
+                "day": day_n,
+                "iso": iso,
+                "count": counts.get(iso, 0),
+            }
+        )
+    while len(cells) % 7:
+        cells.append({"empty": True})
+    return cells
+
+
+@app.get("/staff/bookings", response_class=HTMLResponse)
+def staff_bookings(request: Request, pin: str = "", month: str = "", day: str = ""):
+    if pin != STAFF_PIN:
+        return HTMLResponse("Unauthorized", status_code=401)
+    today = datetime.now(HK).date()
+    if month:
+        try:
+            y_str, m_str = month.split("-")
+            year, mon = int(y_str), int(m_str)
+            if mon < 1 or mon > 12:
+                raise ValueError
+        except ValueError:
+            year, mon = today.year, today.month
+    else:
+        year, mon = today.year, today.month
+
+    selected = today
+    if day:
+        try:
+            selected = date.fromisoformat(day)
+        except ValueError:
+            selected = today
+    elif month:
+        selected = date(year, mon, 1)
+
+    # Keep selected day inside the viewed month for the list panel
+    if selected.year != year or selected.month != mon:
+        if mon == 12:
+            last = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last = date(year, mon + 1, 1) - timedelta(days=1)
+        selected = date(year, mon, min(selected.day, last.day))
+
+    conn = connect()
+    month_rows = list_bookings_for_month(conn, year, mon)
+    day_rows = list_bookings_for_date(conn, selected.isoformat())
+    conn.close()
+
+    counts: dict[str, int] = {}
+    for row in month_rows:
+        key = row["booking_date"]
+        counts[key] = counts.get(key, 0) + 1
+
+    if mon == 1:
+        prev_m = f"{year - 1}-12"
+    else:
+        prev_m = f"{year}-{mon - 1:02d}"
+    if mon == 12:
+        next_m = f"{year + 1}-01"
+    else:
+        next_m = f"{year}-{mon + 1:02d}"
+
+    return templates.TemplateResponse(
+        "staff_bookings.html",
+        {
+            "request": request,
+            "title": "Booking Schedule",
+            "pin": pin,
+            "year": year,
+            "month": mon,
+            "month_label": f"{year}-{mon:02d}",
+            "prev_month": prev_m,
+            "next_month": next_m,
+            "today": today.isoformat(),
+            "selected": selected.isoformat(),
+            "cells": _month_calendar_cells(year, mon, counts),
+            "day_bookings": [_booking_dict(r) for r in day_rows],
+            "month_count": len(month_rows),
+        },
+    )
+
+
+@app.post("/api/staff/bookings")
+def staff_create_booking(body: BookingIn):
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    booking_date = _parse_booking_date(body.booking_date).isoformat()
+    booking_time = _parse_booking_time(body.booking_time)
+    conn = connect()
+    try:
+        row = create_booking(
+            conn,
+            guest_name=body.guest_name,
+            party_size=body.party_size,
+            booking_date=booking_date,
+            booking_time=booking_time,
+            note=body.note,
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    conn.close()
+    return {"ok": True, "booking": _booking_dict(row)}
+
+
+@app.put("/api/staff/bookings/{booking_id}")
+def staff_update_booking(booking_id: int, body: BookingIn):
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    booking_date = _parse_booking_date(body.booking_date).isoformat()
+    booking_time = _parse_booking_time(body.booking_time)
+    conn = connect()
+    try:
+        row = update_booking(
+            conn,
+            booking_id,
+            guest_name=body.guest_name,
+            party_size=body.party_size,
+            booking_date=booking_date,
+            booking_time=booking_time,
+            note=body.note,
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    conn.close()
+    return {"ok": True, "booking": _booking_dict(row)}
+
+
+@app.post("/api/staff/bookings/{booking_id}/status")
+def staff_booking_status(booking_id: int, body: BookingStatusIn):
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    try:
+        row = set_booking_status(conn, booking_id, (body.status or "").strip())
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    conn.close()
+    return {"ok": True, "booking": _booking_dict(row)}
 
 
 @app.post("/api/staff/claims")
