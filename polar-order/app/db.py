@@ -164,6 +164,12 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS daily_cash_tilt (
+            business_date TEXT PRIMARY KEY,
+            amount REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()
@@ -621,6 +627,32 @@ def update_booking(
     return row
 
 
+def get_cash_tilt(conn: sqlite3.Connection, business_date: str) -> float:
+    row = conn.execute(
+        "SELECT amount FROM daily_cash_tilt WHERE business_date = ?",
+        (business_date,),
+    ).fetchone()
+    if not row:
+        return 0.0
+    return float(row["amount"] or 0)
+
+
+def set_cash_tilt(conn: sqlite3.Connection, business_date: str, amount: float) -> float:
+    value = max(0.0, float(amount or 0))
+    conn.execute(
+        """
+        INSERT INTO daily_cash_tilt (business_date, amount, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(business_date) DO UPDATE SET
+          amount = excluded.amount,
+          updated_at = excluded.updated_at
+        """,
+        (business_date, value, utc_now()),
+    )
+    conn.commit()
+    return value
+
+
 def set_booking_status(
     conn: sqlite3.Connection,
     booking_id: int,
@@ -644,7 +676,7 @@ def set_booking_status(
 
 
 def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
-    """Wipe orders/sessions/events/claims/receipts. Keeps seats + menu + bookings."""
+    """Wipe orders/sessions/events/claims/cash tilt/receipts. Keeps seats + menu + bookings."""
     from .paths import RECEIPT_DIR
 
     counts = {
@@ -653,12 +685,16 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
         "sessions": conn.execute("SELECT COUNT(*) AS c FROM sessions").fetchone()["c"],
         "events": conn.execute("SELECT COUNT(*) AS c FROM events").fetchone()["c"],
         "claims": conn.execute("SELECT COUNT(*) AS c FROM claims").fetchone()["c"],
+        "daily_cash_tilt": conn.execute(
+            "SELECT COUNT(*) AS c FROM daily_cash_tilt"
+        ).fetchone()["c"],
     }
     conn.execute("DELETE FROM order_items")
     conn.execute("DELETE FROM orders")
     conn.execute("DELETE FROM sessions")
     conn.execute("DELETE FROM events")
     conn.execute("DELETE FROM claims")
+    conn.execute("DELETE FROM daily_cash_tilt")
     conn.execute(
         "DELETE FROM sqlite_sequence WHERE name IN "
         "('order_items','orders','sessions','events','claims')"

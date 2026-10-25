@@ -10,6 +10,19 @@ PAYMENT_METHODS: tuple[str, ...] = (
     "AlipayHK",
     "UnionPay",
     "WeChat pay",
+    "Deposit",
+)
+
+# WhatsApp nightly close labels → matching payment_method values in DB
+WHATSAPP_PAYMENT_LINES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Cash", ("Cash",)),
+    ("Visa", ("Visa",)),
+    ("Master", ("Mastercard", "Master")),
+    ("AE", ("American Express", "AE", "Amex")),
+    ("Alipay", ("AlipayHK", "Alipay")),
+    ("UnionPay", ("UnionPay",)),
+    ("WeChat pay", ("WeChat pay", "WeChat Pay")),
+    ("Deposit", ("Deposit",)),
 )
 
 CLAIM_PRESETS: tuple[str, ...] = (
