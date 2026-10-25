@@ -216,7 +216,7 @@ def add_recruit_prospect(
     )
 
 
-def update_prospect(row_id: str | int, fields: dict[str, Any]) -> None:
+def update_prospect(row_id: str | int, fields: dict[str, Any]) -> bool:
     allowed = {
         "name",
         "selling_products",
@@ -244,11 +244,11 @@ def update_prospect(row_id: str | int, fields: dict[str, Any]) -> None:
     if "fyc" in payload:
         payload["fyc"] = float(payload["fyc"] or 0)
     payload["updated_at"] = str(datetime.datetime.now())
-    run_query_gs("UPDATE", "prospects", payload, row_id=row_id)
+    return bool(run_query_gs("UPDATE", "prospects", payload, row_id=row_id))
 
 
-def delete_prospect(row_id: str | int) -> None:
-    run_query_gs("DELETE", "prospects", row_id=row_id)
+def delete_prospect(row_id: str | int) -> bool:
+    return bool(run_query_gs("DELETE", "prospects", row_id=row_id))
 
 
 def quarter_fyc_total(df: pd.DataFrame, year: int, quarter: int) -> float:
