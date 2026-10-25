@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import qrcode
@@ -38,6 +39,7 @@ from .db import (
     publish_event,
     reset_operational_data,
     set_booking_status,
+    set_cash_tilt,
     start_session,
     transfer_open_session,
     update_booking,
@@ -56,6 +58,7 @@ from .pricing import (
 from .receipt import generate_receipt_pdf
 from .reports import (
     daily_sales_report,
+    format_whatsapp_sales_report,
     item_purchase_report,
     monthly_boss_report,
     monthly_sales_report,
@@ -1463,6 +1466,12 @@ class ClaimBody(BaseModel):
     amount: float = Field(..., gt=0, le=500000)
 
 
+class CashTiltBody(BaseModel):
+    pin: str
+    business_date: str
+    amount: float = Field(..., ge=0, le=500000)
+
+
 class BookingIn(BaseModel):
     pin: str
     guest_name: str = Field(min_length=1, max_length=80)
@@ -1725,6 +1734,55 @@ def staff_delete_claim(claim_id: int, pin: str = ""):
     if not ok:
         raise HTTPException(404, "Claim not found")
     return {"ok": True}
+
+
+@app.post("/api/staff/cash-tilt")
+def staff_set_cash_tilt(body: CashTiltBody):
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    try:
+        date.fromisoformat(body.business_date)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid business date") from exc
+    conn = connect()
+    amount = set_cash_tilt(conn, body.business_date, round(float(body.amount), 1))
+    conn.close()
+    return {"ok": True, "business_date": body.business_date, "cash_tilt": amount}
+
+
+@app.get("/api/staff/whatsapp-sales-report")
+def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
+    """One-click nightly close text for WhatsApp (wa.me)."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    today_biz = business_date(datetime.now(HK))
+    if day:
+        try:
+            biz = date.fromisoformat(day)
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid business date") from exc
+    else:
+        biz = today_biz
+
+    conn = connect()
+    daily = daily_sales_report(conn, biz)
+    monthly = monthly_sales_report(conn, biz.year, biz.month)
+    conn.close()
+
+    message = format_whatsapp_sales_report(
+        business_date=biz,
+        by_payment_method=daily["by_payment_method"],
+        claims_total=float(daily["claims_total"]),
+        daily_sales=float(daily["gross_sales"]),
+        cash_tilt=float(daily["cash_tilt"]),
+        monthly_total=float(monthly["gross_sales"]),
+    )
+    return {
+        "ok": True,
+        "business_date": biz.isoformat(),
+        "message": message,
+        "wa_url": f"https://wa.me/?text={quote(message)}",
+    }
 
 
 @app.post("/api/staff/reset-sales")

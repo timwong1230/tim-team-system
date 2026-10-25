@@ -5,6 +5,8 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from .db import get_cash_tilt
+from .ops_constants import WHATSAPP_PAYMENT_LINES
 from .pricing import business_date, business_day_window
 from .seats import BOSSES
 
@@ -80,6 +82,7 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
         for c in claims
     ]
     claims_total = round(sum(c["amount"] for c in claim_rows), 1)
+    cash_tilt = round(get_cash_tilt(conn, biz.isoformat()), 1)
 
     return {
         "business_date": biz.isoformat(),
@@ -94,7 +97,45 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
         "claims": claim_rows,
         "claims_total": claims_total,
         "net_after_claims": round(total - claims_total, 1),
+        "cash_tilt": cash_tilt,
     }
+
+
+def _money_line(amount: float) -> str:
+    return f"${int(round(float(amount or 0)))}"
+
+
+def _sum_methods(by_method: dict[str, float], aliases: tuple[str, ...]) -> float:
+    total = 0.0
+    for alias in aliases:
+        total += float(by_method.get(alias, 0) or 0)
+    return round(total, 1)
+
+
+def format_whatsapp_sales_report(
+    *,
+    business_date: date,
+    by_payment_method: list[dict],
+    claims_total: float,
+    daily_sales: float,
+    cash_tilt: float,
+    monthly_total: float,
+) -> str:
+    """Build the nightly WhatsApp close message (DD-MM-YYYY)."""
+    methods = {str(p["method"]): float(p["total"]) for p in by_payment_method}
+    lines = [
+        "Sales report",
+        business_date.strftime("%d-%m-%Y"),
+        "",
+    ]
+    for label, aliases in WHATSAPP_PAYMENT_LINES:
+        lines.append(f"{label}: {_money_line(_sum_methods(methods, aliases))}")
+    lines.append(f"Claim: {_money_line(claims_total)}")
+    lines.append(f"Daily Sales: {_money_line(daily_sales)}")
+    lines.append("")
+    lines.append(f"Cash Tilt: {_money_line(cash_tilt)}")
+    lines.append(f"Monthly Total: {_money_line(monthly_total)}")
+    return "\n".join(lines)
 
 
 def monthly_sales_report(conn: sqlite3.Connection, year: int, month: int) -> dict:

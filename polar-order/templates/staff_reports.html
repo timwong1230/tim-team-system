@@ -87,6 +87,26 @@
       <div>Net after claims</div>
       <div id="netAfterClaims">${{ '%.0f'|format(daily.net_after_claims) }}</div>
     </div>
+
+    <hr class="claim-sep" />
+    <h3>Cash Tilt</h3>
+    <p class="muted" style="margin-top:0">埋數時對吓錢箱，入返今日 Cash Tilt 金額。</p>
+    <div class="claim-form">
+      <label class="muted" for="cashTiltAmount">Cash Tilt (HKD)</label>
+      <input class="field" id="cashTiltAmount" type="number" min="0" max="500000" step="1" value="{{ '%.0f'|format(daily.cash_tilt) }}" />
+      <button class="primary" type="button" id="cashTiltSaveBtn" style="width:auto">Save Cash Tilt</button>
+      <p class="muted" id="cashTiltMsg" style="margin-bottom:0"></p>
+    </div>
+    <div class="cart-line" style="margin-top:10px;font-weight:700">
+      <div>Cash Tilt</div>
+      <div id="cashTiltDisplay">${{ '%.0f'|format(daily.cash_tilt) }}</div>
+    </div>
+
+    <hr class="claim-sep" />
+    <h3>WhatsApp Sales report</h3>
+    <p class="muted" style="margin-top:0">一鍵產生今日埋數訊息，開 WhatsApp 傳送。</p>
+    <button class="primary" type="button" id="waSalesBtn" style="width:auto">Open WhatsApp Sales report</button>
+    <p class="muted" id="waSalesMsg" style="margin-top:10px;margin-bottom:0;white-space:pre-wrap"></p>
   </div>
 
   <div class="card">
@@ -172,6 +192,52 @@
     document.getElementById('claimsTotal').textContent = money(claimsTotal);
     document.getElementById('netAfterClaims').textContent = money(GROSS - claimsTotal);
   }
+
+  document.getElementById('cashTiltSaveBtn')?.addEventListener('click', async () => {
+    const amount = Number(document.getElementById('cashTiltAmount').value);
+    const msg = document.getElementById('cashTiltMsg');
+    if (Number.isNaN(amount) || amount < 0) {
+      msg.textContent = 'Enter a valid Cash Tilt amount (0 or more).';
+      return;
+    }
+    msg.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/staff/cash-tilt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: PIN,
+          business_date: BIZ_DAY,
+          amount,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Failed to save Cash Tilt');
+      document.getElementById('cashTiltDisplay').textContent = money(data.cash_tilt);
+      document.getElementById('cashTiltAmount').value = String(Math.round(Number(data.cash_tilt) || 0));
+      msg.textContent = 'Saved.';
+    } catch (err) {
+      msg.textContent = err.message || 'Failed';
+    }
+  });
+
+  document.getElementById('waSalesBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('waSalesMsg');
+    msg.textContent = 'Building message…';
+    try {
+      const res = await fetch(
+        `/api/staff/whatsapp-sales-report?pin=${encodeURIComponent(PIN)}&day=${encodeURIComponent(BIZ_DAY)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Failed to build report');
+      msg.textContent = data.message || '';
+      if (data.wa_url) {
+        window.open(data.wa_url, '_blank');
+      }
+    } catch (err) {
+      msg.textContent = err.message || 'Failed';
+    }
+  });
 
   document.getElementById('claimAddBtn')?.addEventListener('click', async () => {
     const category = document.getElementById('claimPreset').value || '';
