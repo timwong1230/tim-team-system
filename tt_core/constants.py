@@ -2,6 +2,10 @@
 
 INACTIVE_MEMBERS = ["Wilson", "Catherine", "Maggie"]
 
+# Temporarily skip from 打卡 weekly challenge (fines / MVP / war report / 欠活動)
+# Can still log in and check in; just not scored in the challenge for now.
+CHECKIN_CHALLENGE_SKIP = ["KK"]
+
 # Trial login — can sign in, but never appears on 打卡／業績／招募 team lists
 GUEST_ROLE = "Guest"
 GUEST_USERNAMES = ["guest"]
