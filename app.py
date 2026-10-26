@@ -1398,8 +1398,8 @@ def _render_admin_ops_desk(*, due_count: int = 0) -> None:
 
     with st.expander("每週戰報（WhatsApp）", expanded=False):
         st.caption(
-            "獎罰唔包 Tim（分數照顯示）。無人罰款時 Tim 獎 $100 俾最高分同事；"
-            "若 Tim 最高分則獎第 2 高。"
+            "獎罰唔包 Tim（分數照顯示）；暫時唔計 KK。"
+            "無人罰款時 Tim 獎 $100 俾最高分同事；若 Tim 最高分則獎第 2 高。"
         )
         if st.button("生成上週結算戰報", key="home_ops_weekly_report"):
             from tt_core.weekly_report import build_weekly_settlement_report
@@ -2783,8 +2783,8 @@ def page_dashboard():
     if is_leader:
         with st.expander("每週戰報生成器（Leader）", expanded=False):
             st.caption(
-                "獎罰唔包 Tim（分數照顯示）。無人罰款時 Tim 獎 $100 俾最高分同事；"
-                "若 Tim 最高分則獎第 2 高。"
+                "獎罰唔包 Tim（分數照顯示）；暫時唔計 KK。"
+                "無人罰款時 Tim 獎 $100 俾最高分同事；若 Tim 最高分則獎第 2 高。"
             )
             if st.button("生成上週結算戰報"):
                 from tt_core.weekly_report import build_weekly_settlement_report
@@ -3535,8 +3535,12 @@ def _render_stuck_case_rows(stuck: pd.DataFrame, *, key_prefix: str) -> None:
 
 def _section_weekly_challenge():
     """每週挑戰 content (used inside 業績龍虎榜 tabs)."""
+    from tt_core.weekly_report import eligible_frame, filter_checkin_challenge
+
     df, start, end = get_weekly_data()
-    st.caption(f"本週結算區間：{start} ~ {end}")
+    # Temporary skips (e.g. KK) out of challenge board + prize pool
+    board = filter_checkin_challenge(df)
+    st.caption(f"本週結算區間：{start} ~ {end} · 暫時唔計 KK")
     st.markdown(
         f"""
         <div class="challenge-header-box">
@@ -3545,6 +3549,7 @@ def _section_weekly_challenge():
             <li>結算：逢星期日晚 23:59</li>
             <li>每週活動少於 <strong>{WEEKLY_MIN_ACTS} 次</strong> → 罰款 ${WEEKLY_PENALTY}</li>
             <li>罰款注入獎金池，由最高分者獨得</li>
+            <li>獎罰唔包 Tim；暫時唔計 KK</li>
             <li>經理視圖會對住<strong>卡案清單</strong>（未跟案），唔淨係打卡次數</li>
           </ul>
         </div>
@@ -3560,13 +3565,24 @@ def _section_weekly_challenge():
         tab_coach = None
 
     with tab_rank:
-        if df.empty:
+        if board.empty:
             st.info("本週暫無數據")
             show_rank = False
         if show_rank:
-            max_score = df["wk_score"].max()
-            winners = df[df["wk_score"] == max_score] if max_score > 0 else pd.DataFrame()
-            pool = len(df[df["wk_count"] < WEEKLY_MIN_ACTS]) * WEEKLY_PENALTY
+            # Prize pool / MVP among members who can be fined (excl. Tim + skips)
+            elig = eligible_frame(board)
+            pool_src = elig if not elig.empty else board
+            max_score = pool_src["wk_score"].max() if not pool_src.empty else 0
+            winners = (
+                pool_src[pool_src["wk_score"] == max_score]
+                if max_score > 0
+                else pd.DataFrame()
+            )
+            pool = (
+                len(pool_src[pool_src["wk_count"] < WEEKLY_MIN_ACTS]) * WEEKLY_PENALTY
+                if not pool_src.empty
+                else 0
+            )
             st.markdown(
                 f"### Prize Pool: <span style='color:#C5A028'>${pool if pool > 0 else WEEKLY_PENALTY}</span>",
                 unsafe_allow_html=True,
@@ -3574,7 +3590,7 @@ def _section_weekly_challenge():
             if not winners.empty and max_score > 0:
                 names = "、".join(str(u) for u in winners["username"].tolist())
                 st.caption(f"本週暫時領先：👑 {names}")
-            render_challenge_cards(df)
+            render_challenge_cards(board)
 
     if is_leader and tab_coach is not None:
         with tab_coach:

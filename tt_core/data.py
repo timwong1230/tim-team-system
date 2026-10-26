@@ -11,6 +11,7 @@ import streamlit as st
 from PIL import Image
 
 from tt_core.constants import (
+    CHECKIN_CHALLENGE_SKIP,
     GUEST_PASSWORD,
     GUEST_ROLE,
     GUEST_USERNAMES,
@@ -564,7 +565,11 @@ def get_coach_member_pack(username: str, *, today=None) -> dict:
         "open_followups": open_n,
         "stuck_count": int(len(stuck)),
         "stuck_cases": stuck,
-        "needs_acts": int(snap.get("wk_count") or 0) < WEEKLY_MIN_ACTS,
+        "needs_acts": (
+            int(snap.get("wk_count") or 0) < WEEKLY_MIN_ACTS
+            and str(username or "").strip().lower()
+            not in {x.lower() for x in CHECKIN_CHALLENGE_SKIP}
+        ),
         "month": month,
     }
 
@@ -591,10 +596,12 @@ def get_team_coach_overview(*, today=None) -> pd.DataFrame:
         for _, r in mtd_df.iterrows():
             mtd_map[str(r["username"])] = float(r.get("fyc") or 0)
 
+    skip = {x.lower() for x in CHECKIN_CHALLENGE_SKIP}
     rows = []
     for u in members:
         stuck = get_stuck_cases(u, on_or_before=today)
         wk = wk_map.get(u, {"wk_score": 0, "wk_count": 0})
+        skipped = str(u).strip().lower() in skip
         rows.append(
             {
                 "username": u,
@@ -602,7 +609,8 @@ def get_team_coach_overview(*, today=None) -> pd.DataFrame:
                 "wk_count": wk["wk_count"],
                 "mtd_fyc": mtd_map.get(u, 0.0),
                 "stuck_count": int(len(stuck)),
-                "needs_acts": wk["wk_count"] < WEEKLY_MIN_ACTS,
+                # Temporary skips (KK) never count as short on weekly acts
+                "needs_acts": (not skipped) and wk["wk_count"] < WEEKLY_MIN_ACTS,
                 "max_overdue": int(stuck["overdue_days"].max()) if not stuck.empty else 0,
             }
         )

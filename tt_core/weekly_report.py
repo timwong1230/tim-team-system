@@ -6,6 +6,8 @@ Rules:
 - If nobody is penalized, Tim sponsors $100 to the top scorer among others.
 - If Tim has the overall highest score, prize goes to the 2nd-highest
   (i.e. highest among non-Tim members).
+- Members in CHECKIN_CHALLENGE_SKIP (e.g. KK) are fully left out of the
+  challenge for now: no fine, no MVP, not listed in 詳細戰況.
 """
 
 from __future__ import annotations
@@ -14,27 +16,54 @@ from typing import Any
 
 import pandas as pd
 
-from tt_core.constants import WEEKLY_MIN_ACTS, WEEKLY_PENALTY
+from tt_core.constants import CHECKIN_CHALLENGE_SKIP, WEEKLY_MIN_ACTS, WEEKLY_PENALTY
 
-# Leader / sponsor — excluded from rewards & penalties
-WEEKLY_REPORT_EXCLUDED = frozenset({"Tim", "tim", "TIM"})
+# Leader / sponsor — excluded from rewards & penalties (score still shown)
+_WEEKLY_PRIZE_EXCLUDED = frozenset({"tim"})
 
 
-def _is_excluded(username: Any) -> bool:
-    return str(username or "").strip() in WEEKLY_REPORT_EXCLUDED
+def _norm(username: Any) -> str:
+    return str(username or "").strip().lower()
+
+
+def _skip_names() -> frozenset[str]:
+    return frozenset(_norm(x) for x in CHECKIN_CHALLENGE_SKIP)
+
+
+def is_checkin_challenge_skipped(username: Any) -> bool:
+    """True if this member is temporarily out of the 打卡 challenge."""
+    return _norm(username) in _skip_names()
+
+
+def _is_prize_excluded(username: Any) -> bool:
+    """No fine / no MVP prize (Tim + temporary skips)."""
+    n = _norm(username)
+    return n in _WEEKLY_PRIZE_EXCLUDED or n in _skip_names()
+
+
+def filter_checkin_challenge(df: pd.DataFrame | None) -> pd.DataFrame:
+    """Drop temporary skips from challenge boards / prize-pool math."""
+    if df is None or getattr(df, "empty", True):
+        return pd.DataFrame() if df is None else df.copy()
+    if "username" not in df.columns:
+        return df.copy()
+    skip = _skip_names()
+    if not skip:
+        return df.copy()
+    return df[~df["username"].astype(str).map(_norm).isin(skip)].copy()
 
 
 def eligible_frame(wk_df: pd.DataFrame) -> pd.DataFrame:
-    """Members who can win prize / be fined (exclude Tim)."""
+    """Members who can win prize / be fined (exclude Tim + temporary skips)."""
     if wk_df is None or getattr(wk_df, "empty", True):
         return pd.DataFrame()
     work = wk_df.copy()
-    mask = ~work["username"].astype(str).map(_is_excluded)
+    mask = ~work["username"].astype(str).map(_is_prize_excluded)
     return work[mask].copy()
 
 
 def pick_mvp_winners(wk_df: pd.DataFrame) -> pd.DataFrame:
-    """Highest score among non-Tim members (score > 0)."""
+    """Highest score among non-Tim / non-skipped members (score > 0)."""
     elig = eligible_frame(wk_df)
     if elig.empty:
         return pd.DataFrame()
@@ -45,7 +74,7 @@ def pick_mvp_winners(wk_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def pick_losers(wk_df: pd.DataFrame) -> pd.DataFrame:
-    """Below weekly activity minimum — Tim never listed."""
+    """Below weekly activity minimum — Tim / skips never listed."""
     elig = eligible_frame(wk_df)
     if elig.empty:
         return pd.DataFrame()
@@ -97,8 +126,10 @@ def build_weekly_settlement_report(
         report += "✅ *上週無人罰款！Excellent！*\n"
 
     report += "\n📊 *詳細戰況：*\n"
-    if wk_df is not None and not wk_df.empty:
-        for _, row in wk_df.sort_values(by="wk_score", ascending=False).iterrows():
+    # Show Tim; hide temporary skips entirely
+    detail = filter_checkin_challenge(wk_df)
+    if detail is not None and not detail.empty:
+        for _, row in detail.sort_values(by="wk_score", ascending=False).iterrows():
             report += (
                 f"{row['username']}: {int(row['wk_score'])}分 "
                 f"({int(row['wk_count'])}次)\n"
