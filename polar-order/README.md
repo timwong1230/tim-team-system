@@ -66,8 +66,31 @@ Menu seeded from `data/menu.json`.
 - **Order for table:** Staff → Seats → **Order for table** (or Bill → **Order for this table**) — place full menu orders for a guest even if they are not using the QR phone
 - **Discount on bill:** enter `10` for 10% off (blank/0 = full price)
 - **PDF receipt:** generated when you mark paid
-- **Reports:** `/staff/reports` — nightly close, monthly sales, boss report
+- **Reports:** `/staff/reports` — nightly close, monthly sales, boss report, WhatsApp sales text, **Sync to Google Sheet**
 - **Ask AI** mood chips on guest menu
+
+## Daily_Sales → Google Sheets → P&L / Balance Sheet
+
+Nightly close upserts one row (payment mix, Claim, Daily Sales, Cash Tilt, Monthly Total).
+
+**Sync target (Finance workbook):**  
+https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I/edit  
+
+See [`finance/README.md`](finance/README.md) for tabs and Bank_Entries rules.
+
+| Who | Does |
+| --- | --- |
+| Staff | Reports → Sync to Google Sheet → writes `Daily_Sales` tab |
+| Tim | Only `Bank_Entries` (bank lines + Nature) |
+| Sheet formulas | `P&L_Monthly`, `Balance_Sheet`, `KPI` |
+
+**Render env**
+
+| Key | Value |
+| --- | --- |
+| `POLAR_DAILY_SALES_SHEET_ID` | `1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I` |
+| `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` |
+| `POLAR_GSPREAD_KEY` | Service account JSON — share the Finance sheet with that SA as **Editor** |
 
 ## Notes
 

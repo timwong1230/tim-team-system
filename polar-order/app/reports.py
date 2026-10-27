@@ -112,6 +112,48 @@ def _sum_methods(by_method: dict[str, float], aliases: tuple[str, ...]) -> float
     return round(total, 1)
 
 
+def payment_totals_for_sheet(by_payment_method: list[dict]) -> dict[str, float]:
+    """Map WhatsApp payment labels → amounts for Daily_Sales columns."""
+    methods = {str(p["method"]): float(p["total"]) for p in by_payment_method}
+    return {
+        label: _sum_methods(methods, aliases)
+        for label, aliases in WHATSAPP_PAYMENT_LINES
+    }
+
+
+def build_daily_sales_sheet_row(
+    *,
+    business_date: date,
+    by_payment_method: list[dict],
+    claims_total: float,
+    daily_sales: float,
+    cash_tilt: float,
+    monthly_total: float,
+    synced_at: str | None = None,
+) -> dict[str, str | float]:
+    """One Daily_Sales ledger row (aligned with WhatsApp close fields)."""
+    from datetime import timezone
+
+    pay = payment_totals_for_sheet(by_payment_method)
+    stamp = synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "business_date": business_date.isoformat(),
+        "Cash": pay.get("Cash", 0),
+        "Visa": pay.get("Visa", 0),
+        "Master": pay.get("Master", 0),
+        "AE": pay.get("AE", 0),
+        "Alipay": pay.get("Alipay", 0),
+        "UnionPay": pay.get("UnionPay", 0),
+        "WeChat pay": pay.get("WeChat pay", 0),
+        "Deposit": pay.get("Deposit", 0),
+        "Claim": round(float(claims_total or 0), 1),
+        "Daily Sales": round(float(daily_sales or 0), 1),
+        "Cash Tilt": round(float(cash_tilt or 0), 1),
+        "Monthly Total": round(float(monthly_total or 0), 1),
+        "synced_at": stamp,
+    }
+
+
 def format_whatsapp_sales_report(
     *,
     business_date: date,
@@ -122,14 +164,14 @@ def format_whatsapp_sales_report(
     monthly_total: float,
 ) -> str:
     """Build the nightly WhatsApp close message (DD-MM-YYYY)."""
-    methods = {str(p["method"]): float(p["total"]) for p in by_payment_method}
+    pay = payment_totals_for_sheet(by_payment_method)
     lines = [
         "Sales report",
         business_date.strftime("%d-%m-%Y"),
         "",
     ]
-    for label, aliases in WHATSAPP_PAYMENT_LINES:
-        lines.append(f"{label}: {_money_line(_sum_methods(methods, aliases))}")
+    for label, _aliases in WHATSAPP_PAYMENT_LINES:
+        lines.append(f"{label}: {_money_line(pay.get(label, 0))}")
     lines.append(f"Claim: {_money_line(claims_total)}")
     lines.append(f"Daily Sales: {_money_line(daily_sales)}")
     lines.append("")

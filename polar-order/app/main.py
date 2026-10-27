@@ -57,12 +57,14 @@ from .pricing import (
 )
 from .receipt import generate_receipt_pdf
 from .reports import (
+    build_daily_sales_sheet_row,
     daily_sales_report,
     format_whatsapp_sales_report,
     item_purchase_report,
     monthly_boss_report,
     monthly_sales_report,
 )
+from .sheets_sync import SheetsNotConfigured, sheets_configured, upsert_daily_sales_row
 from .ai_host import ask_ai
 from .guest_nav import build_guest_nav
 from .paths import DATA_DIR, ROOT
@@ -1454,6 +1456,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "claim_presets": CLAIM_PRESETS,
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
+            "sheets_sync_ready": sheets_configured(),
         },
     )
 
@@ -1783,6 +1786,49 @@ def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
         "message": message,
         "wa_url": f"https://wa.me/?text={quote(message)}",
     }
+
+
+@app.post("/api/staff/sync-daily-sales")
+def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
+    """Upsert tonight's Daily_Sales row into Google Sheets."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    today_biz = business_date(datetime.now(HK))
+    if day:
+        try:
+            biz = date.fromisoformat(day)
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid business date") from exc
+    else:
+        biz = today_biz
+
+    if not sheets_configured():
+        raise HTTPException(
+            503,
+            "Google Sheet sync not configured. Set POLAR_DAILY_SALES_SHEET_ID "
+            "and POLAR_GSPREAD_KEY on the server.",
+        )
+
+    conn = connect()
+    daily = daily_sales_report(conn, biz)
+    monthly = monthly_sales_report(conn, biz.year, biz.month)
+    conn.close()
+
+    row = build_daily_sales_sheet_row(
+        business_date=biz,
+        by_payment_method=daily["by_payment_method"],
+        claims_total=float(daily["claims_total"]),
+        daily_sales=float(daily["gross_sales"]),
+        cash_tilt=float(daily["cash_tilt"]),
+        monthly_total=float(monthly["gross_sales"]),
+    )
+    try:
+        result = upsert_daily_sales_row(row)
+    except SheetsNotConfigured as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — surface Sheets errors to staff
+        raise HTTPException(502, f"Google Sheets sync failed: {exc}") from exc
+    return result
 
 
 @app.post("/api/staff/reset-sales")

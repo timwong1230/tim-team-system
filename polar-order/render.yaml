@@ -18,5 +18,11 @@ services:
         value: /data
       - key: POLAR_STAFF_PIN
         sync: false
+      - key: POLAR_DAILY_SALES_SHEET_ID
+        value: 1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I
+      - key: POLAR_DAILY_SALES_WORKSHEET
+        value: Daily_Sales
+      - key: POLAR_GSPREAD_KEY
+        sync: false
       - key: PORT
         value: "8080"
