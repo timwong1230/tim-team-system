@@ -173,11 +173,18 @@ def _logout_blocked() -> bool:
     return False
 
 
-def _inject_clear_storage_js() -> None:
-    """Client-side wipe — call on a stable page (login), not only before rerun."""
+def _inject_clear_storage_js(*, hard_reload: bool = False) -> None:
+    """Client-side wipe — call on a stable page (login), not only before rerun.
+
+    When ``hard_reload`` is True (manual 登出), force the browser URL to
+    ``?tt_out=1`` via ``location.replace`` so a dead Streamlit session cannot
+    restore from an old cookie/localStorage without the logout flag.
+    """
     key_js = json.dumps(_LS_KEY)
     legacy_js = json.dumps(_LEGACY_LS_KEY)
     logout_js = json.dumps(_LOGOUT_COOKIE)
+    out_js = json.dumps(_LOGOUT_QP)
+    hard_js = "true" if hard_reload else "false"
     script = f"""
 <script>
 (function () {{
@@ -192,8 +199,11 @@ def _inject_clear_storage_js() -> None:
   }} catch (e) {{}}
   try {{
     var url = new URL(window.location.href);
-    if (url.searchParams.has('tt_sess')) {{
-      url.searchParams.delete('tt_sess');
+    url.searchParams.delete('tt_sess');
+    url.searchParams.set({out_js}, '1');
+    if ({hard_js}) {{
+      window.location.replace(url.toString());
+    }} else {{
       window.history.replaceState({{}}, '', url.toString());
     }}
   }} catch (e) {{}}
@@ -210,7 +220,7 @@ def flush_pending_logout_clear() -> None:
     """Run deferred localStorage/cookie clear on the login screen."""
     if not st.session_state.get(_NEED_CLEAR_JS_KEY) and not _logout_blocked():
         return
-    _inject_clear_storage_js()
+    _inject_clear_storage_js(hard_reload=False)
     st.session_state.pop(_NEED_CLEAR_JS_KEY, None)
 
 
@@ -275,11 +285,14 @@ def persist_browser_session(
     return token
 
 
-def clear_browser_session() -> None:
+def clear_browser_session(*, hard_reload: bool = False) -> None:
     """Drop persisted session and block restore until next successful login.
 
     Sets sync flags (session_state + ``?tt_out=1``) immediately, and defers the
     localStorage wipe to the next stable render so ``st.rerun()`` cannot skip JS.
+
+    Pass ``hard_reload=True`` for the 登出 button so the browser navigates to a
+    URL that already contains ``tt_out=1`` (survives full remount / PWA wake).
     """
     st.session_state[_LOGOUT_BLOCK_KEY] = True
     st.session_state[_NEED_CLEAR_JS_KEY] = True
@@ -297,7 +310,7 @@ def clear_browser_session() -> None:
     except Exception:
         pass
     # Best-effort clear now; flush_pending_logout_clear runs again on login page
-    _inject_clear_storage_js()
+    _inject_clear_storage_js(hard_reload=hard_reload)
 
 
 # Back-compat alias used by older app paths

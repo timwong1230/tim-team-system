@@ -892,13 +892,21 @@ def _do_logout() -> None:
     st.session_state.pop("role", None)
     st.session_state.pop("avatar", None)
     st.session_state.pop("_tt_last_active", None)
+    st.session_state["_tt_logout_block"] = True
     try:
         from tt_core.auth_persist import clear_browser_session
 
-        clear_browser_session()
+        # hard_reload puts ?tt_out=1 in the real browser URL so restore cannot
+        # bounce back after a remount / PWA wake.
+        clear_browser_session(hard_reload=True)
     except Exception:
         st.session_state["_tt_logout_block"] = True
+        try:
+            st.query_params["tt_out"] = "1"
+        except Exception:
+            pass
     _reset_nav_to_home()
+    st.toast("已登出", icon="👋")
     st.rerun()
 
 
@@ -1744,6 +1752,12 @@ def page_home():
                     f"**{row['username']}** · {row['type']} · {act_date}  \n"
                     + "  \n".join(note_preview)
                 )
+
+    # Phone: logout is easy to miss in the collapsed sidebar
+    if PHONE:
+        st.markdown("")
+        if st.button("登出", use_container_width=True, type="secondary", key="home_phone_logout"):
+            _do_logout()
 
 
 def page_coach_tim():

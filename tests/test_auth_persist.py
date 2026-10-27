@@ -153,11 +153,30 @@ def test_logout_sets_sync_tt_out_query():
         assert ap._logout_blocked() is True
 
 
+def test_hard_logout_js_forces_tt_out_url():
+    from tt_core import auth_persist as ap
+
+    state: dict = {}
+    with patch.object(ap, "st") as st_mock:
+        st_mock.session_state = state
+        st_mock.html = MagicMock()
+        st_mock.query_params = {}
+        ap.clear_browser_session(hard_reload=True)
+        html = "".join(
+            str(c.args[0]) for c in st_mock.html.call_args_list if c.args
+        )
+        assert "location.replace" in html
+        assert "tt_out" in html
+        assert state.get("_tt_logout_block") is True
+
+
 def test_app_wires_persist_and_idle():
     src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "try_restore_session" in src
     assert "persist_browser_session" in src
     assert "clear_browser_session" in src
+    assert "hard_reload=True" in src
+    assert "home_phone_logout" in src
     assert "idle_expired" in src
     assert "touch_activity" in src
     assert "force_logout_idle" in src
@@ -168,3 +187,4 @@ def test_app_wires_persist_and_idle():
     assert "localStorage.setItem" in auth
     assert "tt_sess_v2" in auth
     assert "tt_logout" in auth
+    assert "location.replace" in auth
