@@ -6,3 +6,5 @@ qrcode[pil]==8.0
 pydantic==2.10.4
 reportlab==4.2.5
 pypdf==5.1.0
+gspread==6.1.4
+google-auth==2.37.0

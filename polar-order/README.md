@@ -66,8 +66,28 @@ Menu seeded from `data/menu.json`.
 - **Order for table:** Staff → Seats → **Order for table** (or Bill → **Order for this table**) — place full menu orders for a guest even if they are not using the QR phone
 - **Discount on bill:** enter `10` for 10% off (blank/0 = full price)
 - **PDF receipt:** generated when you mark paid
-- **Reports:** `/staff/reports` — nightly close, monthly sales, boss report
+- **Reports:** `/staff/reports` — nightly close, monthly sales, boss report, WhatsApp sales text, **Sync to Google Sheet**
 - **Ask AI** mood chips on guest menu
+
+## Daily_Sales → Google Sheets
+
+Nightly close can upsert one row into spreadsheet **Polar Lounge — Daily Sales**:
+
+https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit
+
+Columns: `business_date`, Cash, Visa, Master, AE, Alipay, UnionPay, WeChat pay, Deposit, Claim, Daily Sales, Cash Tilt, Monthly Total, `synced_at`.
+
+**Render env**
+
+| Key | Value |
+| --- | --- |
+| `POLAR_DAILY_SALES_SHEET_ID` | `1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY` |
+| `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` (auto-renames Sheet1 on first sync) |
+| `POLAR_GSPREAD_KEY` | Full Google **service account** JSON (same style as TIM TEAM `GSPREAD_KEY`) |
+
+Share the spreadsheet with the service account email as **Editor** (Share → paste `…@….iam.gserviceaccount.com`).
+
+Then Reports → enter Cash Tilt / claims → **Sync to Google Sheet**.
 
 ## Notes
 

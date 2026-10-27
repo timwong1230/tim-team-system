@@ -107,6 +107,17 @@
     <p class="muted" style="margin-top:0">一鍵產生今日埋數訊息，開 WhatsApp 傳送。</p>
     <button class="primary" type="button" id="waSalesBtn" style="width:auto">Open WhatsApp Sales report</button>
     <p class="muted" id="waSalesMsg" style="margin-top:10px;margin-bottom:0;white-space:pre-wrap"></p>
+
+    <hr class="claim-sep" />
+    <h3>Google Sheet · Daily_Sales</h3>
+    <p class="muted" style="margin-top:0">將今日埋數寫入 Google Sheet（有呢日就更新，冇就新增一行）。</p>
+    {% if sheets_sync_ready %}
+    <button class="primary" type="button" id="sheetSyncBtn" style="width:auto">Sync to Google Sheet</button>
+    {% else %}
+    <button class="ghost" type="button" id="sheetSyncBtn" style="width:auto" disabled>Sync to Google Sheet</button>
+    <p class="muted" style="margin-top:8px">Server 未設定 <code>POLAR_DAILY_SALES_SHEET_ID</code> + <code>POLAR_GSPREAD_KEY</code>。</p>
+    {% endif %}
+    <p class="muted" id="sheetSyncMsg" style="margin-top:10px;margin-bottom:0"></p>
   </div>
 
   <div class="card">
@@ -236,6 +247,25 @@
       }
     } catch (err) {
       msg.textContent = err.message || 'Failed';
+    }
+  });
+
+  document.getElementById('sheetSyncBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('sheetSyncBtn');
+    if (btn?.disabled) return;
+    const msg = document.getElementById('sheetSyncMsg');
+    msg.textContent = 'Syncing…';
+    try {
+      const body = new FormData();
+      body.set('pin', PIN);
+      body.set('day', BIZ_DAY);
+      const res = await fetch('/api/staff/sync-daily-sales', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Sync failed');
+      const action = data.action === 'updated' ? 'Updated' : 'Added';
+      msg.textContent = `${action} ${data.business_date} in Google Sheet.`;
+    } catch (err) {
+      msg.textContent = err.message || 'Sync failed';
     }
   });
 
