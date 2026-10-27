@@ -1,12 +1,14 @@
 # Polar Lounge — Finance (P&L + Balance Sheet)
 
-## Workbook
+## Live workbook
+
+https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I/edit
 
 | File | Link |
 | --- | --- |
-| **Template (full multi-tab)** | [Drive Excel](https://drive.google.com/file/d/1T94DR8EugI7-nirBswpOG4xXczhUSrXr/view) — open with Google Sheets |
-| Repo copy | `Polar_Lounge_Finance_PL_BS.xlsx` |
-| Daily sales sync target (today) | [Polar Lounge — Daily Sales](https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit) |
+| **Live Google Sheet** | above |
+| Repo Excel template | `Polar_Lounge_Finance_PL_BS.xlsx` |
+| Legacy Daily Sales sheet | [archive](https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit) |
 
 ## Tabs
 
@@ -24,25 +26,24 @@
 
 1. Staff: Polar Order → Reports → claims / Cash Tilt → **Sync to Google Sheet**
 2. Tim: paste bank movements into `Bank_Entries` (yellow). Nature via dropdown.
-3. Read `P&L_Monthly` / `Balance_Sheet` / `KPI` — no copy-paste into CWB.
+3. Read `P&L_Monthly` / `Balance_Sheet` / `KPI`.
 
-## One-time setup
+## Render
 
-1. Open the Excel template → **Open with Google Sheets** → keep as Google Spreadsheet.
-2. Share with Polar Order **service account** (Editor) + `cwbpolar@gmail.com`.
-3. Set Render:
-   - `POLAR_DAILY_SALES_SHEET_ID` = that spreadsheet id  
-   - `POLAR_DAILY_SALES_WORKSHEET` = `Daily_Sales`  
-   - `POLAR_GSPREAD_KEY` = service account JSON  
-4. Until converted, Sync continues writing the standalone Daily Sales sheet above.
+| Key | Value |
+| --- | --- |
+| `POLAR_DAILY_SALES_SHEET_ID` | `1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I` |
+| `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` |
+| `POLAR_GSPREAD_KEY` | Service account JSON |
+
+Share the live sheet with the service account email as **Editor**.
 
 ## Bank_Entries rules
 
 - Money in = positive; money out = negative.
 - Fill either `hsbc_sa` or `hsbc_ca` (or both if split).
 - `nature` must match Chart of Accounts exactly (drives P&L lines).
-- `account_code` fills via formula.
 
 ## Archive
 
-[Polar Lounge CWB](https://docs.google.com/spreadsheets/d/1tbawLTy__6ox4yzDkn-sHEtUedmhzcNZnZtjHWB4i64/edit) stays historical — no new monthly tabs needed.
+[Polar Lounge CWB](https://docs.google.com/spreadsheets/d/1tbawLTy__6ox4yzDkn-sHEtUedmhzcNZnZtjHWB4i64/edit) stays historical.

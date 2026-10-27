@@ -73,14 +73,14 @@ Menu seeded from `data/menu.json`.
 
 Nightly close upserts one row (payment mix, Claim, Daily Sales, Cash Tilt, Monthly Total).
 
-**Today’s sync target:** [Polar Lounge — Daily Sales](https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit)
+**Sync target (Finance workbook):**  
+https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I/edit  
 
-**Full finance workbook (P&L + Balance Sheet):** see [`finance/README.md`](finance/README.md) and the Drive template  
-[Polar Lounge — Finance (P&L + Balance Sheet).xlsx](https://drive.google.com/file/d/1T94DR8EugI7-nirBswpOG4xXczhUSrXr/view)
+See [`finance/README.md`](finance/README.md) for tabs and Bank_Entries rules.
 
 | Who | Does |
 | --- | --- |
-| Staff | Reports → Sync to Google Sheet |
+| Staff | Reports → Sync to Google Sheet → writes `Daily_Sales` tab |
 | Tim | Only `Bank_Entries` (bank lines + Nature) |
 | Sheet formulas | `P&L_Monthly`, `Balance_Sheet`, `KPI` |
 
@@ -88,9 +88,9 @@ Nightly close upserts one row (payment mix, Claim, Daily Sales, Cash Tilt, Month
 
 | Key | Value |
 | --- | --- |
-| `POLAR_DAILY_SALES_SHEET_ID` | Daily Sales id now; after you convert the Finance template to Google Sheets, point this at that workbook id |
+| `POLAR_DAILY_SALES_SHEET_ID` | `1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I` |
 | `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` |
-| `POLAR_GSPREAD_KEY` | Service account JSON (Editor on the sheet) |
+| `POLAR_GSPREAD_KEY` | Service account JSON — share the Finance sheet with that SA as **Editor** |
 
 ## Notes
 
