@@ -879,6 +879,7 @@ def _reset_nav_to_home() -> None:
         "_client_tool_force",
         "_recruit_tool_force",
         "_home_weekly_report",
+        "_dash_weekly_report",
         "_force_home_once",
     ):
         st.session_state.pop(k, None)
@@ -1407,7 +1408,14 @@ def _render_admin_ops_desk(*, due_count: int = 0) -> None:
             wk_df, start, end = get_last_week_data()
             report = build_weekly_settlement_report(wk_df, start, end)
             st.session_state["_home_weekly_report"] = report
+        from tt_core.weekly_report import report_mentions_skipped
+
         report = st.session_state.get("_home_weekly_report")
+        # Drop stale cached message that still lists KK / other skips
+        if report and report_mentions_skipped(report):
+            st.session_state.pop("_home_weekly_report", None)
+            report = None
+            st.info("舊戰報仍含暫時唔計嘅同事，請再撳「生成上週結算戰報」。")
         if report:
             st.code(report)
             st.link_button(
@@ -2786,13 +2794,28 @@ def page_dashboard():
                 "獎罰唔包 Tim（分數照顯示）；暫時唔計 KK。"
                 "無人罰款時 Tim 獎 $100 俾最高分同事；若 Tim 最高分則獎第 2 高。"
             )
-            if st.button("生成上週結算戰報"):
-                from tt_core.weekly_report import build_weekly_settlement_report
+            if st.button("生成上週結算戰報", key="dash_weekly_report"):
+                import importlib
 
+                import tt_core.weekly_report as _wr
+
+                importlib.reload(_wr)
                 wk_df, start, end = get_last_week_data()
-                report = build_weekly_settlement_report(wk_df, start, end)
+                report = _wr.build_weekly_settlement_report(wk_df, start, end)
+                st.session_state["_dash_weekly_report"] = report
+            report = st.session_state.get("_dash_weekly_report")
+            from tt_core.weekly_report import report_mentions_skipped
+
+            if report and report_mentions_skipped(report):
+                st.session_state.pop("_dash_weekly_report", None)
+                report = None
+                st.info("舊戰報仍含暫時唔計嘅同事，請再撳「生成上週結算戰報」。")
+            if report:
                 st.code(report)
-                st.link_button("Send to WhatsApp", f"https://wa.me/?text={urllib.parse.quote(report)}")
+                st.link_button(
+                    "Send to WhatsApp",
+                    f"https://wa.me/?text={urllib.parse.quote(report)}",
+                )
 
     df = get_data("Yearly")
     calc_ytd = float(df["fyc"].sum()) if not df.empty else 0.0

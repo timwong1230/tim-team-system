@@ -12,6 +12,8 @@ Rules:
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any
 
 import pandas as pd
@@ -23,7 +25,11 @@ _WEEKLY_PRIZE_EXCLUDED = frozenset({"tim"})
 
 
 def _norm(username: Any) -> str:
-    return str(username or "").strip().lower()
+    """Canonical username: NFKC (fullwidth ＫＫ→KK), strip, lower."""
+    text = str(username or "")
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", text)
+    return text.strip().lower()
 
 
 def _skip_names() -> frozenset[str]:
@@ -51,6 +57,24 @@ def filter_checkin_challenge(df: pd.DataFrame | None) -> pd.DataFrame:
     if not skip:
         return df.copy()
     return df[~df["username"].astype(str).map(_norm).isin(skip)].copy()
+
+
+def report_mentions_skipped(report: str) -> bool:
+    """True if a cached WhatsApp report still names a skipped member."""
+    text = str(report or "")
+    if not text:
+        return False
+    for name in _skip_names():
+        # Match fine line or detail line for that person
+        if re.search(rf"❌\s*{re.escape(name)}\b", text, flags=re.I):
+            return True
+        if re.search(rf"(?m)^{re.escape(name)}\s*:", text, flags=re.I):
+            return True
+        # Also catch original casing from sheet before norm
+        for raw in CHECKIN_CHALLENGE_SKIP:
+            if f"❌ {raw}" in text or f"{raw}:" in text:
+                return True
+    return False
 
 
 def eligible_frame(wk_df: pd.DataFrame) -> pd.DataFrame:
@@ -89,6 +113,8 @@ def build_weekly_settlement_report(
     sponsor_name: str = "Tim",
 ) -> str:
     """Format WhatsApp-ready weekly settlement text."""
+    # Drop temporary skips (KK) from the entire message up front
+    wk_df = filter_checkin_challenge(wk_df)
     winners = pick_mvp_winners(wk_df)
     losers = pick_losers(wk_df)
     penalty_total = int(len(losers) * WEEKLY_PENALTY)
@@ -126,13 +152,14 @@ def build_weekly_settlement_report(
         report += "✅ *上週無人罰款！Excellent！*\n"
 
     report += "\n📊 *詳細戰況：*\n"
-    # Show Tim; hide temporary skips entirely
-    detail = filter_checkin_challenge(wk_df)
-    if detail is not None and not detail.empty:
-        for _, row in detail.sort_values(by="wk_score", ascending=False).iterrows():
+    if wk_df is not None and not wk_df.empty:
+        for _, row in wk_df.sort_values(by="wk_score", ascending=False).iterrows():
             report += (
                 f"{row['username']}: {int(row['wk_score'])}分 "
                 f"({int(row['wk_count'])}次)\n"
             )
+    skip_label = "、".join(str(x) for x in CHECKIN_CHALLENGE_SKIP)
+    if skip_label:
+        report += f"\n_（暫時唔計：{skip_label}）_\n"
     report += "\n🚀 *新一週由零開始，大家加油！*"
     return report

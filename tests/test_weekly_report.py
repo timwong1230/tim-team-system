@@ -18,6 +18,7 @@ from tt_core.weekly_report import (  # noqa: E402
     is_checkin_challenge_skipped,
     pick_losers,
     pick_mvp_winners,
+    report_mentions_skipped,
 )
 
 
@@ -62,6 +63,23 @@ def test_kk_never_on_penalty_or_detail():
     assert "KK:" not in report  # hidden from 詳細戰況
     assert "Oscar" in report and "Hanes" in report
     assert "Tim: 5分" in report
+    assert "暫時唔計：KK" in report
+    assert not report_mentions_skipped(report)
+
+
+def test_fullwidth_kk_also_skipped():
+    assert is_checkin_challenge_skipped("ＫＫ")
+    wk = _df(
+        [
+            {"username": "Oscar", "wk_score": 3, "wk_count": 3},
+            {"username": "ＫＫ", "wk_score": 0, "wk_count": 0},
+        ]
+    )
+    report = build_weekly_settlement_report(wk, "2026-10-19", "2026-10-25")
+    assert "❌" not in report or "KK" not in report.split("詳細")[0]
+    assert "ＫＫ" not in report
+    stale = "💸 *【罰款名單】*\n❌ KK (得 0 次)\n"
+    assert report_mentions_skipped(stale)
 
 
 def test_kk_filtered_from_challenge_board():
