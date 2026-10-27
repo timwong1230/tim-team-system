@@ -69,25 +69,28 @@ Menu seeded from `data/menu.json`.
 - **Reports:** `/staff/reports` — nightly close, monthly sales, boss report, WhatsApp sales text, **Sync to Google Sheet**
 - **Ask AI** mood chips on guest menu
 
-## Daily_Sales → Google Sheets
+## Daily_Sales → Google Sheets → P&L / Balance Sheet
 
-Nightly close can upsert one row into spreadsheet **Polar Lounge — Daily Sales**:
+Nightly close upserts one row (payment mix, Claim, Daily Sales, Cash Tilt, Monthly Total).
 
-https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit
+**Today’s sync target:** [Polar Lounge — Daily Sales](https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit)
 
-Columns: `business_date`, Cash, Visa, Master, AE, Alipay, UnionPay, WeChat pay, Deposit, Claim, Daily Sales, Cash Tilt, Monthly Total, `synced_at`.
+**Full finance workbook (P&L + Balance Sheet):** see [`finance/README.md`](finance/README.md) and the Drive template  
+[Polar Lounge — Finance (P&L + Balance Sheet).xlsx](https://drive.google.com/file/d/1T94DR8EugI7-nirBswpOG4xXczhUSrXr/view)
+
+| Who | Does |
+| --- | --- |
+| Staff | Reports → Sync to Google Sheet |
+| Tim | Only `Bank_Entries` (bank lines + Nature) |
+| Sheet formulas | `P&L_Monthly`, `Balance_Sheet`, `KPI` |
 
 **Render env**
 
 | Key | Value |
 | --- | --- |
-| `POLAR_DAILY_SALES_SHEET_ID` | `1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY` |
-| `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` (auto-renames Sheet1 on first sync) |
-| `POLAR_GSPREAD_KEY` | Full Google **service account** JSON (same style as TIM TEAM `GSPREAD_KEY`) |
-
-Share the spreadsheet with the service account email as **Editor** (Share → paste `…@….iam.gserviceaccount.com`).
-
-Then Reports → enter Cash Tilt / claims → **Sync to Google Sheet**.
+| `POLAR_DAILY_SALES_SHEET_ID` | Daily Sales id now; after you convert the Finance template to Google Sheets, point this at that workbook id |
+| `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` |
+| `POLAR_GSPREAD_KEY` | Service account JSON (Editor on the sheet) |
 
 ## Notes
 
