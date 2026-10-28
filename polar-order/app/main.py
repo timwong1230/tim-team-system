@@ -14,7 +14,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import qrcode
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -64,7 +64,13 @@ from .reports import (
     monthly_boss_report,
     monthly_sales_report,
 )
-from .sheets_sync import SheetsNotConfigured, sheets_configured, upsert_daily_sales_row
+from .bank_import import parse_bank_csv
+from .sheets_sync import (
+    SheetsNotConfigured,
+    append_bank_entries,
+    sheets_configured,
+    upsert_daily_sales_row,
+)
 from .ai_host import ask_ai
 from .guest_nav import build_guest_nav
 from .paths import DATA_DIR, ROOT
@@ -1739,8 +1745,39 @@ def staff_delete_claim(claim_id: int, pin: str = ""):
     return {"ok": True}
 
 
+def _sync_daily_sales_for_biz(biz: date) -> dict[str, Any]:
+    """Build + upsert one Daily_Sales row (raises on Sheets errors)."""
+    if not sheets_configured():
+        raise SheetsNotConfigured(
+            "Set POLAR_DAILY_SALES_SHEET_ID and POLAR_GSPREAD_KEY on the server."
+        )
+    conn = connect()
+    daily = daily_sales_report(conn, biz)
+    monthly = monthly_sales_report(conn, biz.year, biz.month)
+    conn.close()
+    row = build_daily_sales_sheet_row(
+        business_date=biz,
+        by_payment_method=daily["by_payment_method"],
+        claims_total=float(daily["claims_total"]),
+        daily_sales=float(daily["gross_sales"]),
+        cash_tilt=float(daily["cash_tilt"]),
+        monthly_total=float(monthly["gross_sales"]),
+    )
+    return upsert_daily_sales_row(row)
+
+
+def _auto_sync_daily_sales_safe(biz_iso: str) -> None:
+    """Best-effort background sync after cash tilt — never raises to the request."""
+    try:
+        biz = date.fromisoformat(biz_iso)
+        _sync_daily_sales_for_biz(biz)
+    except Exception:
+        # Night close must not fail if Sheets is slow/down.
+        return
+
+
 @app.post("/api/staff/cash-tilt")
-def staff_set_cash_tilt(body: CashTiltBody):
+def staff_set_cash_tilt(body: CashTiltBody, background_tasks: BackgroundTasks):
     if body.pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     try:
@@ -1750,7 +1787,16 @@ def staff_set_cash_tilt(body: CashTiltBody):
     conn = connect()
     amount = set_cash_tilt(conn, body.business_date, round(float(body.amount), 1))
     conn.close()
-    return {"ok": True, "business_date": body.business_date, "cash_tilt": amount}
+    auto = False
+    if sheets_configured():
+        background_tasks.add_task(_auto_sync_daily_sales_safe, body.business_date)
+        auto = True
+    return {
+        "ok": True,
+        "business_date": body.business_date,
+        "cash_tilt": amount,
+        "sheets_auto_sync_queued": auto,
+    }
 
 
 @app.get("/api/staff/whatsapp-sales-report")
@@ -1790,7 +1836,7 @@ def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
 
 @app.post("/api/staff/sync-daily-sales")
 def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
-    """Upsert tonight's Daily_Sales row into Google Sheets."""
+    """Upsert tonight's Daily_Sales row into Google Sheets (manual backup)."""
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     today_biz = business_date(datetime.now(HK))
@@ -1802,32 +1848,51 @@ def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
     else:
         biz = today_biz
 
+    try:
+        return _sync_daily_sales_for_biz(biz)
+    except SheetsNotConfigured as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — surface Sheets errors to staff
+        raise HTTPException(502, f"Google Sheets sync failed: {exc}") from exc
+
+
+@app.post("/api/staff/import-bank-csv")
+async def staff_import_bank_csv(
+    pin: str = Form(...),
+    account: str = Form("hsbc_ca"),
+    file: UploadFile = File(...),
+):
+    """Tim: upload HSBC CSV → auto Nature → append Bank_Entries (deduped)."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if account not in {"hsbc_sa", "hsbc_ca"}:
+        raise HTTPException(400, "account must be hsbc_sa or hsbc_ca")
     if not sheets_configured():
         raise HTTPException(
             503,
             "Google Sheet sync not configured. Set POLAR_DAILY_SALES_SHEET_ID "
             "and POLAR_GSPREAD_KEY on the server.",
         )
-
-    conn = connect()
-    daily = daily_sales_report(conn, biz)
-    monthly = monthly_sales_report(conn, biz.year, biz.month)
-    conn.close()
-
-    row = build_daily_sales_sheet_row(
-        business_date=biz,
-        by_payment_method=daily["by_payment_method"],
-        claims_total=float(daily["claims_total"]),
-        daily_sales=float(daily["gross_sales"]),
-        cash_tilt=float(daily["cash_tilt"]),
-        monthly_total=float(monthly["gross_sales"]),
-    )
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Empty CSV file")
     try:
-        result = upsert_daily_sales_row(row)
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+    try:
+        entries = parse_bank_csv(text, account=account)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not entries:
+        raise HTTPException(400, "No bank rows found in CSV")
+    try:
+        result = append_bank_entries(entries)
     except SheetsNotConfigured as exc:
         raise HTTPException(503, str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 — surface Sheets errors to staff
-        raise HTTPException(502, f"Google Sheets sync failed: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Bank import failed: {exc}") from exc
+    result["parsed"] = len(entries)
     return result
 
 

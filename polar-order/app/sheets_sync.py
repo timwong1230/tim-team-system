@@ -1,8 +1,9 @@
-"""Push nightly Daily_Sales rows to Google Sheets.
+"""Push Daily_Sales / Bank_Entries rows to the Finance Google Sheet.
 
 Env:
-  POLAR_DAILY_SALES_SHEET_ID — spreadsheet id
+  POLAR_DAILY_SALES_SHEET_ID — Finance spreadsheet id
   POLAR_DAILY_SALES_WORKSHEET — tab name (default Daily_Sales)
+  POLAR_BANK_ENTRIES_WORKSHEET — tab name (default Bank_Entries)
   POLAR_GSPREAD_KEY or GSPREAD_KEY — service account JSON
 """
 
@@ -29,6 +30,18 @@ DAILY_SALES_HEADERS: tuple[str, ...] = (
     "synced_at",
 )
 
+BANK_ENTRY_HEADERS: tuple[str, ...] = (
+    "date",
+    "memo",
+    "chq_no",
+    "hsbc_sa",
+    "hsbc_ca",
+    "nature",
+    "account_code",
+    "linked_sales_date",
+    "notes",
+)
+
 _SCOPES = (
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -47,8 +60,12 @@ def _sheet_id() -> str:
     return (os.getenv("POLAR_DAILY_SALES_SHEET_ID") or "").strip()
 
 
-def _worksheet_title() -> str:
+def _daily_worksheet_title() -> str:
     return (os.getenv("POLAR_DAILY_SALES_WORKSHEET") or "Daily_Sales").strip() or "Daily_Sales"
+
+
+def _bank_worksheet_title() -> str:
+    return (os.getenv("POLAR_BANK_ENTRIES_WORKSHEET") or "Bank_Entries").strip() or "Bank_Entries"
 
 
 def _credentials_dict() -> dict[str, Any] | None:
@@ -64,7 +81,7 @@ def _credentials_dict() -> dict[str, Any] | None:
     return data
 
 
-def _open_worksheet():
+def _gspread_client():
     try:
         import gspread
         from google.oauth2.service_account import Credentials
@@ -82,23 +99,38 @@ def _open_worksheet():
         )
 
     creds = Credentials.from_service_account_info(key, scopes=list(_SCOPES))
-    client = gspread.authorize(creds)
-    spreadsheet = client.open_by_key(sheet_id)
-    title = _worksheet_title()
+    return gspread.authorize(creds), sheet_id
 
+
+def _open_spreadsheet():
+    client, sheet_id = _gspread_client()
+    return client.open_by_key(sheet_id)
+
+
+def _open_named_worksheet(title: str, header_first: str):
+    import gspread
+
+    spreadsheet = _open_spreadsheet()
     worksheet = None
     try:
         worksheet = spreadsheet.worksheet(title)
     except gspread.WorksheetNotFound:
         for candidate in spreadsheet.worksheets():
-            header = candidate.row_values(1)[:1]
-            if header == ["business_date"]:
+            row = candidate.row_values(1)
+            if row and row[0].strip() == header_first:
                 worksheet = candidate
+                break
+            # Template put headers below a title block — scan early rows.
+            for r in range(1, 12):
+                vals = candidate.row_values(r)
+                if vals and vals[0].strip() == header_first:
+                    worksheet = candidate
+                    break
+            if worksheet is not None:
                 break
         if worksheet is None:
             worksheet = spreadsheet.sheet1
 
-    # Keep a stable tab name for future syncs / docs.
     if worksheet.title != title:
         try:
             worksheet.update_title(title)
@@ -107,18 +139,35 @@ def _open_worksheet():
     return worksheet
 
 
-def _ensure_headers(worksheet) -> None:
-    current = worksheet.row_values(1)
-    if current[: len(DAILY_SALES_HEADERS)] == list(DAILY_SALES_HEADERS):
-        return
+def _header_row_index(worksheet, expected_headers: tuple[str, ...]) -> int:
+    """1-based row where the header starts (first cell matches expected[0])."""
+    needle = expected_headers[0]
+    for r in range(1, 16):
+        vals = worksheet.row_values(r)
+        if not vals:
+            continue
+        if vals[0].strip() == needle:
+            # Prefer exact header match when possible.
+            if [v.strip() for v in vals[: len(expected_headers)]] == list(expected_headers):
+                return r
+            return r
+    return 1
+
+
+def _ensure_headers(worksheet, expected_headers: tuple[str, ...]) -> int:
+    row = _header_row_index(worksheet, expected_headers)
+    current = worksheet.row_values(row)
+    if [c.strip() for c in current[: len(expected_headers)]] == list(expected_headers):
+        return row
     worksheet.update(
-        "A1",
-        [list(DAILY_SALES_HEADERS)],
+        f"A{row}",
+        [list(expected_headers)],
         value_input_option="RAW",
     )
+    return row
 
 
-def _row_values(row: dict[str, Any]) -> list[Any]:
+def _daily_row_values(row: dict[str, Any]) -> list[Any]:
     out: list[Any] = []
     for key in DAILY_SALES_HEADERS:
         val = row.get(key, "")
@@ -138,14 +187,15 @@ def upsert_daily_sales_row(row: dict[str, Any]) -> dict[str, Any]:
     if not biz:
         raise ValueError("business_date is required")
 
-    worksheet = _open_worksheet()
-    _ensure_headers(worksheet)
-    values = _row_values(row)
+    worksheet = _open_named_worksheet(_daily_worksheet_title(), "business_date")
+    header_row = _ensure_headers(worksheet, DAILY_SALES_HEADERS)
+    values = _daily_row_values(row)
 
-    # Column A holds business_date (skip header).
-    dates = worksheet.col_values(1)[1:]
+    # Column A from the row under headers.
+    col_a = worksheet.col_values(1)
+    dates = col_a[header_row:]  # after header row
     if biz in dates:
-        sheet_row = dates.index(biz) + 2  # 1-based; +1 header
+        sheet_row = header_row + dates.index(biz) + 1
         worksheet.update(
             f"A{sheet_row}",
             [values],
@@ -161,6 +211,58 @@ def upsert_daily_sales_row(row: dict[str, Any]) -> dict[str, Any]:
         "action": action,
         "business_date": biz,
         "sheet_id": _sheet_id(),
-        "worksheet": _worksheet_title(),
+        "worksheet": _daily_worksheet_title(),
         "row": {h: values[i] for i, h in enumerate(DAILY_SALES_HEADERS)},
+    }
+
+
+def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Append bank rows; skip fingerprints already present in notes/memo+date+amount."""
+    from .bank_import import rows_for_sheet
+
+    if not entries:
+        return {"ok": True, "added": 0, "skipped": 0, "worksheet": _bank_worksheet_title()}
+
+    worksheet = _open_named_worksheet(_bank_worksheet_title(), "date")
+    header_row = _ensure_headers(worksheet, BANK_ENTRY_HEADERS)
+
+    # Build existing fingerprints from date|memo|sa|ca
+    existing: set[str] = set()
+    all_vals = worksheet.get_all_values()
+    data_rows = all_vals[header_row:] if len(all_vals) >= header_row else []
+    for r in data_rows:
+        if len(r) < 6:
+            continue
+        d, memo = (r[0] or "").strip(), (r[1] or "").strip()
+        sa, ca = (r[3] or "").strip(), (r[4] or "").strip()
+        if not d or not memo:
+            continue
+        amt = sa or ca or "0"
+        acct = "hsbc_sa" if sa else "hsbc_ca"
+        try:
+            amt_f = float(amt)
+        except ValueError:
+            amt_f = 0.0
+        existing.add(f"{d}|{memo}|{amt_f:.2f}|{acct}")
+
+    to_add: list[dict[str, Any]] = []
+    skipped = 0
+    for e in entries:
+        fp = e.get("fingerprint") or ""
+        if fp and fp in existing:
+            skipped += 1
+            continue
+        to_add.append(e)
+        if fp:
+            existing.add(fp)
+
+    if to_add:
+        worksheet.append_rows(rows_for_sheet(to_add), value_input_option="USER_ENTERED")
+
+    return {
+        "ok": True,
+        "added": len(to_add),
+        "skipped": skipped,
+        "sheet_id": _sheet_id(),
+        "worksheet": _bank_worksheet_title(),
     }

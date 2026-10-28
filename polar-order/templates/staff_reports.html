@@ -110,14 +110,36 @@
 
     <hr class="claim-sep" />
     <h3>Google Sheet · Daily_Sales</h3>
-    <p class="muted" style="margin-top:0">將今日埋數寫入 Google Sheet（有呢日就更新，冇就新增一行）。</p>
+    <p class="muted" style="margin-top:0">
+      儲存 <strong>Cash Tilt</strong> 後會<strong>自動 sync</strong>去 Finance sheet。
+      下面掣只係後備（自動失敗時再㩒）。
+    </p>
     {% if sheets_sync_ready %}
-    <button class="primary" type="button" id="sheetSyncBtn" style="width:auto">Sync to Google Sheet</button>
+    <button class="primary" type="button" id="sheetSyncBtn" style="width:auto">Sync now (backup)</button>
     {% else %}
-    <button class="ghost" type="button" id="sheetSyncBtn" style="width:auto" disabled>Sync to Google Sheet</button>
+    <button class="ghost" type="button" id="sheetSyncBtn" style="width:auto" disabled>Sync now (backup)</button>
     <p class="muted" style="margin-top:8px">Server 未設定 <code>POLAR_DAILY_SALES_SHEET_ID</code> + <code>POLAR_GSPREAD_KEY</code>。</p>
     {% endif %}
     <p class="muted" id="sheetSyncMsg" style="margin-top:10px;margin-bottom:0"></p>
+
+    <hr class="claim-sep" />
+    <h3>Bank CSV → Finance（Tim）</h3>
+    <p class="muted" style="margin-top:0">
+      由 HSBC app／網上銀行 download CSV，上載一次。系統自動估 Nature，寫入 <code>Bank_Entries</code>（重複行會 skip）。
+    </p>
+    {% if sheets_sync_ready %}
+    <label class="muted" for="bankAccount">Account column</label>
+    <select class="field" id="bankAccount">
+      <option value="hsbc_ca" selected>HSBC CA</option>
+      <option value="hsbc_sa">HSBC SA</option>
+    </select>
+    <label class="muted" for="bankCsvFile">CSV file</label>
+    <input class="field" id="bankCsvFile" type="file" accept=".csv,text/csv" />
+    <button class="primary" type="button" id="bankImportBtn" style="width:auto">Upload bank CSV</button>
+    {% else %}
+    <button class="ghost" type="button" disabled style="width:auto">Upload bank CSV</button>
+    {% endif %}
+    <p class="muted" id="bankImportMsg" style="margin-top:10px;margin-bottom:0"></p>
   </div>
 
   <div class="card">
@@ -226,7 +248,13 @@
       if (!res.ok) throw new Error(data.detail || 'Failed to save Cash Tilt');
       document.getElementById('cashTiltDisplay').textContent = money(data.cash_tilt);
       document.getElementById('cashTiltAmount').value = String(Math.round(Number(data.cash_tilt) || 0));
-      msg.textContent = 'Saved.';
+      msg.textContent = data.sheets_auto_sync_queued
+        ? 'Saved. Daily_Sales auto-sync queued.'
+        : 'Saved.';
+      if (data.sheets_auto_sync_queued) {
+        const syncMsg = document.getElementById('sheetSyncMsg');
+        if (syncMsg) syncMsg.textContent = 'Auto-sync queued after Cash Tilt…';
+      }
     } catch (err) {
       msg.textContent = err.message || 'Failed';
     }
@@ -266,6 +294,30 @@
       msg.textContent = `${action} ${data.business_date} in Google Sheet.`;
     } catch (err) {
       msg.textContent = err.message || 'Sync failed';
+    }
+  });
+
+  document.getElementById('bankImportBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('bankImportMsg');
+    const input = document.getElementById('bankCsvFile');
+    const account = document.getElementById('bankAccount')?.value || 'hsbc_ca';
+    if (!input?.files?.length) {
+      msg.textContent = 'Choose a CSV file first.';
+      return;
+    }
+    msg.textContent = 'Uploading…';
+    try {
+      const body = new FormData();
+      body.set('pin', PIN);
+      body.set('account', account);
+      body.set('file', input.files[0]);
+      const res = await fetch('/api/staff/import-bank-csv', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Import failed');
+      msg.textContent = `Parsed ${data.parsed || 0} · added ${data.added || 0} · skipped ${data.skipped || 0}.`;
+      input.value = '';
+    } catch (err) {
+      msg.textContent = err.message || 'Import failed';
     }
   });
 
