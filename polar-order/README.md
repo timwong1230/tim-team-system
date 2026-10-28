@@ -80,8 +80,8 @@ See [`finance/README.md`](finance/README.md) for tabs and Bank_Entries rules.
 
 | Who | Does |
 | --- | --- |
-| Staff | Reports → Sync to Google Sheet → writes `Daily_Sales` tab |
-| Tim | Only `Bank_Entries` (bank lines + Nature) |
+| Staff | Save **Cash Tilt** → **auto** writes `Daily_Sales` (manual Sync = backup) |
+| Tim | Upload bank **CSV** on Reports（自動估 Nature；錯先改） |
 | Sheet formulas | `P&L_Monthly`, `Balance_Sheet`, `KPI` |
 
 **Render env**

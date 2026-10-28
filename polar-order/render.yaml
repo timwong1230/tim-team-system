@@ -22,6 +22,8 @@ services:
         value: 1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I
       - key: POLAR_DAILY_SALES_WORKSHEET
         value: Daily_Sales
+      - key: POLAR_BANK_ENTRIES_WORKSHEET
+        value: Bank_Entries
       - key: POLAR_GSPREAD_KEY
         sync: false
       - key: PORT

@@ -1,32 +1,38 @@
-# Polar Lounge — Finance (P&L + Balance Sheet)
+# Polar Lounge — Finance（最少人工）
 
 ## Live workbook
 
 https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I/edit
 
-| File | Link |
-| --- | --- |
-| **Live Google Sheet** | above |
-| Repo Excel template | `Polar_Lounge_Finance_PL_BS.xlsx` |
-| Legacy Daily Sales sheet | [archive](https://docs.google.com/spreadsheets/d/1GBFYoOa6oBSTono0b6qy8qX6mKQSbOsnaoWTzP-LiIY/edit) |
+## 你（Tim）最最少要做咩
 
-## Tabs
+**每星期／每兩星期一次：**
 
-| Tab | Who | Purpose |
+1. HSBC app／網上銀行 → download 交易 CSV  
+2. Polar Order → **Reports** → **Upload bank CSV**（揀 SA 或 CA）  
+3. 睇吓 `Bank_Entries` Nature 有冇估錯 → 改錯嗰幾行  
+4. 睇 `P&L_Monthly` / `KPI`
+
+**唔使日日做。** 唔使逐筆手打銀行。
+
+## 員工做咩（每日埋數）
+
+1. 關枱收錢、入 Claims  
+2. 入 **Cash Tilt** → **Save**  
+3. → 系統**自動** sync `Daily_Sales` 去 Finance sheet  
+4. （可選）WhatsApp Sales report  
+
+「Sync now (backup)」只係自動失敗時先㩒。
+
+## 全自動邊度
+
+| 步驟 | 邊個 | 自動？ |
 | --- | --- | --- |
-| `00_README` / `Setup` | — | Instructions |
-| `Chart_of_Accounts` | locked list | Nature / account codes |
-| `Daily_Sales` | **Auto** (Polar Order Sync) | Nightly tenders, Claim, Cash Tilt, Monthly Total |
-| `Bank_Entries` | **Tim only** | HSBC SA/CA lines + Nature |
-| `P&L_Monthly` | Auto formulas | Sales − COGS − opex → net profit + ratios |
-| `Balance_Sheet` | Auto formulas | Bank + cash tilt vs equity |
-| `KPI` | Auto | Partners-meeting numbers |
-
-## Daily workflow
-
-1. Staff: Polar Order → Reports → claims / Cash Tilt → **Sync to Google Sheet**
-2. Tim: paste bank movements into `Bank_Entries` (yellow). Nature via dropdown.
-3. Read `P&L_Monthly` / `Balance_Sheet` / `KPI`.
+| 銷售／付款組合 | POS | 自動計 |
+| Claims / Cash Tilt | 員工入 | 人手（現場先知） |
+| Daily_Sales → Sheet | 系統 | **自動**（Save Cash Tilt 後） |
+| 銀行分類 → P&L | 系統 | CSV 上載後**自動估 Nature** |
+| P&L / BS / KPI | Sheet 公式 | 自動 |
 
 ## Render
 
@@ -34,16 +40,11 @@ https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9c
 | --- | --- |
 | `POLAR_DAILY_SALES_SHEET_ID` | `1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I` |
 | `POLAR_DAILY_SALES_WORKSHEET` | `Daily_Sales` |
-| `POLAR_GSPREAD_KEY` | Service account JSON |
+| `POLAR_BANK_ENTRIES_WORKSHEET` | `Bank_Entries` |
+| `POLAR_GSPREAD_KEY` | Service account JSON；Finance sheet share 俾 SA **Editor** |
 
-Share the live sheet with the service account email as **Editor**.
+## 未自動化（刻意留俾人）
 
-## Bank_Entries rules
-
-- Money in = positive; money out = negative.
-- Fill either `hsbc_sa` or `hsbc_ca` (or both if split).
-- `nature` must match Chart of Accounts exactly (drives P&L lines).
-
-## Archive
-
-[Polar Lounge CWB](https://docs.google.com/spreadsheets/d/1tbawLTy__6ox4yzDkn-sHEtUedmhzcNZnZtjHWB4i64/edit) stays historical.
+- 銀行登入／download CSV（系統 access 唔到銀行）  
+- Nature 估錯時人手改一行  
+- 交會計／報稅／核數（正式帳仍交會計師）

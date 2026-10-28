@@ -94,7 +94,7 @@ def test_upsert_updates_existing_business_date():
             },
             clear=False,
         ),
-        patch("app.sheets_sync._open_worksheet", return_value=ws),
+        patch("app.sheets_sync._open_named_worksheet", return_value=ws),
     ):
         result = upsert_daily_sales_row(
             {
@@ -148,7 +148,8 @@ def test_sync_endpoint_requires_config():
         page = client.get("/staff/reports?pin=polar2026")
         assert page.status_code == 200
         assert b"Google Sheet" in page.content
-        assert b"Sync to Google Sheet" in page.content
+        assert b"Sync now (backup)" in page.content
+        assert b"Upload bank CSV" in page.content
 
         res = client.post(
             "/api/staff/sync-daily-sales",
