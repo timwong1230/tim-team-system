@@ -1,9 +1,11 @@
-"""Push Daily_Sales / Bank_Entries rows to the Finance Google Sheet.
+"""Push Daily_Sales / Bank_Entries / Bank_Evidence rows to the Finance Google Sheet.
 
 Env:
   POLAR_DAILY_SALES_SHEET_ID — Finance spreadsheet id
   POLAR_DAILY_SALES_WORKSHEET — tab name (default Daily_Sales)
   POLAR_BANK_ENTRIES_WORKSHEET — tab name (default Bank_Entries)
+  POLAR_BANK_EVIDENCE_WORKSHEET — tab name (default Bank_Evidence)
+  POLAR_BANK_EVIDENCE_FOLDER_ID — Drive folder for screenshot mirrors
   POLAR_GSPREAD_KEY or GSPREAD_KEY — service account JSON
 """
 
@@ -42,6 +44,17 @@ BANK_ENTRY_HEADERS: tuple[str, ...] = (
     "notes",
 )
 
+BANK_EVIDENCE_HEADERS: tuple[str, ...] = (
+    "uploaded_at",
+    "txn_date",
+    "amount_hint",
+    "note",
+    "filename",
+    "evidence_id",
+    "drive_url",
+    "file_id",
+)
+
 _SCOPES = (
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -66,6 +79,17 @@ def _daily_worksheet_title() -> str:
 
 def _bank_worksheet_title() -> str:
     return (os.getenv("POLAR_BANK_ENTRIES_WORKSHEET") or "Bank_Entries").strip() or "Bank_Entries"
+
+
+def _evidence_worksheet_title() -> str:
+    return (
+        (os.getenv("POLAR_BANK_EVIDENCE_WORKSHEET") or "Bank_Evidence").strip()
+        or "Bank_Evidence"
+    )
+
+
+def evidence_folder_id() -> str:
+    return (os.getenv("POLAR_BANK_EVIDENCE_FOLDER_ID") or "").strip()
 
 
 def _credentials_dict() -> dict[str, Any] | None:
@@ -265,4 +289,38 @@ def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "skipped": skipped,
         "sheet_id": _sheet_id(),
         "worksheet": _bank_worksheet_title(),
+    }
+
+
+def append_bank_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Append Bank_Evidence metadata rows (create tab/headers if needed)."""
+    if not rows:
+        return {
+            "ok": True,
+            "added": 0,
+            "worksheet": _evidence_worksheet_title(),
+        }
+
+    title = _evidence_worksheet_title()
+    spreadsheet = _open_spreadsheet()
+    import gspread
+
+    try:
+        worksheet = spreadsheet.worksheet(title)
+    except gspread.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(title=title, rows=2000, cols=len(BANK_EVIDENCE_HEADERS))
+
+    header_row = _ensure_headers(worksheet, BANK_EVIDENCE_HEADERS)
+    values = [
+        [str(r.get(h, "") or "") for h in BANK_EVIDENCE_HEADERS]
+        for r in rows
+    ]
+    # Prefer append below last used row.
+    worksheet.append_rows(values, value_input_option="USER_ENTERED")
+    return {
+        "ok": True,
+        "added": len(values),
+        "header_row": header_row,
+        "sheet_id": _sheet_id(),
+        "worksheet": title,
     }

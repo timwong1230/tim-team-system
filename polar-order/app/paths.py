@@ -15,3 +15,4 @@ _DATA = os.getenv("POLAR_DATA_DIR", "").strip()
 DATA_DIR = Path(_DATA).expanduser().resolve() if _DATA else (ROOT / "data")
 DB_PATH = DATA_DIR / "polar_order.db"
 RECEIPT_DIR = DATA_DIR / "receipts"
+BANK_EVIDENCE_DIR = DATA_DIR / "bank_evidence"

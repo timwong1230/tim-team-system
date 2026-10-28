@@ -10,8 +10,11 @@ from unittest.mock import MagicMock, patch
 
 _ROOT = Path(__file__).resolve().parents[1]
 _POLAR = _ROOT / "polar-order"
-if str(_POLAR) not in sys.path:
-    sys.path.insert(0, str(_POLAR))
+sys.path = [p for p in sys.path if Path(p).resolve() != _POLAR.resolve()]
+sys.path.insert(0, str(_POLAR))
+# Drop a wrongly-imported repo-root app.py if present.
+if "app" in sys.modules and not getattr(sys.modules["app"], "__path__", None):
+    del sys.modules["app"]
 
 
 def test_build_daily_sales_sheet_row_matches_whatsapp_fields():
