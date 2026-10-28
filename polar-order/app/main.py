@@ -64,6 +64,11 @@ from .reports import (
     monthly_boss_report,
     monthly_sales_report,
 )
+from .bank_evidence import (
+    list_recent_evidence,
+    resolve_evidence_path,
+    save_and_register,
+)
 from .bank_import import parse_bank_csv
 from .sheets_sync import (
     SheetsNotConfigured,
@@ -73,7 +78,7 @@ from .sheets_sync import (
 )
 from .ai_host import ask_ai
 from .guest_nav import build_guest_nav
-from .paths import DATA_DIR, ROOT
+from .paths import BANK_EVIDENCE_DIR, DATA_DIR, ROOT
 from .seats import BOSSES, boss_by_id, boss_seat_code
 from .spirits import (
     SINGLE_MIX_ITEM_ID,
@@ -1449,6 +1454,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
     items = item_purchase_report(conn, year=year, month=mon)
     bosses = monthly_boss_report(conn, year, mon)
     conn.close()
+    BANK_EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     return templates.TemplateResponse(
         "staff_reports.html",
         {
@@ -1463,6 +1469,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
             "sheets_sync_ready": sheets_configured(),
+            "bank_evidence_recent": list_recent_evidence(12),
         },
     )
 
@@ -1894,6 +1901,66 @@ async def staff_import_bank_csv(
         raise HTTPException(502, f"Bank import failed: {exc}") from exc
     result["parsed"] = len(entries)
     return result
+
+
+@app.post("/api/staff/import-bank-evidence")
+async def staff_import_bank_evidence(
+    pin: str = Form(...),
+    note: str = Form(""),
+    txn_date: str = Form(""),
+    amount_hint: str = Form(""),
+    files: list[UploadFile] = File(...),
+):
+    """Tim: upload bank / FPS / transit screenshots → disk + Bank_Evidence (+ Drive)."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if not files:
+        raise HTTPException(400, "Choose at least one image or PDF")
+
+    payloads: list[dict] = []
+    for f in files:
+        raw = await f.read()
+        if not raw:
+            continue
+        payloads.append(
+            {
+                "filename": f.filename or "evidence",
+                "content": raw,
+                "content_type": f.content_type or "",
+            }
+        )
+    if not payloads:
+        raise HTTPException(400, "Empty upload")
+
+    try:
+        return save_and_register(
+            payloads,
+            note=note,
+            txn_date=txn_date,
+            amount_hint=amount_hint,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Evidence upload failed: {exc}") from exc
+
+
+@app.get("/api/staff/bank-evidence/{evidence_id}")
+def staff_get_bank_evidence(evidence_id: str, pin: str = ""):
+    """Serve a stored bank evidence file (staff PIN required)."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    path = resolve_evidence_path(evidence_id)
+    if path is None or not path.is_file():
+        raise HTTPException(404, "Evidence not found")
+    import mimetypes
+
+    mime, _ = mimetypes.guess_type(path.name)
+    return FileResponse(
+        path,
+        media_type=mime or "application/octet-stream",
+        filename=path.name.partition("_")[2] or path.name,
+    )
 
 
 @app.post("/api/staff/reset-sales")
