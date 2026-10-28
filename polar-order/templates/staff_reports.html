@@ -140,6 +140,36 @@
     <button class="ghost" type="button" disabled style="width:auto">Upload bank CSV</button>
     {% endif %}
     <p class="muted" id="bankImportMsg" style="margin-top:10px;margin-bottom:0"></p>
+
+    <hr class="claim-sep" />
+    <h3>Bank 截圖 / transaction evidence（Tim）</h3>
+    <p class="muted" style="margin-top:0">
+      經私人戶口中轉、FPS、多段轉賬等：upload 銀行／Apps 截圖（可多張）+ 簡短 note。
+      會寫入 Finance sheet 嘅 <code>Bank_Evidence</code>，方便對 Nature。
+    </p>
+    <label class="muted" for="evidenceNote">Note（用途／去邊度）</label>
+    <input class="field" id="evidenceNote" type="text" placeholder="例：公司→私人→XX供應商租金" />
+    <label class="muted" for="evidenceTxnDate">交易日期（可選）</label>
+    <input class="field" id="evidenceTxnDate" type="date" />
+    <label class="muted" for="evidenceAmount">金額提示（可選）</label>
+    <input class="field" id="evidenceAmount" type="text" placeholder="例：8500" />
+    <label class="muted" for="evidenceFiles">截圖 / PDF</label>
+    <input class="field" id="evidenceFiles" type="file" accept="image/*,.pdf,application/pdf" multiple />
+    <button class="primary" type="button" id="evidenceUploadBtn" style="width:auto">Upload 截圖</button>
+    <p class="muted" id="evidenceUploadMsg" style="margin-top:10px;margin-bottom:0"></p>
+    {% if bank_evidence_recent %}
+    <p class="muted" style="margin-top:14px;margin-bottom:6px">Recent uploads</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      {% for e in bank_evidence_recent %}
+      <a class="muted" href="/api/staff/bank-evidence/{{ e.evidence_id }}?pin={{ pin }}" target="_blank" rel="noopener" style="display:block;max-width:140px;text-decoration:underline">
+        {% if (e.mime or '').startswith('image/') %}
+        <img src="/api/staff/bank-evidence/{{ e.evidence_id }}?pin={{ pin }}" alt="{{ e.filename }}" style="width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #444;display:block;background:#111" />
+        {% endif %}
+        <span style="font-size:0.75rem">{{ e.mtime }} · {{ e.filename }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="card">
@@ -318,6 +348,37 @@
       input.value = '';
     } catch (err) {
       msg.textContent = err.message || 'Import failed';
+    }
+  });
+
+  document.getElementById('evidenceUploadBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('evidenceUploadMsg');
+    const input = document.getElementById('evidenceFiles');
+    if (!input?.files?.length) {
+      msg.textContent = 'Choose at least one screenshot or PDF.';
+      return;
+    }
+    msg.textContent = 'Uploading…';
+    try {
+      const body = new FormData();
+      body.set('pin', PIN);
+      body.set('note', document.getElementById('evidenceNote')?.value || '');
+      body.set('txn_date', document.getElementById('evidenceTxnDate')?.value || '');
+      body.set('amount_hint', document.getElementById('evidenceAmount')?.value || '');
+      for (const f of input.files) body.append('files', f);
+      const res = await fetch('/api/staff/import-bank-evidence', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      const sheetBit = data.sheet?.ok
+        ? `Sheet +${data.sheet.added || 0}`
+        : (data.sheet?.error ? `Sheet note: ${data.sheet.error}` : 'Saved locally');
+      const driveBit = (data.drive_errors && data.drive_errors.length)
+        ? ` · Drive: ${data.drive_errors.length} warn`
+        : (data.drive_folder_id ? ' · Drive mirrored' : '');
+      msg.textContent = `Uploaded ${data.uploaded || 0}. ${sheetBit}${driveBit}. Refresh page to see thumbnails.`;
+      input.value = '';
+    } catch (err) {
+      msg.textContent = err.message || 'Upload failed';
     }
   });
 

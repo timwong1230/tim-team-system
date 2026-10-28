@@ -24,6 +24,10 @@ services:
         value: Daily_Sales
       - key: POLAR_BANK_ENTRIES_WORKSHEET
         value: Bank_Entries
+      - key: POLAR_BANK_EVIDENCE_WORKSHEET
+        value: Bank_Evidence
+      - key: POLAR_BANK_EVIDENCE_FOLDER_ID
+        value: 1OnLlOSGfiuu3jrM9ep6Z-gC7xELrGOPg
       - key: POLAR_GSPREAD_KEY
         sync: false
       - key: PORT
