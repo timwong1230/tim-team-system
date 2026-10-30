@@ -421,17 +421,14 @@ document.addEventListener("DOMContentLoaded", () => {
       cart.clear();
       renderCartBar();
       drawer.classList.remove("open");
-      showToast("Order sent for table");
-      // After first order, check-in is done — reload so header shows guest
-      if (cfg.needsCheckin) {
-        setTimeout(() => {
-          location.href = `/staff/order/${table}?pin=${encodeURIComponent(pin)}`;
-        }, 600);
-      }
+      showToast("Order sent — back to tables");
+      // Return to Open seats so staff can pick the next table quickly
+      setTimeout(() => {
+        location.href = `/staff/tables?pin=${encodeURIComponent(pin)}`;
+      }, 450);
     } catch (err) {
       showToast("Failed to send order");
       console.error(err);
-    } finally {
       btn.disabled = false;
       btn.textContent = "Send order for table";
     }
