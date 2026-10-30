@@ -38,9 +38,17 @@ def test_staff_place_order_api_and_page():
         assert page.status_code == 200
         assert b"STAFF ORDER" in page.content
         assert b"Send order for table" in page.content
+        assert b"staff-order-shell" in page.content
+        assert b'id="staffCatRail"' in page.content
+        assert b'id="staffOrderMain"' in page.content
+        # First category visible; others start hidden
+        assert b'id="cat-shisha"' in page.content
         js = (_POLAR / "static/js/staff_order.js").read_text(encoding="utf-8")
         assert "/staff/tables?pin=" in js
         assert "back to tables" in js
+        assert "openStaffCategory" in js
+        css = (_POLAR / "static/css/app.css").read_text(encoding="utf-8")
+        assert ".guest-cat-rail" in css
 
         bad = client.post(
             "/api/staff/bill/TABLE1/orders",
