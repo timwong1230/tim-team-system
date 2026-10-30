@@ -174,6 +174,11 @@ class StaffSnackIn(BaseModel):
     waived: bool = False
 
 
+class StaffItemEditIn(BaseModel):
+    pin: str
+    qty: int = Field(..., ge=0, le=50)  # 0 = remove line
+
+
 class StaffTransferIn(BaseModel):
     pin: str
     target_table: str = Field(min_length=1, max_length=40)
@@ -950,6 +955,38 @@ def _session_lines(conn: sqlite3.Connection, session_id: int) -> list[dict]:
     ]
 
 
+def _bill_dict_for_session(
+    conn: sqlite3.Connection,
+    session: sqlite3.Row,
+    *,
+    is_boss: bool,
+    discount_percent: float = 0,
+) -> dict:
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    if is_boss:
+        prod = round(sum(float(x["line_total"]) for x in lines), 1)
+        return {
+            "total": prod,
+            "subtotal": prod,
+            "snack_charge": 0,
+            "service_charge": 0,
+            "discount_amount": 0,
+            "discount_percent": 0,
+            "party_size": 1,
+            "service_charge_rate": 0,
+            "snack_waived": True,
+        }
+    return compute_bill(
+        lines,
+        session["party_size"],
+        meta["service_charge_rate"],
+        meta["snack_charge_per_head"],
+        discount_percent=discount_percent,
+        snack_waived=_session_snack_waived(session),
+    )
+
+
 @app.get("/staff/order/{table_code}", response_class=HTMLResponse)
 def staff_order_page(request: Request, table_code: str, pin: str = ""):
     """Staff menu — order for a guest table (not the guest QR phone)."""
@@ -1225,6 +1262,111 @@ async def staff_add_custom(table_code: str, body: StaffCustomIn):
     conn.close()
     await _broadcast({"type": "order.new", "data": payload})
     return {"ok": True, "order_id": order_id}
+
+
+@app.post("/api/staff/bill/{table_code}/items/{item_row_id}")
+async def staff_edit_bill_item(table_code: str, item_row_id: int, body: StaffItemEditIn):
+    """Change qty of a bill line, or remove it (qty=0). Open sessions only."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session")
+
+    row = conn.execute(
+        """
+        SELECT oi.*, o.id AS order_id, o.session_id, o.status AS order_status
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE oi.id = ? AND o.session_id = ?
+        """,
+        (item_row_id, session["id"]),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "Item not found on this bill")
+    if row["order_status"] == "cancelled":
+        conn.close()
+        raise HTTPException(400, "Order already cancelled")
+
+    now = utc_now()
+    qty = int(body.qty)
+    removed = False
+    if qty <= 0:
+        conn.execute("DELETE FROM order_items WHERE id = ?", (item_row_id,))
+        left = conn.execute(
+            "SELECT COUNT(*) AS c FROM order_items WHERE order_id = ?",
+            (row["order_id"],),
+        ).fetchone()["c"]
+        if left == 0:
+            conn.execute(
+                "UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?",
+                (now, row["order_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE orders SET updated_at = ? WHERE id = ?",
+                (now, row["order_id"]),
+            )
+        removed = True
+        action = "removed"
+    else:
+        unit = float(row["unit_price"] or 0)
+        line_total = round(unit * qty, 1)
+        conn.execute(
+            """
+            UPDATE order_items
+            SET qty = ?, line_total = ?
+            WHERE id = ?
+            """,
+            (qty, line_total, item_row_id),
+        )
+        conn.execute(
+            "UPDATE orders SET updated_at = ? WHERE id = ?",
+            (now, row["order_id"]),
+        )
+        action = "updated"
+
+    publish_event(
+        conn,
+        "order.status",
+        {
+            "order_id": row["order_id"],
+            "status": "cancelled" if removed and action == "removed" else row["order_status"],
+            "table_code": table["code"],
+            "item_edit": action,
+        },
+    )
+    conn.commit()
+
+    is_boss = (table["zone"] or "") == "boss"
+    lines = _session_lines(conn, session["id"])
+    bill = _bill_dict_for_session(conn, session, is_boss=is_boss)
+    conn.close()
+    await _broadcast(
+        {
+            "type": "order.status",
+            "data": {
+                "order_id": row["order_id"],
+                "table_code": table["code"],
+                "item_edit": action,
+            },
+        }
+    )
+    return {
+        "ok": True,
+        "action": action,
+        "item_id": item_row_id,
+        "qty": 0 if removed else qty,
+        "lines": lines,
+        "bill": bill,
+    }
 
 
 @app.post("/api/staff/bill/{table_code}/orders")
