@@ -101,18 +101,30 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="billItemsCard">
     <h3 style="margin-top:0">Items</h3>
-    {% for line in lines %}
-    <div class="cart-line">
-      <div>
-        <strong>{{ line.qty }}× {{ line.item_name }}</strong>
-        {% if line.category_id == 'not-on-menu' %}<div class="muted">Not on Menu</div>{% endif %}
-        {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
+    <p class="muted" style="margin-top:0">Change qty or remove lines already on the bill.</p>
+    <div id="billItemsList">
+      {% for line in lines %}
+      <div class="cart-line bill-item-row" data-item-id="{{ line.id }}">
+        <div>
+          <strong><span class="bill-item-qty">{{ line.qty }}</span>× {{ line.item_name }}</strong>
+          {% if line.category_id == 'not-on-menu' %}<div class="muted">Not on Menu</div>{% endif %}
+          {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
+          <div class="qty" style="margin-top:8px">
+            <button type="button" data-bill-act="dec" data-id="{{ line.id }}" aria-label="Decrease qty">−</button>
+            <span class="bill-item-qty-label">{{ line.qty }}</span>
+            <button type="button" data-bill-act="inc" data-id="{{ line.id }}" aria-label="Increase qty">+</button>
+            <button type="button" class="ghost" data-bill-act="rm" data-id="{{ line.id }}"
+                    style="width:auto;height:auto;padding:4px 10px;margin-left:4px">Remove</button>
+          </div>
+        </div>
+        <div class="bill-item-total">${{ '%.0f'|format(line.line_total) }}</div>
       </div>
-      <div>${{ '%.0f'|format(line.line_total) }}</div>
+      {% else %}
+      <p class="muted" id="billItemsEmpty">No items yet.</p>
+      {% endfor %}
     </div>
-    {% endfor %}
   </div>
 
   <div class="card nom-box">
@@ -168,6 +180,16 @@
     return Number(card?.dataset.snackWaived || 0) === 1;
   }
 
+  function applyBill(bill) {
+    if (!card || !bill) return;
+    card.dataset.subtotal = bill.subtotal;
+    card.dataset.snack = bill.snack_charge;
+    card.dataset.service = bill.service_charge;
+    const vSub = document.getElementById('vSub');
+    if (vSub) vSub.textContent = money(bill.subtotal);
+    recalc();
+  }
+
   function recalc() {
     if (!card) return;
     const subtotal = Number(card.dataset.subtotal);
@@ -208,6 +230,67 @@
       row.style.display = 'none';
     }
   }
+
+  async function editBillItem(itemId, qty) {
+    const res = await fetch(`/api/staff/bill/{{ table.code }}/items/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: {{ pin|tojson }}, qty }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Failed to update item');
+    return data;
+  }
+
+  function patchBillItemRow(itemId, qty, lineTotal) {
+    const row = document.querySelector(`.bill-item-row[data-item-id="${itemId}"]`);
+    if (!row) return;
+    if (qty <= 0) {
+      row.remove();
+      const list = document.getElementById('billItemsList');
+      if (list && !list.querySelector('.bill-item-row')) {
+        const empty = document.createElement('p');
+        empty.className = 'muted';
+        empty.id = 'billItemsEmpty';
+        empty.textContent = 'No items yet.';
+        list.appendChild(empty);
+      }
+      return;
+    }
+    const qEls = row.querySelectorAll('.bill-item-qty, .bill-item-qty-label');
+    qEls.forEach((el) => { el.textContent = String(qty); });
+    const tot = row.querySelector('.bill-item-total');
+    if (tot) tot.textContent = money(lineTotal);
+  }
+
+  document.getElementById('billItemsList')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-bill-act]');
+    if (!btn) return;
+    const itemId = Number(btn.dataset.id);
+    const act = btn.dataset.billAct;
+    const row = document.querySelector(`.bill-item-row[data-item-id="${itemId}"]`);
+    if (!row || !itemId) return;
+    const cur = Number(row.querySelector('.bill-item-qty')?.textContent || 1);
+    let next = cur;
+    if (act === 'inc') next = Math.min(50, cur + 1);
+    else if (act === 'dec') next = Math.max(0, cur - 1);
+    else if (act === 'rm') {
+      if (!confirm('Remove this item from the bill?')) return;
+      next = 0;
+    } else return;
+    if (next === cur && act !== 'rm') return;
+    btn.disabled = true;
+    try {
+      const data = await editBillItem(itemId, next);
+      const line = (data.lines || []).find((x) => Number(x.id) === itemId);
+      patchBillItemRow(itemId, data.qty, line ? line.line_total : 0);
+      applyBill(data.bill);
+    } catch (err) {
+      alert(err.message || 'Failed to update item');
+    } finally {
+      btn.disabled = false;
+    }
+  });
   input?.addEventListener('input', recalc);
   partyInput?.addEventListener('input', recalc);
 
