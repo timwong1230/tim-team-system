@@ -377,7 +377,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setNavHidden(catHub, false);
   }
 
-  function openSubHub(groupId) {
+  function openSubHub(groupId, { scroll = true } = {}) {
     const hub = document.getElementById(`sub-${groupId}`);
     if (!hub) return;
     hideMainPanels();
@@ -385,10 +385,10 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(`.cat-btn[data-group="${groupId}"]`).forEach((b) => {
       b.classList.add("active");
     });
-    scrollMainTop();
+    if (scroll) scrollMainTop();
   }
 
-  function openLeaf(targetId) {
+  function openLeaf(targetId, { scroll = true } = {}) {
     const section = document.getElementById(targetId);
     if (!section) return;
     hideMainPanels();
@@ -403,7 +403,7 @@ document.addEventListener("DOMContentLoaded", () => {
         b.classList.add("active");
       });
     }
-    scrollMainTop();
+    if (scroll) scrollMainTop();
   }
 
   // Event delegation — more reliable on iOS than per-button listeners
@@ -437,8 +437,28 @@ document.addEventListener("DOMContentLoaded", () => {
     false
   );
 
-  // Ensure initial state even if HTML hidden attr was stripped by a quirky WebView
-  showRootHub();
+  // Land on the first category (Shisha) so the main column is useful immediately.
+  function openDefaultCategory() {
+    setNavHidden(catHub, false);
+    const first = document.querySelector("#cats .cat-btn");
+    if (!first) {
+      showRootHub();
+      return;
+    }
+    const kind = first.getAttribute("data-nav-kind") || "";
+    const group = first.getAttribute("data-group");
+    const target = first.getAttribute("data-target");
+    if (kind === "group" && group) {
+      openSubHub(group, { scroll: false });
+      return;
+    }
+    if (target) {
+      openLeaf(target, { scroll: false });
+      return;
+    }
+    showRootHub();
+  }
+  openDefaultCategory();
 
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
