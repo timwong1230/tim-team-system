@@ -631,6 +631,18 @@ button.pill-action:active {
   color: var(--text);
   cursor: pointer;
 }
+/* Bill page: larger tap targets for staff phones */
+.bill-item-row .qty button {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 1;
+}
+.bill-item-row .qty button.ghost {
+  width: auto;
+  min-height: 36px;
+  font-size: 13px;
+}
 .field {
   width: 100%;
   margin: 8px 0 12px;
