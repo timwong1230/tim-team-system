@@ -45,13 +45,17 @@ def test_guest_nested_hub_and_staff_transfer():
         assert page.status_code == 200
         html = page.text
         assert 'id="catHub"' in html
+        assert "guest-cat-rail" in html
+        assert "guest-shell" in html
         assert "Choose a category" in html
+        assert "Tap a category on the left" in html
         # Cache-bust static assets for iPhone Safari
         assert f"app.css?v={main.ASSET_VERSION}" in html
         assert f"guest.js?v={main.ASSET_VERSION}" in html
         assert "promo-details" in html
-        # Hub appears before promo so phone users see categories first
-        assert html.index("catHub") < html.index("promo-details")
+        # Left rail stays mounted; promo sits above the shell
+        assert html.index("promo-details") < html.index("guest-shell")
+        assert html.index("guest-cat-rail") < html.index("guest-main")
         # Top-level only — not every DB category at once
         assert "Celestial Signature Cocktails" in html
         assert "Spirit" in html
@@ -71,6 +75,10 @@ def test_guest_nested_hub_and_staff_transfer():
         # Flat old cat buttons for every DB category should not be the root hub
         assert html.count('data-nav-kind="group"') >= 4
         assert html.count('data-nav-kind="products"') >= 9
+        # Left rail must stay visible when switching categories (no hide-all on hub)
+        js = (_POLAR / "static" / "js" / "guest.js").read_text(encoding="utf-8")
+        assert "Left category rail stays visible" in js
+        assert "hideAllNavPanels" not in js
 
         headers = client.get("/t/TABLE1").headers
         assert "no-store" in (headers.get("cache-control") or "").lower()

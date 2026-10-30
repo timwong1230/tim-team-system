@@ -291,7 +291,7 @@ button.pill-action:active {
   margin: 4px 0 18px;
 }
 .cat-subhub {
-  margin-top: 8px;
+  margin-top: 0;
 }
 .cat-hub-label {
   margin: 0 0 10px;
@@ -299,6 +299,53 @@ button.pill-action:active {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+.guest-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+.guest-cat-rail {
+  position: sticky;
+  top: 56px;
+  flex: 0 0 96px;
+  width: 96px;
+  max-height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  z-index: 15;
+  margin: 0;
+  padding: 0 0 96px;
+  scrollbar-width: thin;
+}
+.guest-cat-rail .cats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.guest-cat-rail .cat-btn {
+  min-height: 0;
+  padding: 11px 8px;
+  font-size: 0.7rem;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  border-radius: 11px;
+  word-break: break-word;
+  hyphens: auto;
+}
+.guest-main {
+  flex: 1;
+  min-width: 0;
+}
+.guest-main-prompt {
+  padding: 18px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: rgba(16, 24, 42, 0.55);
 }
 .cats {
   display: grid;
@@ -308,6 +355,9 @@ button.pill-action:active {
 }
 .cats .cat-btn:last-child:nth-child(odd) {
   grid-column: 1 / -1;
+}
+.guest-cat-rail .cats .cat-btn:last-child:nth-child(odd) {
+  grid-column: auto;
 }
 .cat-btn {
   position: relative;
@@ -334,6 +384,16 @@ button.pill-action:active {
   color: #14110a;
   border-color: transparent;
   font-weight: 700;
+}
+@media (min-width: 640px) {
+  .guest-cat-rail {
+    flex-basis: 128px;
+    width: 128px;
+  }
+  .guest-cat-rail .cat-btn {
+    font-size: 0.82rem;
+    padding: 12px 10px;
+  }
 }
 .section { margin-bottom: 22px; }
 .section-head {

@@ -339,6 +339,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const catHub = document.getElementById("catHub");
   const subHubs = Array.from(document.querySelectorAll(".cat-subhub"));
   const productSections = Array.from(document.querySelectorAll(".section-products"));
+  const mainPrompt = document.getElementById("guestMainPrompt");
+  const guestMain = document.getElementById("guestMain");
 
   function setNavHidden(el, hide) {
     if (!el) return;
@@ -348,51 +350,60 @@ document.addEventListener("DOMContentLoaded", () => {
     el.style.display = hide ? "none" : "";
   }
 
-  function hideAllNavPanels() {
-    setNavHidden(catHub, true);
-    subHubs.forEach((hub) => setNavHidden(hub, true));
-    productSections.forEach((sec) => setNavHidden(sec, true));
+  function clearCatActive() {
     document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
   }
 
-  function showRootHub() {
-    hideAllNavPanels();
-    setNavHidden(catHub, false);
+  function hideMainPanels() {
+    // Left category rail stays visible — only swap the main column.
+    setNavHidden(mainPrompt, true);
+    subHubs.forEach((hub) => setNavHidden(hub, true));
+    productSections.forEach((sec) => setNavHidden(sec, true));
+    clearCatActive();
+  }
+
+  function scrollMainTop() {
     try {
-      catHub?.scrollIntoView({ behavior: "smooth", block: "start" });
+      guestMain?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (_) {
-      catHub?.scrollIntoView(true);
+      guestMain?.scrollIntoView(true);
     }
+  }
+
+  function showRootHub() {
+    hideMainPanels();
+    setNavHidden(mainPrompt, false);
+    // Keep rail mounted; never hide catHub in the left-rail layout.
+    setNavHidden(catHub, false);
   }
 
   function openSubHub(groupId) {
     const hub = document.getElementById(`sub-${groupId}`);
     if (!hub) return;
-    hideAllNavPanels();
+    hideMainPanels();
     setNavHidden(hub, false);
     document.querySelectorAll(`.cat-btn[data-group="${groupId}"]`).forEach((b) => {
       b.classList.add("active");
     });
-    try {
-      hub.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (_) {
-      hub.scrollIntoView(true);
-    }
+    scrollMainTop();
   }
 
   function openLeaf(targetId) {
     const section = document.getElementById(targetId);
     if (!section) return;
-    hideAllNavPanels();
+    hideMainPanels();
     setNavHidden(section, false);
+    const parent = section.getAttribute("data-parent") || "";
     document.querySelectorAll(`.cat-btn[data-target="${targetId}"]`).forEach((b) => {
       b.classList.add("active");
     });
-    try {
-      section.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (_) {
-      section.scrollIntoView(true);
+    // Keep parent group highlighted on the left rail when inside a nested leaf.
+    if (parent) {
+      document.querySelectorAll(`.cat-btn[data-group="${parent}"]`).forEach((b) => {
+        b.classList.add("active");
+      });
     }
+    scrollMainTop();
   }
 
   // Event delegation — more reliable on iOS than per-button listeners
@@ -427,8 +438,7 @@ document.addEventListener("DOMContentLoaded", () => {
   );
 
   // Ensure initial state even if HTML hidden attr was stripped by a quirky WebView
-  hideAllNavPanels();
-  setNavHidden(catHub, false);
+  showRootHub();
 
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
