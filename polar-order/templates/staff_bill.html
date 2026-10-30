@@ -14,10 +14,29 @@
     {% endif %}
   </div>
   {% if not is_boss %}
-  <div class="actions" style="margin-bottom:16px">
+  <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
     <a class="primary" style="display:inline-block;width:auto;text-align:center"
        href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for this table</a>
+    {% if can_split %}
+    <button class="ghost" type="button" id="splitPartyBtn" style="width:auto">
+      ＋ Split party ({{ split_parent|replace('TABLE', 'Table ') }}A–D)
+    </button>
+    {% endif %}
   </div>
+  {% if can_split and split_siblings %}
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="margin-top:0">Parties at {{ split_parent|replace('TABLE', 'Table ') }}</h3>
+    <p class="muted" style="margin-top:0">
+      Same physical table, separate bills — each seat has its own guest name and headcount.
+    </p>
+    <div class="pay-method-grid" style="gap:8px">
+      {% for s in split_siblings %}
+      <a class="ghost" style="display:block;text-align:center;padding:10px;text-decoration:none"
+         href="/staff/bill/{{ s.code }}?pin={{ pin }}">{{ s.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if bill %}
@@ -166,6 +185,24 @@
   if (card) {
     card.dataset.snackWaived = {{ '1' if snack_waived else '0' }};
   }
+
+  document.getElementById('splitPartyBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('splitPartyBtn');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/staff/tables/{{ table.code }}/split', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: {{ pin|tojson }} }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'No free split seat');
+      location.href = data.redirect || `/staff/order/${data.code}?pin={{ pin }}`;
+    } catch (err) {
+      alert(err.message || 'Failed');
+      btn.disabled = false;
+    }
+  });
 
   function partySize() {
     if (isBoss || !partyInput) return 1;
