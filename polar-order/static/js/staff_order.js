@@ -294,14 +294,41 @@ document.addEventListener("DOMContentLoaded", () => {
     showToast("Added");
   });
 
-  document.querySelectorAll(".cat-btn").forEach((btn) => {
+  const staffSections = Array.from(document.querySelectorAll("#staffOrderMain .section-products"));
+  const staffMain = document.getElementById("staffOrderMain");
+
+  function setStaffSectionHidden(el, hide) {
+    if (!el) return;
+    el.hidden = hide;
+    el.classList.toggle("is-nav-hidden", hide);
+    el.style.display = hide ? "none" : "";
+  }
+
+  function openStaffCategory(targetId, { scroll = true } = {}) {
+    const section = document.getElementById(targetId);
+    if (!section) return;
+    staffSections.forEach((sec) => setStaffSectionHidden(sec, sec !== section));
+    document.querySelectorAll("#cats .cat-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.target === targetId);
+    });
+    if (scroll) {
+      try {
+        staffMain?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (_) {
+        staffMain?.scrollIntoView(true);
+      }
+    }
+  }
+
+  document.querySelectorAll("#cats .cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".cat-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      const el = document.getElementById(btn.dataset.target);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      openStaffCategory(btn.dataset.target);
     });
   });
+
+  // First category (usually Shisha) is already visible in HTML; keep rail + panel in sync.
+  const firstCat = document.querySelector("#cats .cat-btn.active") || document.querySelector("#cats .cat-btn");
+  if (firstCat) openStaffCategory(firstCat.dataset.target, { scroll: false });
 
   document.querySelectorAll(".item .add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {

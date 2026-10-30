@@ -28,14 +28,18 @@
     <div class="promo-now"><strong>Now: {{ promo.label }}</strong></div>
   </div>
 
-  <div class="cats" id="cats">
-    {% for cat in menu %}
-    <button class="cat-btn {% if loop.first %}active{% endif %}" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
-    {% endfor %}
-  </div>
+  <div class="guest-shell staff-order-shell" id="staffOrderShell">
+  <nav class="guest-cat-rail cat-hub" id="staffCatRail" aria-label="Menu categories">
+    <div class="cats" id="cats">
+      {% for cat in menu %}
+      <button type="button" class="cat-btn {% if loop.first %}active{% endif %}" data-target="cat-{{ cat.id }}">{{ cat.name }}</button>
+      {% endfor %}
+    </div>
+  </nav>
 
+  <div class="guest-main" id="staffOrderMain">
   {% for cat in menu %}
-  <section class="section" id="cat-{{ cat.id }}">
+  <section class="section section-products" id="cat-{{ cat.id }}" {% if not loop.first %}hidden{% endif %}>
     <h2>{{ cat.name }}</h2>
     {% set ns = namespace(last_unit=None) %}
     {% for item in cat['items'] %}
@@ -95,6 +99,8 @@
     {% endfor %}
   </section>
   {% endfor %}
+  </div>{# /staffOrderMain #}
+  </div>{# /staffOrderShell #}
 </div>
 
 <div class="cart-bar" id="cartBar" style="display:none">
