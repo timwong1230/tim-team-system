@@ -79,6 +79,11 @@ def test_guest_nested_hub_and_staff_transfer():
         js = (_POLAR / "static" / "js" / "guest.js").read_text(encoding="utf-8")
         assert "Left category rail stays visible" in js
         assert "hideAllNavPanels" not in js
+        assert "openDefaultCategory" in js
+        assert 'querySelector("#cats .cat-btn")' in js
+        # First root category is Shisha (products leaf)
+        assert guest_nav.GUEST_NAV_TREE[0]["id"] == "shisha"
+        assert guest_nav.GUEST_NAV_TREE[0]["kind"] == "products"
 
         headers = client.get("/t/TABLE1").headers
         assert "no-store" in (headers.get("cache-control") or "").lower()
