@@ -6,23 +6,23 @@ from __future__ import annotations
 SEATS: list[dict] = [
     # Training seat only — not printed on QR sheets; never share a real table code.
     {"code": "DEMO", "label": "Demo (staff practice)", "zone": "demo", "sort": 0},
-    # Floor map: 5 tables · 6 bar chairs · 9 terrace chairs
+    # Floor map order: Table 1–5 → Terrace 1–9 → Bar 1–6
     *[
         {"code": f"TABLE{i}", "label": f"Table {i}", "zone": "table", "sort": i}
         for i in range(1, 6)
-    ],
-    *[
-        {"code": f"BAR{i}", "label": f"Bar {i}", "zone": "bar", "sort": 100 + i}
-        for i in range(1, 7)
     ],
     *[
         {
             "code": f"TERRACE{i}",
             "label": f"Terrace {i}",
             "zone": "terrace",
-            "sort": 200 + i,
+            "sort": 100 + i,
         }
         for i in range(1, 10)
+    ],
+    *[
+        {"code": f"BAR{i}", "label": f"Bar {i}", "zone": "bar", "sort": 200 + i}
+        for i in range(1, 7)
     ],
 ]
 
