@@ -204,16 +204,25 @@ def _rewrite_chinese_promo_notes(conn: sqlite3.Connection) -> None:
 
 def _seat_id(seat: dict) -> int:
     zone = seat["zone"]
+    code = (seat.get("code") or "").upper()
     if zone == "boss":
         # BOSSJON / BOSSBARRY / BOSSTIM / BOSSZIV → 31-34
         from .seats import BOSSES
 
-        code = seat["code"].upper()
         for i, b in enumerate(BOSSES):
             if code == f"BOSS{b['id'].upper()}":
                 return 31 + i
         return 39
-    num = int("".join(ch for ch in seat["code"] if ch.isdigit()) or "0")
+    if zone == "table_split":
+        # TABLE1A–TABLE5D → 41–60 (clear of boss 31–39)
+        from .seats import parse_table_split
+
+        parsed = parse_table_split(code)
+        if not parsed:
+            return 60
+        num, letter = parsed
+        return 40 + (num - 1) * 4 + (ord(letter) - ord("A")) + 1
+    num = int("".join(ch for ch in code if ch.isdigit()) or "0")
     if zone == "table":
         return num  # 1-5
     if zone == "bar":
@@ -330,15 +339,55 @@ def list_active_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def list_guest_tables(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Real guest seats only (exclude boss tabs and staff Demo practice seat)."""
+    """Printed guest QR seats only (no boss/demo/table splits)."""
     return conn.execute(
         """
         SELECT * FROM tables
         WHERE active = 1
-          AND COALESCE(zone, '') NOT IN ('boss', 'demo')
+          AND COALESCE(zone, '') NOT IN ('boss', 'demo', 'table_split')
         ORDER BY sort_order ASC, id ASC
         """
     ).fetchall()
+
+
+def list_table_splits(conn: sqlite3.Connection, parent_code: str) -> list[sqlite3.Row]:
+    """Staff-only split seats for a physical table (TABLE1 → 1A/1B/…)."""
+    parent = (parent_code or "").upper()
+    if parent not in {f"TABLE{i}" for i in range(1, 6)}:
+        return []
+    return conn.execute(
+        """
+        SELECT * FROM tables
+        WHERE active = 1
+          AND zone = 'table_split'
+          AND code GLOB ?
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (f"{parent}[A-D]",),
+    ).fetchall()
+
+
+def find_next_open_split(
+    conn: sqlite3.Connection, parent_code: str
+) -> sqlite3.Row | None:
+    """First split seat under parent with no open session (A → D)."""
+    from .seats import next_split_letter, parse_table_split
+
+    used_open: set[str] = set()
+    empty_by_letter: dict[str, sqlite3.Row] = {}
+    for split in list_table_splits(conn, parent_code):
+        parsed = parse_table_split(split["code"])
+        if not parsed:
+            continue
+        letter = parsed[1]
+        if get_open_session(conn, split["id"]):
+            used_open.add(letter)
+        else:
+            empty_by_letter[letter] = split
+    wanted = next_split_letter(used_open)
+    if not wanted:
+        return None
+    return empty_by_letter.get(wanted)
 
 
 def get_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row | None:

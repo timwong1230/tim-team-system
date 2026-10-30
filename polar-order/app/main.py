@@ -26,6 +26,7 @@ from .db import (
     create_booking,
     delete_claim,
     ensure_session,
+    find_next_open_split,
     get_open_session,
     get_session,
     get_table_by_code,
@@ -35,6 +36,7 @@ from .db import (
     list_bookings_for_month,
     list_claims,
     list_guest_tables,
+    list_table_splits,
     load_menu_meta,
     publish_event,
     reset_operational_data,
@@ -45,6 +47,7 @@ from .db import (
     update_booking,
     utc_now,
 )
+from .seats import parent_table_code, parse_table_split
 from .ops_constants import CLAIM_PRESETS, PAYMENT_METHODS
 from .pricing import (
     SHISHA_COMBO_SNACK_PRICE,
@@ -182,6 +185,10 @@ class StaffItemEditIn(BaseModel):
 class StaffTransferIn(BaseModel):
     pin: str
     target_table: str = Field(min_length=1, max_length=40)
+
+
+class StaffSplitIn(BaseModel):
+    pin: str
 
 
 class OrderIn(BaseModel):
@@ -918,7 +925,13 @@ def staff_tables(request: Request, pin: str = ""):
             "open_orders": open_orders,
             "is_boss": zone == "boss",
             "is_demo": zone == "demo",
+            "is_split": zone == "table_split",
+            "can_split": zone == "table",
+            "parent_label": None,
         }
+        if entry["is_split"]:
+            parent = parent_table_code(t["code"])
+            entry["parent_label"] = parent.replace("TABLE", "Table ") if parent else None
         if entry["is_boss"]:
             boss_rows.append(entry)
         elif entry["is_demo"]:
@@ -1061,12 +1074,23 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
                 discount_percent=discount,
                 snack_waived=_session_snack_waived(session),
             )
-            for t in list_guest_tables(conn):
+            for t in list_active_tables(conn):
+                tz = (t["zone"] or "").strip().lower()
+                if tz in ("boss", "demo"):
+                    continue
                 if t["id"] == table["id"]:
                     continue
                 if get_open_session(conn, t["id"]):
                     continue
                 transfer_targets.append(t)
+    zone = (table["zone"] or "").strip().lower()
+    can_split = zone in ("table", "table_split")
+    split_parent = (
+        table["code"]
+        if zone == "table"
+        else (parent_table_code(table["code"]) or table["code"])
+    )
+    split_siblings = list_table_splits(conn, split_parent) if can_split else []
     conn.close()
     return templates.TemplateResponse(
         "staff_bill.html",
@@ -1084,6 +1108,9 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "snack_per_head": meta["snack_charge_per_head"],
             "snack_waived": _session_snack_waived(session),
             "transfer_targets": transfer_targets,
+            "can_split": can_split,
+            "split_parent": split_parent,
+            "split_siblings": split_siblings,
         },
     )
 
@@ -1222,6 +1249,50 @@ async def staff_transfer_table(table_code: str, body: StaffTransferIn):
         "to_label": target["label"],
         "session_id": moved["id"],
         "redirect": f"/staff/bill/{target['code']}?pin={body.pin}",
+    }
+
+
+@app.post("/api/staff/tables/{table_code}/split")
+def staff_open_table_split(table_code: str, body: StaffSplitIn):
+    """Open the next free Table NA/B/C/D seat for a second party at the same table."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    zone = (table["zone"] or "").strip().lower()
+    parent_code = table["code"]
+    if zone == "table_split":
+        parent_code = parent_table_code(table["code"]) or table["code"]
+    elif zone != "table":
+        conn.close()
+        raise HTTPException(400, "Only Table 1–5 can be split into A/B/C/D parties")
+    split = find_next_open_split(conn, parent_code)
+    if not split:
+        conn.close()
+        raise HTTPException(
+            400,
+            f"All splits for {parent_code.replace('TABLE', 'Table ')} are in use (A–D)",
+        )
+    siblings = [
+        {
+            "code": s["code"],
+            "label": s["label"],
+            "busy": bool(get_open_session(conn, s["id"])),
+        }
+        for s in list_table_splits(conn, parent_code)
+    ]
+    conn.close()
+    return {
+        "ok": True,
+        "parent": parent_code,
+        "code": split["code"],
+        "label": split["label"],
+        "siblings": siblings,
+        "redirect": f"/staff/order/{split['code']}?pin={body.pin}",
+        "bill_url": f"/staff/bill/{split['code']}?pin={body.pin}",
     }
 
 

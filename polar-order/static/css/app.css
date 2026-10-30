@@ -769,6 +769,10 @@ button.pill-action:active {
   text-align: left;
   cursor: pointer;
 }
+.table-tile-split {
+  border-style: dashed;
+  background: rgba(212, 192, 140, 0.06);
+}
 .table-tile strong { display: block; font-size: 1.1rem; margin-bottom: 4px; }
 .table-tile .amt { color: var(--gold-strong); font-size: 1.2rem; font-weight: 750; }
 .bill-total {

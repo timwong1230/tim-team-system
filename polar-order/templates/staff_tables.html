@@ -7,13 +7,19 @@
   </div>
   <div class="hero">
     <h1>Open seats</h1>
-    <p>Tables · Bar · Terrace. Tap a seat for bill, or <strong>Order</strong> to place items for the guest.</p>
+    <p>
+      Table 1–5 · Terrace · Bar. Tap a seat for bill, or <strong>Order</strong> for the guest.
+      Shared tables: use <strong>1A / 1B / 1C / 1D</strong> for separate parties (own name + headcount).
+    </p>
   </div>
   <div class="table-grid">
     {% for row in rows %}
-    <div class="table-tile" style="display:flex;flex-direction:column;gap:8px">
+    <div class="table-tile{% if row.is_split %} table-tile-split{% endif %}" style="display:flex;flex-direction:column;gap:8px">
       <a href="/staff/bill/{{ row.table.code }}?pin={{ pin }}" style="color:inherit;text-decoration:none">
         <strong>{{ row.table.label }}</strong>
+        {% if row.is_split %}
+          <div class="muted" style="font-size:0.8rem">Split · same physical table</div>
+        {% endif %}
         {% if row.session and row.session.guest_name %}
           <div class="guest-name">{{ row.session.guest_name }}</div>
         {% endif %}
@@ -26,6 +32,13 @@
       </a>
       <a class="ghost" style="display:block;text-align:center;padding:8px 10px;font-size:0.9rem"
          href="/staff/order/{{ row.table.code }}?pin={{ pin }}">Order for table</a>
+      {% if row.can_split %}
+      <button class="ghost split-party-btn" type="button"
+              data-table="{{ row.table.code }}"
+              style="display:block;width:100%;text-align:center;padding:8px 10px;font-size:0.85rem">
+        + Split party (A–D)
+      </button>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -71,4 +84,26 @@
   </div>
   {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll('.split-party-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/staff/tables/${btn.dataset.table}/split`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: {{ pin|tojson }} }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'No free split');
+        location.href = data.redirect || `/staff/order/${data.code}?pin={{ pin }}`;
+      } catch (err) {
+        alert(err.message || 'Failed');
+        btn.disabled = false;
+      }
+    });
+  });
+</script>
 {% endblock %}
