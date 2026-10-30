@@ -346,13 +346,6 @@
           "price": 399,
           "unit": "Bottle",
           "image": "/static/images/menu/lfe-cab.jpg"
-        },
-        {
-          "id": "rose-b",
-          "name": "St. Jean de Villecroze Rosé",
-          "price": 459,
-          "unit": "Bottle",
-          "image": "/static/images/menu/rose-b.jpg"
         }
       ]
     },
@@ -403,6 +396,13 @@
           "price": 459,
           "unit": "Bottle",
           "image": "/static/images/menu/trebbiano.jpg"
+        },
+        {
+          "id": "rose-b",
+          "name": "St. Jean de Villecroze Rosé",
+          "price": 459,
+          "unit": "Bottle",
+          "image": "/static/images/menu/rose-b.jpg"
         }
       ]
     },
