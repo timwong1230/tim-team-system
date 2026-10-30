@@ -59,6 +59,6 @@ def test_key_product_photos_and_renames():
         assert "Krupnik" in html
         assert "El Tio Juan Blanco" in html
         assert "7up" in html
-        assert "Chang Soda Water" in html
+        assert "S.Pellegrino Sparkling Water" in html
         assert "Jose Cuervo" not in html
         assert f"grey-goose.jpg?v={main.ASSET_VERSION}" in html

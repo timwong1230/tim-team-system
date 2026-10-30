@@ -93,7 +93,7 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
 # Bump when shipping guest UI/CSS/JS so iPhone Safari cannot keep a stale bundle.
-ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261024c").strip() or "20261024c"
+ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261030a").strip() or "20261030a"
 templates.env.globals["asset_v"] = ASSET_VERSION
 _subscribers: list[asyncio.Queue] = []
 
