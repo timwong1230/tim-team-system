@@ -164,15 +164,20 @@ def compute_bill(
     service_charge_rate: float = 0.1,
     snack_charge_per_head: float = 10.0,
     discount_percent: float = 0.0,
+    snack_waived: bool = False,
 ) -> dict:
     """
     discount_percent: 0 = full price, 10 = 10% off, 20 = 20% off.
 
     - Discount applies to products + snack charge (not service).
     - Service charge is calculated on full price: (subtotal + snack) × rate.
+    - snack_waived: guest declined bar snacks → $0 snack charge.
     """
     subtotal = round(sum(float(x["line_total"]) for x in lines), 1)
-    snack_charge = round(max(1, party_size) * snack_charge_per_head, 1)
+    if snack_waived:
+        snack_charge = 0.0
+    else:
+        snack_charge = round(max(1, party_size) * snack_charge_per_head, 1)
     discount_base = round(subtotal + snack_charge, 1)
     service = round(discount_base * service_charge_rate, 1)  # full price
     try:
@@ -184,6 +189,7 @@ def compute_bill(
     return {
         "subtotal": subtotal,
         "snack_charge": snack_charge,
+        "snack_waived": bool(snack_waived),
         "service_charge": service,
         "service_charge_rate": service_charge_rate,
         "pre_discount_total": discount_base,

@@ -740,7 +740,9 @@ button.pill-action:active {
 .btn-prep { background: #6f8dff; color: white; }
 .btn-ready { background: var(--ok); color: #072018; }
 .btn-served { background: var(--gold); color: #15120b; }
+.btn-undo { background: transparent; color: var(--gold); border: 1px solid rgba(212,175,55,0.45); }
 .btn-cancel { background: transparent; color: var(--danger); border: 1px solid rgba(255,107,107,0.4); }
+.card.served { opacity: 0.88; border-color: rgba(212,175,55,0.25); }
 .table-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

@@ -73,12 +73,13 @@
                 : ""
             }
             ${
-              o.status !== "served"
-                ? `<button class="btn-served" data-id="${o.id}" data-status="served">Served</button>`
-                : ""
+              o.status === "served"
+                ? `<button class="btn-undo" data-id="${o.id}" data-status="ready">Undo served</button>`
+                : `<button class="btn-served" data-id="${o.id}" data-status="served">Served</button>`
             }
             <button class="btn-cancel" data-id="${o.id}" data-status="cancelled">Cancel</button>
             <a class="ghost" style="width:auto;padding:8px 12px;display:inline-block" href="/staff/bill/${o.table_code}?pin=${encodeURIComponent(pin)}">Bill</a>
+            <a class="ghost" style="width:auto;padding:8px 12px;display:inline-block" href="/staff/order/${o.table_code}?pin=${encodeURIComponent(pin)}">Add / fix</a>
           </div>
         </article>`;
       })
@@ -97,8 +98,13 @@
   box.addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-status]");
     if (!btn) return;
+    const next = btn.dataset.status;
+    if (next === "cancelled" && !confirm("Cancel this order?")) return;
+    if (next === "ready" && btn.classList.contains("btn-undo")) {
+      if (!confirm("Undo served so you can fix / cancel this order?")) return;
+    }
     const fd = new FormData();
-    fd.append("status", btn.dataset.status);
+    fd.append("status", next);
     fd.append("pin", pin);
     await fetch(`/api/staff/orders/${btn.dataset.id}/status`, {
       method: "POST",
