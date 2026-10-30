@@ -41,6 +41,9 @@ def test_key_product_photos_and_renames():
         "cuervo.jpg",
         "sprite.jpg",
         "pellegrino.jpg",
+        "lfe-cab.jpg",
+        "bella.jpg",
+        "rose-b.jpg",
     ):
         path = menu_dir / name
         assert path.is_file(), name
