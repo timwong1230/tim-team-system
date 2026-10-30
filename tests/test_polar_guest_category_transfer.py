@@ -58,6 +58,8 @@ def test_guest_nested_hub_and_staff_transfer():
         assert html.index("guest-cat-rail") < html.index("guest-main")
         # Top-level only — not every DB category at once
         assert "Celestial Signature Cocktails" in html
+        # Left-rail label breaks on word boundaries (not mid-word hyphens)
+        assert "Celestial<br>Signature<br>Cocktails" in html
         assert "Spirit" in html
         assert "Wine" in html
         assert 'id="sub-wine"' in html

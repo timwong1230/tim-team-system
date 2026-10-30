@@ -16,6 +16,7 @@ def _leaf(
     unit: str | None = None,
     item_ids: frozenset[str] | None = None,
     exclude_item_ids: frozenset[str] | None = None,
+    rail_lines: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": leaf_id,
@@ -25,6 +26,8 @@ def _leaf(
         "unit": unit,
         "item_ids": item_ids,
         "exclude_item_ids": exclude_item_ids,
+        # Optional left-rail line breaks (avoid mid-word hyphenation).
+        "rail_lines": rail_lines or [name],
     }
 
 
@@ -39,6 +42,7 @@ GUEST_NAV_TREE: list[dict[str, Any]] = [
         "celestial",
         "Celestial Signature Cocktails",
         category_ids=["celestial"],
+        rail_lines=["Celestial", "Signature", "Cocktails"],
     ),
     _group(
         "wine",
@@ -147,6 +151,7 @@ def build_guest_nav(menu: list[dict[str, Any]]) -> dict[str, Any]:
             "name": node["name"],
             "kind": "products",
             "target": f"leaf-{node['id']}",
+            "rail_lines": node.get("rail_lines") or [node["name"]],
         }
 
     for node in GUEST_NAV_TREE:
@@ -162,6 +167,7 @@ def build_guest_nav(menu: list[dict[str, Any]]) -> dict[str, Any]:
                 "name": node["name"],
                 "kind": "group",
                 "children": children,
+                "rail_lines": node.get("rail_lines") or [node["name"]],
             }
         )
 
