@@ -46,21 +46,6 @@
     <p>Hi {{ session.guest_name }} · party of {{ session.party_size }}. Order from your phone. Pay at the end with staff.</p>
   </div>
 
-  {# Categories first on phone — promo sits below so iOS does not bury the hub. #}
-  <div class="cat-hub" id="catHub">
-    <p class="cat-hub-label">Choose a category</p>
-    <div class="cats" id="cats" role="navigation" aria-label="Menu categories">
-      {% for node in guest_nav.roots %}
-      <button
-        type="button"
-        class="cat-btn"
-        data-nav-kind="{{ node.kind }}"
-        {% if node.kind == 'group' %}data-group="{{ node.id }}"{% else %}data-target="{{ node.target }}"{% endif %}
-      >{{ node.name }}</button>
-      {% endfor %}
-    </div>
-  </div>
-
   <div class="play-row">
     <button type="button" class="play-btn" id="openAskAI">Ask AI</button>
     <button type="button" class="play-btn play-btn-soft" id="jumpGift">Order for HIM/HER</button>
@@ -84,6 +69,27 @@
     </div>
     <div class="promo-combo">With Regular Shisha: <strong>$40</strong> for any bar snack</div>
   </details>
+
+  {# Sticky left category rail — always visible so guests need not scroll back up. #}
+  <div class="guest-shell" id="guestShell">
+  <nav class="guest-cat-rail cat-hub" id="catHub" aria-label="Menu categories">
+    <div class="cats" id="cats" role="navigation">
+      {% for node in guest_nav.roots %}
+      <button
+        type="button"
+        class="cat-btn"
+        data-nav-kind="{{ node.kind }}"
+        {% if node.kind == 'group' %}data-group="{{ node.id }}"{% else %}data-target="{{ node.target }}"{% endif %}
+      >{{ node.name }}</button>
+      {% endfor %}
+    </div>
+  </nav>
+
+  <div class="guest-main" id="guestMain">
+  <div class="guest-main-prompt" id="guestMainPrompt">
+    <p class="cat-hub-label">Choose a category</p>
+    <p class="muted" style="margin:0">Tap a category on the left to browse.</p>
+  </div>
 
   {% for node in guest_nav.roots if node.kind == 'group' %}
   <div class="cat-hub cat-subhub" id="sub-{{ node.id }}" hidden>
@@ -178,6 +184,8 @@
     {% endfor %}
   </section>
   {% endfor %}
+  </div>{# /guest-main #}
+  </div>{# /guest-shell #}
   {% endif %}
 </div>
 
