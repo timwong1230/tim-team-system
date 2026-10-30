@@ -80,7 +80,7 @@
         class="cat-btn"
         data-nav-kind="{{ node.kind }}"
         {% if node.kind == 'group' %}data-group="{{ node.id }}"{% else %}data-target="{{ node.target }}"{% endif %}
-      >{{ node.name }}</button>
+      >{% if node.rail_lines %}{% for line in node.rail_lines %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}{{ node.name }}{% endif %}</button>
       {% endfor %}
     </div>
   </nav>

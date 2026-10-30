@@ -334,8 +334,10 @@ button.pill-action:active {
   line-height: 1.25;
   letter-spacing: 0.02em;
   border-radius: 11px;
-  word-break: break-word;
-  hyphens: auto;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+  -webkit-hyphens: none;
 }
 .guest-main {
   flex: 1;
