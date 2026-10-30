@@ -295,19 +295,19 @@
       "items": [
         {
           "id": "bottle-tower",
-          "name": "Bottle Beer Tower",
+          "name": "Bottle Beer Tower (2 Litres)",
           "price": 329,
           "image": "/static/images/menu/bottle-tower.jpg"
         },
         {
           "id": "draft-tower",
-          "name": "Draft Beer Tower",
+          "name": "Draft Beer Tower (2 Litres)",
           "price": 349,
           "image": "/static/images/menu/draft-tower.jpg"
         },
         {
           "id": "single-mix",
-          "name": "Single Mix",
+          "name": "Single Mix (2 Litres)",
           "price": 459,
           "image": "/static/images/menu/single-mix.jpg"
         }
