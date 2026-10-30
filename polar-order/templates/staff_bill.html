@@ -52,6 +52,11 @@
       <button class="ghost" type="button" id="partySave">Update</button>
     </div>
     <p class="muted" id="partyHint" style="margin-bottom:0">Snack charge = party × ${{ '%.0f'|format(snack_per_head) }}</p>
+    <label class="snack-waive-row" style="display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer">
+      <input type="checkbox" id="snackWaive" {% if snack_waived %}checked{% endif %} />
+      <span>Cancel snacks（客人唔要零食 · $0）</span>
+    </label>
+    <p class="muted" id="snackWaiveMsg" style="margin-bottom:0"></p>
   </div>
   {% endif %}
 
@@ -143,8 +148,12 @@
   const money = (n) => '$' + Math.round(n);
   const input = document.getElementById('discountInput');
   const partyInput = document.getElementById('partyInput');
+  const snackWaive = document.getElementById('snackWaive');
   const card = document.getElementById('billCard');
   const isBoss = card && Number(card.dataset.isBoss) === 1;
+  if (card) {
+    card.dataset.snackWaived = {{ '1' if snack_waived else '0' }};
+  }
 
   function partySize() {
     if (isBoss || !partyInput) return 1;
@@ -153,13 +162,20 @@
     return Math.max(1, Math.min(30, Math.round(p)));
   }
 
+  function snacksWaived() {
+    if (isBoss) return true;
+    if (snackWaive) return !!snackWaive.checked;
+    return Number(card?.dataset.snackWaived || 0) === 1;
+  }
+
   function recalc() {
     if (!card) return;
     const subtotal = Number(card.dataset.subtotal);
     const rate = Number(card.dataset.rate || 0);
     const snackHead = Number(card.dataset.snackHead || 10);
     const party = partySize();
-    const snack = isBoss ? 0 : party * snackHead;
+    const waived = snacksWaived();
+    const snack = isBoss || waived ? 0 : party * snackHead;
     const service = isBoss ? 0 : (subtotal + snack) * rate;
     let d = Number(input.value || 0);
     if (Number.isNaN(d)) d = 0;
@@ -173,11 +189,14 @@
     if (!isBoss) {
       document.getElementById('vSnack').textContent = money(snack);
       document.getElementById('vSvc').textContent = money(service);
-      document.getElementById('snackLabel').textContent =
-        `Snack charge (${party} × $${Math.round(snackHead)})`;
+      document.getElementById('snackLabel').textContent = waived
+        ? 'Snack charge (cancelled)'
+        : `Snack charge (${party} × $${Math.round(snackHead)})`;
       const hint = document.getElementById('partyHint');
       if (hint) {
-        hint.textContent = `Snack charge = ${party} × $${Math.round(snackHead)} → $${Math.round(snack)}`;
+        hint.textContent = waived
+          ? 'Snacks cancelled — $0 snack charge'
+          : `Snack charge = ${party} × $${Math.round(snackHead)} → $${Math.round(snack)}`;
       }
     }
     const row = document.getElementById('discRow');
@@ -191,6 +210,33 @@
   }
   input?.addEventListener('input', recalc);
   partyInput?.addEventListener('input', recalc);
+
+  snackWaive?.addEventListener('change', async () => {
+    const waived = !!snackWaive.checked;
+    const msg = document.getElementById('snackWaiveMsg');
+    if (msg) msg.textContent = 'Saving…';
+    recalc();
+    try {
+      const res = await fetch('/api/staff/bill/{{ table.code }}/snack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: {{ pin|tojson }}, waived }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Failed to update snacks');
+      card.dataset.snackWaived = waived ? '1' : '0';
+      if (data.bill) {
+        card.dataset.snack = data.bill.snack_charge;
+        card.dataset.service = data.bill.service_charge;
+      }
+      if (msg) msg.textContent = waived ? 'Snacks cancelled.' : 'Snack charge restored.';
+      recalc();
+    } catch (err) {
+      snackWaive.checked = !waived;
+      recalc();
+      if (msg) msg.textContent = err.message || 'Failed';
+    }
+  });
 
   document.getElementById('partySave')?.addEventListener('click', async () => {
     const party_size = partySize();

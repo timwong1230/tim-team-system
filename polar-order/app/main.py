@@ -169,6 +169,11 @@ class StaffPartyIn(BaseModel):
     party_size: int = Field(ge=1, le=30)
 
 
+class StaffSnackIn(BaseModel):
+    pin: str
+    waived: bool = False
+
+
 class StaffTransferIn(BaseModel):
     pin: str
     target_table: str = Field(min_length=1, max_length=40)
@@ -191,6 +196,19 @@ class BossOrderIn(BaseModel):
 class AskAIIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
     history: list[dict[str, str]] = Field(default_factory=list)
+
+
+def _session_snack_waived(session: sqlite3.Row | dict | None) -> bool:
+    if not session:
+        return False
+    try:
+        if "snack_waived" in session.keys():
+            return bool(session["snack_waived"])
+    except Exception:
+        pass
+    if isinstance(session, dict):
+        return bool(session.get("snack_waived"))
+    return False
 
 
 def _session_shisha_combo_slots(conn: sqlite3.Connection, session_id: int) -> int:
@@ -758,6 +776,7 @@ def staff_orders(pin: str = ""):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     conn = connect()
+    # Keep served on open sessions so staff can undo / cancel after mistakes.
     orders = conn.execute(
         """
         SELECT o.*, t.code AS table_code, t.label AS table_label,
@@ -767,9 +786,15 @@ def staff_orders(pin: str = ""):
         JOIN tables t ON t.id = o.table_id
         JOIN sessions s ON s.id = o.session_id
         LEFT JOIN tables dt ON dt.id = o.deliver_table_id
-        WHERE o.status IN ('new', 'preparing', 'ready')
+        WHERE o.status IN ('new', 'preparing', 'ready', 'served')
+          AND s.status = 'open'
         ORDER BY
-          CASE o.status WHEN 'new' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END,
+          CASE o.status
+            WHEN 'new' THEN 0
+            WHEN 'preparing' THEN 1
+            WHEN 'ready' THEN 2
+            ELSE 3
+          END,
           o.id ASC
         """
     ).fetchall()
@@ -879,6 +904,7 @@ def staff_tables(request: Request, pin: str = ""):
                     session["party_size"],
                     meta["service_charge_rate"],
                     meta["snack_charge_per_head"],
+                    snack_waived=_session_snack_waived(session),
                 )
         entry = {
             "table": t,
@@ -996,6 +1022,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
                 meta["service_charge_rate"],
                 meta["snack_charge_per_head"],
                 discount_percent=discount,
+                snack_waived=_session_snack_waived(session),
             )
             for t in list_guest_tables(conn):
                 if t["id"] == table["id"]:
@@ -1018,6 +1045,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "discount": discount or 0,
             "is_boss": is_boss,
             "snack_per_head": meta["snack_charge_per_head"],
+            "snack_waived": _session_snack_waived(session),
             "transfer_targets": transfer_targets,
         },
     )
@@ -1055,12 +1083,57 @@ def staff_update_party(table_code: str, body: StaffPartyIn):
         meta["service_charge_rate"],
         meta["snack_charge_per_head"],
         discount_percent=0,
+        snack_waived=_session_snack_waived(session),
     )
     conn.close()
     return {
         "ok": True,
         "party_size": session["party_size"],
         "guest_name": session["guest_name"],
+        "snack_waived": _session_snack_waived(session),
+        "bill": bill,
+    }
+
+
+@app.post("/api/staff/bill/{table_code}/snack")
+def staff_update_snack(table_code: str, body: StaffSnackIn):
+    """Waive or restore per-head bar snack charge when guest declines snacks."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") == "boss":
+        conn.close()
+        return {"ok": True, "snack_waived": True, "bill": None}
+    session = get_open_session(conn, table["id"])
+    if not session:
+        conn.close()
+        raise HTTPException(400, "No open session")
+    waived = 1 if body.waived else 0
+    conn.execute(
+        "UPDATE sessions SET snack_waived = ? WHERE id = ?",
+        (waived, session["id"]),
+    )
+    conn.commit()
+    session = get_open_session(conn, table["id"])
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = compute_bill(
+        lines,
+        session["party_size"],
+        meta["service_charge_rate"],
+        meta["snack_charge_per_head"],
+        discount_percent=0,
+        snack_waived=_session_snack_waived(session),
+    )
+    conn.close()
+    return {
+        "ok": True,
+        "snack_waived": bool(waived),
+        "party_size": session["party_size"],
         "bill": bill,
     }
 
@@ -1264,6 +1337,7 @@ def close_bill(
             meta["service_charge_rate"],
             meta["snack_charge_per_head"],
             discount_percent=discount_percent,
+            snack_waived=_session_snack_waived(session),
         )
     now = utc_now()
     biz = business_date(datetime.now(HK)).isoformat()

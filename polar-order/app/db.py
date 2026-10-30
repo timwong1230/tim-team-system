@@ -41,6 +41,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         ("sessions", "receipt_path", "TEXT"),
         ("sessions", "business_date", "TEXT"),
         ("sessions", "payment_method", "TEXT"),
+        ("sessions", "snack_waived", "INTEGER NOT NULL DEFAULT 0"),
         ("orders", "created_by", "TEXT"),
         ("orders", "deliver_table_id", "INTEGER"),
         ("orders", "gift_message", "TEXT"),
