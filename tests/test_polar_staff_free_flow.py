@@ -54,14 +54,12 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"$300" in staff.content or b">300<" in staff.content
         assert b'id="cat-free-flow"' in staff.content
 
-        # Demo practice seat: same guest-facing menu — no Free Flow to pick
+        # Demo practice: Free Flow available (staff order + guest Demo QR)
         demo = client.get(f"/staff/order/DEMO?pin={pin}")
         assert demo.status_code == 200
-        assert b"Free Flow" not in demo.content
-        assert b"free-flow-with-shisha" not in demo.content
-        assert b"Without Shisha" not in demo.content
-        assert b'id="cat-free-flow"' not in demo.content
-        blocked = client.post(
+        assert b"Free Flow" in demo.content
+        assert b'id="cat-free-flow"' in demo.content
+        demo_order = client.post(
             "/api/staff/bill/DEMO/orders",
             json={
                 "pin": pin,
@@ -70,10 +68,20 @@ def test_free_flow_staff_only_not_on_guest_menu():
                 "items": [{"item_id": "free-flow-with-shisha", "qty": 1}],
             },
         )
-        assert blocked.status_code == 400
-        assert b"not available on Demo" in blocked.content
+        assert demo_order.status_code == 200, demo_order.text
 
-        # Guest check-in then menu — Free Flow must not appear
+        demo_welcome = client.post(
+            "/api/t/DEMO/welcome",
+            json={"guest_name": "Practice", "party_size": 2},
+        )
+        assert demo_welcome.status_code == 200, demo_welcome.text
+        demo_guest = client.get("/t/DEMO")
+        assert demo_guest.status_code == 200
+        assert b"Free Flow" in demo_guest.content
+        assert b"free-flow-with-shisha" in demo_guest.content
+        assert b"leaf-free-flow" in demo_guest.content
+
+        # Real guest table — Free Flow must not appear
         welcome = client.post(
             "/api/t/TABLE1/welcome",
             json={"guest_name": "FF Guest", "party_size": 2},
@@ -85,6 +93,7 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"free-flow-with-shisha" not in guest.content
         assert b"Without Shisha" not in guest.content
         assert b'id="cat-free-flow"' not in guest.content
+        assert b"leaf-free-flow" not in guest.content
 
         # Staff can actually order Free Flow onto the bill
         ordered = client.post(

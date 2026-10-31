@@ -340,6 +340,7 @@ def _menu_payload(
                 "name": cat["name"],
                 "promo": cat["promo"],
                 "items": row_items,
+                "staff_only": cat["id"] in staff_only_ids,
                 # Guest UI shows Glass / Bottle section headers when both exist.
                 "split_serve": "Glass" in units and "Bottle" in units,
             }
@@ -525,7 +526,9 @@ def guest_table(request: Request, table_code: str):
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
     ready = bool(session and session["guest_name"])
-    menu = _menu_payload(conn) if ready else []
+    # Demo practice seat: include staff-only Free Flow so staff can rehearse it.
+    is_demo = (table["zone"] or "") == "demo"
+    menu = _menu_payload(conn, include_staff_only=is_demo) if ready else []
     guest_nav = build_guest_nav(menu) if ready else {"roots": [], "leaves": []}
     single_mix_spirits = list_spirit_glass_options(conn) if ready else []
     promo = current_promo()
@@ -1050,9 +1053,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         boss_id = table_code.replace("BOSS", "").lower()
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
-    # Demo practice seat: real menu only — no staff-only Free Flow etc.
-    is_demo = (table["zone"] or "") == "demo"
-    menu = _menu_payload(conn, include_staff_only=not is_demo)
+    menu = _menu_payload(conn, include_staff_only=True)
     single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()
@@ -1529,19 +1530,6 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
     if (table["zone"] or "") == "boss":
         conn.close()
         raise HTTPException(400, "Use boss station to order for boss tabs")
-
-    # Demo practice: same menu as guests — no staff-only Free Flow etc.
-    if (table["zone"] or "") == "demo":
-        blocked = _staff_only_category_ids()
-        if blocked:
-            for entry in body.items:
-                row = conn.execute(
-                    "SELECT category_id FROM menu_items WHERE id = ?",
-                    (entry.item_id,),
-                ).fetchone()
-                if row and row["category_id"] in blocked:
-                    conn.close()
-                    raise HTTPException(400, "Free Flow is not available on Demo")
 
     session = get_open_session(conn, table["id"])
     if not session or not session["guest_name"]:
