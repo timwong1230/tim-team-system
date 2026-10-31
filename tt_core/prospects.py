@@ -30,6 +30,17 @@ def current_year() -> int:
     return datetime.date.today().year
 
 
+def year_options(*, past: int = 2) -> list[int]:
+    """Years for Client / 準客戶名單 dropdown: next year + current + recent past.
+
+    Includes the upcoming calendar year (e.g. 2027 while still in 2026)
+    so colleagues can start next-year lists early.
+    """
+    cy = current_year()
+    # next → current → current-1 … → current-past
+    return list(range(cy + 1, cy - past - 1, -1))
+
+
 def factfind_template() -> str:
     return TEMPLATE_FACTFIND
 
