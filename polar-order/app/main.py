@@ -84,6 +84,11 @@ from .ai_host import ask_ai
 from .guest_nav import build_guest_nav
 from .paths import BANK_EVIDENCE_DIR, DATA_DIR, ROOT
 from .seats import BOSSES, boss_by_id, boss_seat_code
+from .cocktails import (
+    cocktail_birthday_serve,
+    count_birthday_free_qty,
+    note_is_birthday_free,
+)
 from .spirits import (
     SINGLE_MIX_ITEM_ID,
     list_spirit_glass_options,
@@ -282,6 +287,7 @@ def _menu_payload(
     conn: sqlite3.Connection,
     *,
     include_staff_only: bool = False,
+    staff_cocktail_promo: bool = False,
 ) -> list[dict[str, Any]]:
     promo = current_promo()
     staff_only_ids = _staff_only_category_ids()
@@ -305,6 +311,8 @@ def _menu_payload(
                 item_id=item["id"],
             )
             serve = spirit_serve_for(cat["id"], item["unit"], item_id=item["id"])
+            if not serve and staff_cocktail_promo:
+                serve = cocktail_birthday_serve(cat["id"])
             if item["id"] == SINGLE_MIX_ITEM_ID:
                 serve = single_mix_serve(list_spirit_glass_options(conn))
             image = item["image"] or ""
@@ -1053,7 +1061,11 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         boss_id = table_code.replace("BOSS", "").lower()
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
-    menu = _menu_payload(conn, include_staff_only=True)
+    menu = _menu_payload(
+        conn,
+        include_staff_only=True,
+        staff_cocktail_promo=True,
+    )
     single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()
@@ -1547,6 +1559,21 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
             party_size=body.party_size,
             guest_name=session["guest_name"],
         )
+
+    # Birthday Free: one complimentary Celestial cocktail per open session.
+    birthday_qty = sum(
+        int(entry.qty)
+        for entry in body.items
+        if note_is_birthday_free(entry.note)
+    )
+    if birthday_qty:
+        if birthday_qty > 1:
+            conn.close()
+            raise HTTPException(400, "Only one Birthday Free cocktail per table")
+        existing = _session_lines(conn, session["id"])
+        if count_birthday_free_qty(existing) >= 1:
+            conn.close()
+            raise HTTPException(400, "Birthday Free cocktail already on this bill")
 
     try:
         order_id, payload = _create_order(

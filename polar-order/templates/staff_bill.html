@@ -67,25 +67,6 @@
     </div>
   </div>
 
-  {% if not is_boss and transfer_targets %}
-  <div class="card transfer-box" id="transferBox">
-    <h3 style="margin-top:0">Move to another table</h3>
-    <p class="muted" style="margin-top:0">
-      Transfer this open bill and all orders (e.g. guests moved seats). Target must be empty.
-    </p>
-    <label class="muted" for="transferTarget">Move to</label>
-    <div class="party-row">
-      <select class="field" id="transferTarget">
-        <option value="">Pick a table…</option>
-        {% for t in transfer_targets %}
-        <option value="{{ t.code }}">{{ t.label }}</option>
-        {% endfor %}
-      </select>
-      <button class="ghost" type="button" id="transferBtn">Transfer</button>
-    </div>
-  </div>
-  {% endif %}
-
   {% if not is_boss %}
   <div class="card party-confirm" id="partyConfirm">
     <h3 style="margin-top:0">Confirm party size</h3>
@@ -174,6 +155,25 @@
     <button class="ghost" type="button" id="clearTableBtn"
             style="width:auto;border-color:#8a4a4a;color:#f0c0c0">Clear table</button>
   </div>
+
+  {% if not is_boss and transfer_targets %}
+  <div class="card transfer-box" id="transferBox" style="margin-top:16px">
+    <h3 style="margin-top:0">Move to another table</h3>
+    <p class="muted" style="margin-top:0">
+      Transfer this open bill and all orders (e.g. guests moved seats). Target must be empty.
+    </p>
+    <label class="muted" for="transferTarget">Move to</label>
+    <div class="party-row">
+      <select class="field" id="transferTarget">
+        <option value="">Pick a table…</option>
+        {% for t in transfer_targets %}
+        <option value="{{ t.code }}">{{ t.label }}</option>
+        {% endfor %}
+      </select>
+      <button class="ghost" type="button" id="transferBtn">Transfer</button>
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {# Always available — Not on Menu can be the first item (opens a Walk-in session if needed). #}

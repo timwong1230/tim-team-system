@@ -33,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function prefixForServeChoice(choice, kind) {
     if (kind === "mixer") return "Mixer";
     if (kind === "single_mix") return "Spirit";
+    if (kind === "birthday") return "Promo";
     if (GLASS_STYLES.has(choice)) return "Serve";
     return "Mixer";
   }
@@ -127,6 +128,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("[data-serve]");
     if (!btn) return;
     const choice = btn.dataset.serve;
+    if (serve.kind === "birthday") {
+      const alreadyFree = [...cart.values()].some(
+        (l) => l.serveKind === "birthday" && l.serveChoice === "Birthday Free"
+      );
+      if (choice === "Birthday Free" && alreadyFree) {
+        showToast("Only one Birthday Free cocktail per table");
+        closeServePicker();
+        return;
+      }
+      addCartLine({
+        ...item,
+        price: choice === "Birthday Free" ? 0 : item.price,
+        serveChoice: choice,
+        serveKind: "birthday",
+        servePrefix: "Promo",
+      });
+      closeServePicker();
+      return;
+    }
     addCartLine({
       ...item,
       serveChoice: choice,
