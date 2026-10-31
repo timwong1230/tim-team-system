@@ -498,6 +498,49 @@ def get_session(conn: sqlite3.Connection, session_id: int) -> sqlite3.Row | None
     return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
 
 
+def clear_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row:
+    """Void an open session (wrong-table / accidental open). Not a sale.
+
+    Cancels all non-cancelled orders and marks the session ``voided`` so
+    ``get_open_session`` and daily sales (``status='closed'``) ignore it.
+    """
+    session = get_open_session(conn, table_id)
+    if not session:
+        raise ValueError("No open session on this table")
+    now = utc_now()
+    conn.execute(
+        """
+        UPDATE orders
+        SET status = 'cancelled', updated_at = ?
+        WHERE session_id = ? AND status != 'cancelled'
+        """,
+        (now, session["id"]),
+    )
+    conn.execute(
+        """
+        UPDATE sessions SET
+          status = 'voided',
+          closed_at = ?,
+          discount_percent = 0,
+          subtotal = 0,
+          snack_charge = 0,
+          service_charge = 0,
+          discount_amount = 0,
+          total = 0,
+          receipt_path = NULL,
+          business_date = NULL,
+          payment_method = NULL
+        WHERE id = ?
+        """,
+        (now, session["id"]),
+    )
+    conn.commit()
+    cleared = get_session(conn, session["id"])
+    if not cleared:
+        raise ValueError("Session missing after clear")
+    return cleared
+
+
 def add_claim(
     conn: sqlite3.Connection,
     *,

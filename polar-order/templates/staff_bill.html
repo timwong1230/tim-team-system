@@ -163,6 +163,16 @@
       {% if is_boss %}Record credit & open PDF{% else %}Mark paid & open PDF receipt{% endif %}
     </button>
   </form>
+
+  <div class="card" id="clearTableBox" style="margin-top:16px;border-color:#8a4a4a">
+    <h3 style="margin-top:0;color:#f0c0c0">Clear table</h3>
+    <p class="muted" style="margin-top:0">
+      Opened the wrong seat by mistake? Void this session and cancel all its orders.
+      Not a payment / not sales — the table goes empty again.
+    </p>
+    <button class="ghost" type="button" id="clearTableBtn"
+            style="width:auto;border-color:#8a4a4a;color:#f0c0c0">Clear table</button>
+  </div>
   {% endif %}
 
   {# Always available — Not on Menu can be the first item (opens a Walk-in session if needed). #}
@@ -442,6 +452,31 @@
       return;
     }
     location.reload();
+  });
+
+  document.getElementById('clearTableBtn')?.addEventListener('click', async () => {
+    const label = {{ table.label|tojson }};
+    const ok = confirm(
+      `Clear ${label}?\n\nThis voids the open session and cancels all orders.\nNot a sale — use only if this table was opened by mistake.`
+    );
+    if (!ok) return;
+    const ok2 = confirm(`Really clear ${label}? This cannot be undone.`);
+    if (!ok2) return;
+    const btn = document.getElementById('clearTableBtn');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/staff/bill/{{ table.code }}/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: {{ pin|tojson }} }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Clear failed');
+      location.href = data.redirect || '/staff/tables?pin={{ pin }}';
+    } catch (err) {
+      alert(err.message || 'Clear failed');
+      btn.disabled = false;
+    }
   });
 
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
