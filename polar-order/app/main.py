@@ -1716,6 +1716,75 @@ def close_bill(
     }
 
 
+class StaffPaymentUpdateIn(BaseModel):
+    pin: str
+    payment_method: str = Field(min_length=1, max_length=40)
+
+
+@app.post("/api/staff/sessions/{session_id}/payment")
+def staff_update_session_payment(session_id: int, body: StaffPaymentUpdateIn):
+    """Correct tender after Mark paid — updates closed session + regenerates PDF."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    method = (body.payment_method or "").strip()
+    if method not in PAYMENT_METHODS:
+        raise HTTPException(400, "Select a payment method")
+    conn = connect()
+    session = get_session(conn, session_id)
+    if not session or session["status"] != "closed":
+        conn.close()
+        raise HTTPException(404, "Closed bill not found")
+    table = conn.execute(
+        "SELECT * FROM tables WHERE id = ?", (session["table_id"],)
+    ).fetchone()
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    zone = (table["zone"] or "").strip().lower()
+    if zone in ("boss", "demo"):
+        conn.close()
+        raise HTTPException(400, "Cannot change payment on boss or demo seats")
+    if (session["payment_method"] or "") == BOSS_CREDIT_METHOD:
+        conn.close()
+        raise HTTPException(400, "Cannot change boss credit")
+
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = {
+        "subtotal": float(session["subtotal"] or 0),
+        "snack_charge": float(session["snack_charge"] or 0),
+        "service_charge": float(session["service_charge"] or 0),
+        "discount_amount": float(session["discount_amount"] or 0),
+        "discount_percent": float(session["discount_percent"] or 0),
+        "total": float(session["total"] or 0),
+        "party_size": int(session["party_size"] or 1),
+        "service_charge_rate": float(meta["service_charge_rate"]),
+    }
+    guest_name = session["guest_name"] if session["guest_name"] else None
+    receipt_rel = generate_receipt_pdf(
+        session_id=session["id"],
+        table_label=table["label"],
+        party_size=int(session["party_size"] or 1),
+        lines=lines,
+        bill=bill,
+        closed_at_iso=session["closed_at"] or utc_now(),
+        guest_name=guest_name,
+        payment_method=method,
+    )
+    conn.execute(
+        "UPDATE sessions SET payment_method = ?, receipt_path = ? WHERE id = ?",
+        (method, receipt_rel, session["id"]),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "payment_method": method,
+        "receipt_url": f"/staff/receipt/{session_id}?pin={body.pin}",
+    }
+
+
 @app.get("/staff/receipt/{session_id}")
 def staff_receipt(session_id: int, pin: str = ""):
     if pin != STAFF_PIN:
@@ -1860,6 +1929,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "items": items,
             "bosses": bosses,
             "claim_presets": CLAIM_PRESETS,
+            "payment_methods": PAYMENT_METHODS,
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
             "sheets_sync_ready": sheets_configured(),

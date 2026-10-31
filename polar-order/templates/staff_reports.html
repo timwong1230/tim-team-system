@@ -31,16 +31,29 @@
       {% endfor %}
     </div>
     {% endif %}
+    <p class="muted" style="margin:8px 0 0">Wrong tender after Mark paid? Change payment method on the row — PDF updates too.</p>
     {% for s in daily.sessions %}
-    <div class="cart-line">
-      <div>
+    <div class="cart-line session-pay-row" data-session="{{ s.session_id }}">
+      <div style="flex:1;min-width:0">
         <strong>{{ s.table }}</strong>
-        <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}{% if s.payment_method %} · {{ s.payment_method }}{% endif %}</div>
+        <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}</div>
+        {% if s.payment_method and s.payment_method != 'Credit' %}
+        <label class="muted" for="pay-{{ s.session_id }}" style="display:block;margin-top:8px">Payment method</label>
+        <select class="field pay-method-edit" id="pay-{{ s.session_id }}"
+                data-session="{{ s.session_id }}" data-prev="{{ s.payment_method }}"
+                style="margin:4px 0 0;max-width:220px">
+          {% for m in payment_methods %}
+          <option value="{{ m }}" {% if m == s.payment_method %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+        {% elif s.payment_method %}
+        <div class="muted" style="margin-top:6px">{{ s.payment_method }}</div>
+        {% endif %}
       </div>
       <div>
         ${{ '%.0f'|format(s.total) }}
         {% if s.receipt_path %}
-        <div><a href="/staff/receipt/{{ s.session_id }}?pin={{ pin }}">PDF</a></div>
+        <div><a class="session-pdf-link" href="/staff/receipt/{{ s.session_id }}?pin={{ pin }}">PDF</a></div>
         {% endif %}
       </div>
     </div>
@@ -256,6 +269,36 @@
     document.getElementById('claimsTotal').textContent = money(claimsTotal);
     document.getElementById('netAfterClaims').textContent = money(GROSS - claimsTotal);
   }
+
+  document.querySelectorAll('.pay-method-edit').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const sessionId = sel.dataset.session;
+      const prev = sel.dataset.prev || '';
+      const method = sel.value;
+      if (!sessionId || !method || method === prev) return;
+      if (!confirm(`Change payment to ${method}?`)) {
+        sel.value = prev;
+        return;
+      }
+      sel.disabled = true;
+      try {
+        const res = await fetch(`/api/staff/sessions/${sessionId}/payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: PIN, payment_method: method }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Update failed');
+        sel.dataset.prev = method;
+        // Reload so payment breakdown totals stay correct
+        location.reload();
+      } catch (err) {
+        alert(err.message || 'Update failed');
+        sel.value = prev;
+        sel.disabled = false;
+      }
+    });
+  });
 
   document.getElementById('cashTiltSaveBtn')?.addEventListener('click', async () => {
     const amount = Number(document.getElementById('cashTiltAmount').value);
