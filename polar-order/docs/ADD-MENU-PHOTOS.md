@@ -32,3 +32,5 @@ Example: Regular Shisha → `static/images/menu/shisha-regular.jpg`
 - Sample placeholders are already included for: `shisha-regular`, `shisha-change`, `aries`, `fries`.
 - **Do not run bottle-style rembg background blur on shisha photos** — the pipe/hose is often
   mis-segmented and the subject itself ends up blurred. Keep the venue shoot originals.
+- Staff-only categories (e.g. **Free Flow**) set `"staff_only": true` on the category in
+  `menu.json`. They appear on staff / boss order screens only — never on the guest QR menu.
