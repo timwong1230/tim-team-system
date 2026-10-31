@@ -1050,7 +1050,9 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         boss_id = table_code.replace("BOSS", "").lower()
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
-    menu = _menu_payload(conn, include_staff_only=True)
+    # Demo practice seat: real menu only — no staff-only Free Flow etc.
+    is_demo = (table["zone"] or "") == "demo"
+    menu = _menu_payload(conn, include_staff_only=not is_demo)
     single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()

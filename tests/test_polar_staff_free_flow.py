@@ -54,6 +54,14 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"$300" in staff.content or b">300<" in staff.content
         assert b'id="cat-free-flow"' in staff.content
 
+        # Demo practice seat: same guest-facing menu — no Free Flow
+        demo = client.get(f"/staff/order/DEMO?pin={pin}")
+        assert demo.status_code == 200
+        assert b"Free Flow" not in demo.content
+        assert b"free-flow-with-shisha" not in demo.content
+        assert b"Without Shisha" not in demo.content
+        assert b'id="cat-free-flow"' not in demo.content
+
         # Guest check-in then menu — Free Flow must not appear
         welcome = client.post(
             "/api/t/TABLE1/welcome",
