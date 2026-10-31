@@ -1530,6 +1530,19 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
         conn.close()
         raise HTTPException(400, "Use boss station to order for boss tabs")
 
+    # Demo practice: same menu as guests — no staff-only Free Flow etc.
+    if (table["zone"] or "") == "demo":
+        blocked = _staff_only_category_ids()
+        if blocked:
+            for entry in body.items:
+                row = conn.execute(
+                    "SELECT category_id FROM menu_items WHERE id = ?",
+                    (entry.item_id,),
+                ).fetchone()
+                if row and row["category_id"] in blocked:
+                    conn.close()
+                    raise HTTPException(400, "Free Flow is not available on Demo")
+
     session = get_open_session(conn, table["id"])
     if not session or not session["guest_name"]:
         name = (body.guest_name or "").strip() or "Walk-in"
