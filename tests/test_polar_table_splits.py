@@ -46,8 +46,11 @@ def test_table_splits_separate_sessions():
 
         tables = client.get(f"/staff/tables?pin={pin}")
         assert tables.status_code == 200
-        assert b"Table 1A" in tables.content
+        # Idle A–D cards stay off Open seats (open splits from Table 1–5 instead)
+        assert b"Table 1A" not in tables.content
+        assert b"Table 1B" not in tables.content
         assert b"Split party" in tables.content
+        assert b"Active splits appear here only when in use" in tables.content
 
         # Main table party
         main_order = client.post(
@@ -87,6 +90,14 @@ def test_table_splits_separate_sessions():
         assert a_order.status_code == 200, a_order.text
         assert a_order.json()["guest_name"] == "Ben"
         assert a_order.json()["party_size"] == 2
+
+        # Busy split shows on Open seats; idle 1B/1C/1D still hidden
+        tables_busy = client.get(f"/staff/tables?pin={pin}")
+        assert tables_busy.status_code == 200
+        assert b"Table 1A" in tables_busy.content
+        assert b"Ben" in tables_busy.content
+        assert b"Table 1B" not in tables_busy.content
+        assert b"Table 1C" not in tables_busy.content
 
         # Next free → 1B
         split2 = client.post(

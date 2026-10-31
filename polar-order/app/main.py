@@ -935,6 +935,10 @@ def staff_tables(request: Request, pin: str = ""):
         if entry["is_split"]:
             parent = parent_table_code(t["code"])
             entry["parent_label"] = parent.replace("TABLE", "Table ") if parent else None
+            # Idle A–D cards clutter Open seats — staff open splits from Table 1–5
+            # (Split party / bill siblings). Only list a split when it has a live party.
+            if not session:
+                continue
         if entry["is_boss"]:
             boss_rows.append(entry)
         elif entry["is_demo"]:
