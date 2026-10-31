@@ -78,6 +78,7 @@ ASSETS: dict[str, list[str]] = {
     "baileys": ["Baileys Irish Cream bottle"],
     "kahlua": ["Kahlúa bottle", "Kahlua coffee liqueur"],
     "jager": ["Jägermeister bottle", "Jagermeister bottle"],
+    "yager-bomb": ["Jägerbomb Red Bull shot", "Jagerbomb cocktail"],
     "tequila-rose": ["Tequila Rose bottle", "strawberry cream liqueur"],
     # Champagne
     "moet": ["Moët & Chandon champagne bottle", "Moet Chandon Imperial"],
@@ -164,6 +165,7 @@ ITEM_ASSET: dict[str, str] = {
     "kahlua-b": "kahlua",
     "jager-g": "jager",
     "jager-b": "jager",
+    "yager-bomb": "yager-bomb",
     "tequila-rose-g": "tequila-rose",
     "tequila-rose-b": "tequila-rose",
     "moet": "moet",

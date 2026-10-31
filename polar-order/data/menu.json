@@ -675,6 +675,14 @@
           "image": "/static/images/menu/tequila-rose.jpg"
         },
         {
+          "id": "yager-bomb",
+          "name": "Yager Bomb",
+          "price": 109,
+          "unit": "Glass",
+          "note": "Jägermeister dropped into Red Bull",
+          "image": "/static/images/menu/yager-bomb.jpg"
+        },
+        {
           "id": "baileys-b",
           "name": "Baileys",
           "price": 1199,

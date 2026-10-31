@@ -19,6 +19,9 @@ SPIRIT_GLASS_SERVES = SPIRIT_GLASS_STYLES  # back-compat name
 
 SINGLE_MIX_ITEM_ID = "single-mix"
 
+# Ready-to-serve glass drinks — skip Neat/Rocks/mixer picker.
+NO_SPIRIT_SERVE_IDS = frozenset({"yager-bomb"})
+
 
 def note_prefix_for_choice(choice: str) -> str:
     if choice in SPIRIT_GLASS_STYLES:
@@ -26,9 +29,16 @@ def note_prefix_for_choice(choice: str) -> str:
     return "Mixer"
 
 
-def spirit_serve_for(category_id: str, unit: str | None) -> dict[str, Any] | None:
+def spirit_serve_for(
+    category_id: str,
+    unit: str | None,
+    *,
+    item_id: str | None = None,
+) -> dict[str, Any] | None:
     """Return serve picker config for spirit items, or None if not applicable."""
     if category_id not in SPIRIT_CATS:
+        return None
+    if item_id and item_id in NO_SPIRIT_SERVE_IDS:
         return None
     u = (unit or "").strip()
     if u == "Bottle":
