@@ -6378,9 +6378,12 @@ def page_prospect_list():
         + (" Leader 可揀同事檢視全隊。" if leader else "")
     )
 
+    year_opts = pr.year_options()
+    cy = pr.current_year()
     year = st.selectbox(
         "年份",
-        options=list(range(pr.current_year(), pr.current_year() - 3, -1)),
+        options=year_opts,
+        index=year_opts.index(cy) if cy in year_opts else 0,
         key="pl_year",
     )
 

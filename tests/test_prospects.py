@@ -8,10 +8,12 @@ from tt_core.prospects import (
     LIST_RECRUIT,
     LIST_SALES,
     RECRUIT_CATEGORIES,
+    current_year,
     factfind_template,
     quarter_counts,
     quarter_fyc_total,
     year_fyc_total,
+    year_options,
 )
 
 
@@ -80,6 +82,14 @@ def _sample_df() -> pd.DataFrame:
             },
         ]
     )
+
+
+def test_year_options_includes_next_year():
+    cy = current_year()
+    opts = year_options()
+    # e.g. in 2026 → [2027, 2026, 2025, 2024]
+    assert opts == [cy + 1, cy, cy - 1, cy - 2]
+    assert 2027 in opts  # Client list opens next MDRT / calendar year early
 
 
 def test_factfind_has_15_questions():
