@@ -60,4 +60,7 @@ def test_bill_page_items_before_admin_sections():
         transfer_at = html.index('id="transferBox"')
         party_at = html.index('id="partyConfirm"')
         pay_at = html.index("pay-method-card")
-        assert items_at < transfer_at < party_at < pay_at
+        clear_at = html.index('id="clearTableBox"')
+        nom_at = html.index("nom-box")
+        # Items → party → pay → clear → Not on Menu → move table at the very bottom
+        assert items_at < party_at < pay_at < clear_at < nom_at < transfer_at

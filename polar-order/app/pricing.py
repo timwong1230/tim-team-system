@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from .cocktails import note_is_birthday_free
+
 HK = ZoneInfo("Asia/Hong_Kong")
 
 SHISHA_COMBO_SNACK_PRICE = 40.0
@@ -113,6 +115,9 @@ def price_order_lines(
             promo,
             item_id=e["item_id"],
         )
+        # Staff birthday-month promo: one complimentary Celestial cocktail.
+        if note_is_birthday_free(e.get("note")):
+            unit, tag = 0.0, "Birthday Free"
         row = {
             "item_id": e["item_id"],
             "item_name": e["name"],
