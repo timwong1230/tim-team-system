@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from .db import (
     add_claim,
+    clear_open_session,
     connect,
     create_booking,
     delete_claim,
@@ -191,6 +192,10 @@ class StaffTransferIn(BaseModel):
 
 
 class StaffSplitIn(BaseModel):
+    pin: str
+
+
+class StaffClearTableIn(BaseModel):
     pin: str
 
 
@@ -1206,6 +1211,39 @@ def staff_update_snack(table_code: str, body: StaffSnackIn):
         "snack_waived": bool(waived),
         "party_size": session["party_size"],
         "bill": bill,
+    }
+
+
+@app.post("/api/staff/bill/{table_code}/clear")
+async def staff_clear_table(table_code: str, body: StaffClearTableIn):
+    """Void the open session — wrong table / accidental open. Not a sale."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    try:
+        cleared = clear_open_session(conn, table["id"])
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    payload = {
+        "table_code": table["code"],
+        "table_label": table["label"],
+        "session_id": cleared["id"],
+        "guest_name": cleared["guest_name"] if "guest_name" in cleared.keys() else None,
+    }
+    publish_event(conn, "session.clear", payload)
+    conn.close()
+    await _broadcast({"type": "session.clear", "data": payload})
+    return {
+        "ok": True,
+        "cleared": True,
+        "session_id": cleared["id"],
+        "table_code": table["code"],
+        "redirect": f"/staff/tables?pin={body.pin}",
     }
 
 
