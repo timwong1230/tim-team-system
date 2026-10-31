@@ -59,7 +59,8 @@ def test_payment_method_and_claims():
             "/api/staff/bill/TABLE5/close",
             data={"pin": pin, "discount_percent": 0},
         )
-        assert missing.status_code == 422
+        # Guest close still requires a tender (optional form field → 400, not 422)
+        assert missing.status_code == 400
 
         bad = client.post(
             "/api/staff/bill/TABLE5/close",

@@ -48,7 +48,7 @@ from .db import (
     utc_now,
 )
 from .seats import parent_table_code, parse_table_split
-from .ops_constants import CLAIM_PRESETS, PAYMENT_METHODS
+from .ops_constants import BOSS_CREDIT_METHOD, CLAIM_PRESETS, PAYMENT_METHODS
 from .pricing import (
     SHISHA_COMBO_SNACK_PRICE,
     SHISHA_REGULAR_ID,
@@ -1502,13 +1502,10 @@ def close_bill(
     pin: str = Form(...),
     discount_percent: float = Form(0),
     party_size: int | None = Form(None),
-    payment_method: str = Form(...),
+    payment_method: str = Form(""),
 ):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
-    method = (payment_method or "").strip()
-    if method not in PAYMENT_METHODS:
-        raise HTTPException(400, "Select a payment method")
     conn = connect()
     table = get_table_by_code(conn, table_code)
     if not table:
@@ -1520,6 +1517,14 @@ def close_bill(
         return {"ok": True, "message": "No open session"}
 
     is_boss = (table["zone"] or "") == "boss"
+    # Boss tabs are Polar credit ledgers — not guest payment / not sales.
+    if is_boss:
+        method = BOSS_CREDIT_METHOD
+    else:
+        method = (payment_method or "").strip()
+        if method not in PAYMENT_METHODS:
+            conn.close()
+            raise HTTPException(400, "Select a payment method")
     if not is_boss and party_size is not None:
         size = max(1, min(30, int(party_size)))
         conn.execute(

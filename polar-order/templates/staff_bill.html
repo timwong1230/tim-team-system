@@ -148,8 +148,14 @@
       <span>Service {{ (bill.service_charge_rate * 100)|int }}% (on full price)</span>
       <span id="vSvc">${{ '%.0f'|format(bill.service_charge) }}</span>
     </div>
-    <div class="row" style="margin-top:8px;font-weight:700"><span>Amount due</span><span id="vTotal">${{ '%.0f'|format(bill.total) }}</span></div>
+    <div class="row" style="margin-top:8px;font-weight:700">
+      <span>{% if is_boss %}Credit used{% else %}Amount due{% endif %}</span>
+      <span id="vTotal">${{ '%.0f'|format(bill.total) }}</span>
+    </div>
   </div>
+  {% if is_boss %}
+  <p class="muted">Boss tab = Polar credit (not a payment, not guest sales). Close to record credit used.</p>
+  {% else %}
   <p class="muted">Collect payment, choose the method below, then mark paid.</p>
 
   <div class="card pay-method-card">
@@ -164,13 +170,16 @@
       {% endfor %}
     </div>
   </div>
+  {% endif %}
 
   <form method="post" action="/api/staff/bill/{{ table.code }}/close" id="closeForm">
     <input type="hidden" name="pin" value="{{ pin }}" />
     <input type="hidden" name="discount_percent" id="discountHidden" value="{{ discount|int if discount else 0 }}" />
     <input type="hidden" name="party_size" id="partyHidden" value="{{ bill.party_size }}" />
-    <input type="hidden" name="payment_method" id="paymentHidden" value="" />
-    <button class="primary" type="submit">Mark paid & open PDF receipt</button>
+    <input type="hidden" name="payment_method" id="paymentHidden" value="{% if is_boss %}Credit{% endif %}" />
+    <button class="primary" type="submit">
+      {% if is_boss %}Record credit & open PDF{% else %}Mark paid & open PDF receipt{% endif %}
+    </button>
   </form>
   {% endif %}
 </div>
@@ -437,15 +446,20 @@
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     recalc();
-    const chosen = document.querySelector('input[name="payment_method_ui"]:checked');
-    if (!chosen) {
-      alert('Select a payment method first');
-      document.getElementById('payMethodGrid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    document.getElementById('paymentHidden').value = chosen.value;
     const party = partySize();
-    if (!isBoss) {
+    if (isBoss) {
+      document.getElementById('paymentHidden').value = 'Credit';
+      if (!confirm('Record this boss tab as Polar credit (not sales)?\nOpen PDF after close.')) {
+        return;
+      }
+    } else {
+      const chosen = document.querySelector('input[name="payment_method_ui"]:checked');
+      if (!chosen) {
+        alert('Select a payment method first');
+        document.getElementById('payMethodGrid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      document.getElementById('paymentHidden').value = chosen.value;
       const ok = confirm(
         `Confirm party size: ${party} guest(s)?\nPayment: ${chosen.value}\n\nSnack charge = ${party} × $10.\nClose table after payment collected?`
       );
@@ -456,8 +470,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party }),
       });
-    } else if (!confirm(`Close table after payment collected?\nPayment: ${chosen.value}`)) {
-      return;
     }
     const fd = new FormData(e.target);
     const res = await fetch(e.target.action, { method: 'POST', body: fd });

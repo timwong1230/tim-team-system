@@ -13,6 +13,9 @@ PAYMENT_METHODS: tuple[str, ...] = (
     "Deposit",
 )
 
+# Boss tabs record Polar credit usage — not a guest tender, never guest sales.
+BOSS_CREDIT_METHOD = "Credit"
+
 # WhatsApp nightly close labels → matching payment_method values in DB
 WHATSAPP_PAYMENT_LINES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Cash", ("Cash",)),
