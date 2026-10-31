@@ -32,6 +32,7 @@ def test_key_product_photos_and_renames():
     menu_dir = _POLAR / "static" / "images" / "menu"
     for name in (
         "shisha-regular.jpg",
+        "shisha-change.jpg",
         "aj.jpg",
         "corona.jpg",
         "grey-goose.jpg",
@@ -48,6 +49,12 @@ def test_key_product_photos_and_renames():
         path = menu_dir / name
         assert path.is_file(), name
         assert path.stat().st_size > 50_000, name
+
+    # Shisha must stay as venue originals — rembg bg-blur mis-cuts the pipe/hose
+    # and leaves the subject itself blurry (~59KB). Restored files are much larger.
+    for name in ("shisha-regular.jpg", "shisha-change.jpg"):
+        size = (menu_dir / name).stat().st_size
+        assert size > 200_000, f"{name} looks rembg-blurred ({size} bytes)"
 
     from fastapi.testclient import TestClient
 

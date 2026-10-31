@@ -30,3 +30,5 @@ Example: Regular Shisha → `static/images/menu/shisha-regular.jpg`
 - Keep photos under ~500KB for fast iPhone loading.
 - If `image` is missing, the guest menu still works (text only).
 - Sample placeholders are already included for: `shisha-regular`, `shisha-change`, `aries`, `fries`.
+- **Do not run bottle-style rembg background blur on shisha photos** — the pipe/hose is often
+  mis-segmented and the subject itself ends up blurred. Keep the venue shoot originals.
