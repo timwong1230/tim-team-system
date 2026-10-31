@@ -54,7 +54,34 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"$300" in staff.content or b">300<" in staff.content
         assert b'id="cat-free-flow"' in staff.content
 
-        # Guest check-in then menu — Free Flow must not appear
+        # Demo practice: Free Flow available (staff order + guest Demo QR)
+        demo = client.get(f"/staff/order/DEMO?pin={pin}")
+        assert demo.status_code == 200
+        assert b"Free Flow" in demo.content
+        assert b'id="cat-free-flow"' in demo.content
+        demo_order = client.post(
+            "/api/staff/bill/DEMO/orders",
+            json={
+                "pin": pin,
+                "guest_name": "Demo Guest",
+                "party_size": 2,
+                "items": [{"item_id": "free-flow-with-shisha", "qty": 1}],
+            },
+        )
+        assert demo_order.status_code == 200, demo_order.text
+
+        demo_welcome = client.post(
+            "/api/t/DEMO/welcome",
+            json={"guest_name": "Practice", "party_size": 2},
+        )
+        assert demo_welcome.status_code == 200, demo_welcome.text
+        demo_guest = client.get("/t/DEMO")
+        assert demo_guest.status_code == 200
+        assert b"Free Flow" in demo_guest.content
+        assert b"free-flow-with-shisha" in demo_guest.content
+        assert b"leaf-free-flow" in demo_guest.content
+
+        # Real guest table — Free Flow must not appear
         welcome = client.post(
             "/api/t/TABLE1/welcome",
             json={"guest_name": "FF Guest", "party_size": 2},
@@ -66,6 +93,7 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"free-flow-with-shisha" not in guest.content
         assert b"Without Shisha" not in guest.content
         assert b'id="cat-free-flow"' not in guest.content
+        assert b"leaf-free-flow" not in guest.content
 
         # Staff can actually order Free Flow onto the bill
         ordered = client.post(

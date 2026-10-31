@@ -124,6 +124,17 @@ def _items_for_leaf(
     return _filter_items(collected, node)
 
 
+def _nav_category_ids(nodes: list[dict[str, Any]]) -> set[str]:
+    ids: set[str] = set()
+    for node in nodes:
+        for cid in node.get("category_ids") or []:
+            ids.add(str(cid))
+        for child in node.get("children") or []:
+            for cid in child.get("category_ids") or []:
+                ids.add(str(cid))
+    return ids
+
+
 def build_guest_nav(menu: list[dict[str, Any]]) -> dict[str, Any]:
     """Build hub roots + product leaves from flat staff menu payload."""
     menu_by_id = {c["id"]: c for c in menu}
@@ -170,5 +181,27 @@ def build_guest_nav(menu: list[dict[str, Any]]) -> dict[str, Any]:
                 "rail_lines": node.get("rail_lines") or [node["name"]],
             }
         )
+
+    # Staff-only categories present in the payload (Demo practice Free Flow).
+    # Real guest menus omit these from `_menu_payload`, so nothing is added.
+    covered = _nav_category_ids(GUEST_NAV_TREE)
+    extras: list[dict[str, Any]] = []
+    for cat in menu:
+        cid = str(cat.get("id") or "")
+        if not cid or cid in covered:
+            continue
+        if not cat.get("staff_only"):
+            continue
+        if not (cat.get("items") or []):
+            continue
+        extras.append(
+            add_leaf(
+                _leaf(cid, cat.get("name") or cid, category_ids=[cid]),
+                None,
+                None,
+            )
+        )
+    if extras:
+        roots[0:0] = extras
 
     return {"roots": roots, "leaves": leaves}
