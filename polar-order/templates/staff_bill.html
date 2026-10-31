@@ -40,6 +40,51 @@
   {% endif %}
 
   {% if bill %}
+  {# Items first — staff need the order list before admin / payment controls. #}
+  <div class="card" id="billItemsCard">
+    <h3 style="margin-top:0">Items</h3>
+    <p class="muted" style="margin-top:0">Change qty or remove lines already on the bill.</p>
+    <div id="billItemsList">
+      {% for line in lines %}
+      <div class="cart-line bill-item-row" data-item-id="{{ line.id }}">
+        <div>
+          <strong><span class="bill-item-qty">{{ line.qty }}</span>× {{ line.item_name }}</strong>
+          {% if line.category_id == 'not-on-menu' %}<div class="muted">Not on Menu</div>{% endif %}
+          {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
+          <div class="qty" style="margin-top:8px">
+            <button type="button" data-bill-act="dec" data-id="{{ line.id }}" aria-label="Decrease qty">−</button>
+            <span class="bill-item-qty-label">{{ line.qty }}</span>
+            <button type="button" data-bill-act="inc" data-id="{{ line.id }}" aria-label="Increase qty">+</button>
+            <button type="button" class="ghost" data-bill-act="rm" data-id="{{ line.id }}"
+                    style="width:auto;height:auto;padding:4px 10px;margin-left:4px">Remove</button>
+          </div>
+        </div>
+        <div class="bill-item-total">${{ '%.0f'|format(line.line_total) }}</div>
+      </div>
+      {% else %}
+      <p class="muted" id="billItemsEmpty">No items yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card nom-box">
+    <h3 style="margin-top:0">Not on Menu</h3>
+    <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price).</p>
+    <label class="muted" for="staffNomName">Product name</label>
+    <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="staffNomPrice">Price (HKD)</label>
+        <input class="field" id="staffNomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+      </div>
+      <div>
+        <label class="muted" for="staffNomQty">Qty</label>
+        <input class="field" id="staffNomQty" type="number" min="1" max="50" value="1" />
+      </div>
+    </div>
+    <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
+  </div>
+
   {% if not is_boss and transfer_targets %}
   <div class="card transfer-box" id="transferBox">
     <h3 style="margin-top:0">Move to another table</h3>
@@ -118,50 +163,6 @@
       </label>
       {% endfor %}
     </div>
-  </div>
-
-  <div class="card" id="billItemsCard">
-    <h3 style="margin-top:0">Items</h3>
-    <p class="muted" style="margin-top:0">Change qty or remove lines already on the bill.</p>
-    <div id="billItemsList">
-      {% for line in lines %}
-      <div class="cart-line bill-item-row" data-item-id="{{ line.id }}">
-        <div>
-          <strong><span class="bill-item-qty">{{ line.qty }}</span>× {{ line.item_name }}</strong>
-          {% if line.category_id == 'not-on-menu' %}<div class="muted">Not on Menu</div>{% endif %}
-          {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
-          <div class="qty" style="margin-top:8px">
-            <button type="button" data-bill-act="dec" data-id="{{ line.id }}" aria-label="Decrease qty">−</button>
-            <span class="bill-item-qty-label">{{ line.qty }}</span>
-            <button type="button" data-bill-act="inc" data-id="{{ line.id }}" aria-label="Increase qty">+</button>
-            <button type="button" class="ghost" data-bill-act="rm" data-id="{{ line.id }}"
-                    style="width:auto;height:auto;padding:4px 10px;margin-left:4px">Remove</button>
-          </div>
-        </div>
-        <div class="bill-item-total">${{ '%.0f'|format(line.line_total) }}</div>
-      </div>
-      {% else %}
-      <p class="muted" id="billItemsEmpty">No items yet.</p>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="card nom-box">
-    <h3 style="margin-top:0">Not on Menu</h3>
-    <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price).</p>
-    <label class="muted" for="staffNomName">Product name</label>
-    <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
-    <div class="nom-row">
-      <div>
-        <label class="muted" for="staffNomPrice">Price (HKD)</label>
-        <input class="field" id="staffNomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
-      </div>
-      <div>
-        <label class="muted" for="staffNomQty">Qty</label>
-        <input class="field" id="staffNomQty" type="number" min="1" max="50" value="1" />
-      </div>
-    </div>
-    <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
   </div>
 
   <form method="post" action="/api/staff/bill/{{ table.code }}/close" id="closeForm">
