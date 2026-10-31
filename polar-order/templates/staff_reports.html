@@ -212,7 +212,7 @@
 
   <div class="card">
     <h3 style="margin-top:0">Purchase · by category</h3>
-    <p class="muted">{{ items.label }}</p>
+    <p class="muted">{{ items.label }} · guest sales only (boss credit excluded)</p>
     {% for c in items.by_category %}
     <div class="cart-line">
       <div><strong>{{ c.category_name }}</strong><div class="muted">{{ c.qty }} sold</div></div>
@@ -225,6 +225,7 @@
 
   <div class="card">
     <h3 style="margin-top:0">Purchase · by item</h3>
+    <p class="muted">Guest sales only — boss tab credit is not purchase.</p>
     {% for i in items.by_item %}
     <div class="cart-line">
       <div>

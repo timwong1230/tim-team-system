@@ -213,7 +213,11 @@ def item_purchase_report(
     year: int,
     month: int,
 ) -> dict:
-    """Sold qty/revenue for closed guest sessions in a calendar month's business dates."""
+    """Sold qty/revenue for closed guest sessions in a calendar month's business dates.
+
+    Boss tabs are Polar credit — never guest purchase / stock-sold counts.
+    Excludes ``zone=boss|demo``, ``BOSS*`` seat codes, and ``payment_method=Credit``.
+    """
     last = monthrange(year, month)[1]
     start_biz = date(year, month, 1)
     end_biz = date(year, month, last)
@@ -221,7 +225,7 @@ def item_purchase_report(
     # include last day's window end
     _, end_dt = business_day_window(end_biz)
 
-    # Pull closed guest sessions in month (exclude boss tabs)
+    # Pull closed guest sessions in month (exclude boss credit + demo)
     sessions = conn.execute(
         """
         SELECT s.id, s.business_date, s.closed_at, s.status
@@ -229,6 +233,8 @@ def item_purchase_report(
         JOIN tables t ON t.id = s.table_id
         WHERE s.status = 'closed'
           AND COALESCE(t.zone, '') NOT IN ('boss', 'demo')
+          AND UPPER(COALESCE(t.code, '')) NOT LIKE 'BOSS%'
+          AND COALESCE(s.payment_method, '') != 'Credit'
         """
     ).fetchall()
     session_ids = []
