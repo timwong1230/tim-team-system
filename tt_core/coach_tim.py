@@ -53,6 +53,7 @@ TOOL_SEARCH_FOLLOWUP = "search_followup"
 TOOL_SEARCH_PROSPECTS = "search_prospects"
 TOOL_STUCK_CASES = "get_stuck_cases"
 TOOL_TEAM_OVERVIEW = "get_team_overview"
+TOOL_PRODUCT_KB = "get_product_knowledge"
 
 TOOL_CATALOG: dict[str, str] = {
     TOOL_MEMBER_SNAPSHOT: "業績／本週活動／MDRT／Extra 10 快照",
@@ -62,6 +63,7 @@ TOOL_CATALOG: dict[str, str] = {
     TOOL_SEARCH_PROSPECTS: "按人名搜尋準客戶",
     TOOL_STUCK_CASES: "卡住／久未推進個案",
     TOOL_TEAM_OVERVIEW: "團隊教練總覽（Leader）",
+    TOOL_PRODUCT_KB: "產品／培訓知識（危疾全應援、MDRT 基本功等）",
 }
 
 
@@ -524,14 +526,45 @@ def choose_tools(user_text: str, *, role: str = "Member") -> list[str]:
     personish = bool(hints) or any(
         k in text for k in ("呢單", "呢個案", "個案", "點跟", "拆")
     )
-    prospectish = any(k in text for k in ("準客戶", "prospect", "產品")) or (
+    prospectish = any(k in text for k in ("準客戶", "prospect")) or (
         bool(hints) and any(k in low for k in ("fyc", "fact"))
     )
+    productish = False
+    try:
+        from tt_core.product_knowledge import product_query_intent
+
+        productish = product_query_intent(text)
+    except Exception:
+        productish = any(
+            k in text or k in low
+            for k in (
+                "危疾",
+                "全應援",
+                "應援保",
+                "allsupporter",
+                "所需全",
+                "更周全",
+                "摯齊全",
+                "產品",
+                "計劃書",
+                "賣點",
+                "基本功",
+                "難關",
+                "話術",
+                "script",
+                "無人脈",
+                "約唔到",
+                "異議",
+                "轉介紹",
+            )
+        )
 
     # Metrics first so week/MDRT questions aren't crowded out by name guesses
     if metrics:
         add(TOOL_MEMBER_SNAPSHOT)
-    if dueish or (personish and not metrics):
+    if productish:
+        add(TOOL_PRODUCT_KB)
+    if dueish or (personish and not metrics and not productish):
         add(TOOL_DUE_FOLLOWUPS)
     if personish or hints:
         add(TOOL_SEARCH_FOLLOWUP)
@@ -685,6 +718,19 @@ def run_tool(
                     )
             return {"ok": True, "tool": name, "count": len(rows), "rows": rows}
 
+        if name == TOOL_PRODUCT_KB:
+            from tt_core.product_knowledge import format_matched_briefs, match_product_packs
+
+            brief = format_matched_briefs(query or "")
+            packs = match_product_packs(query or "")
+            return {
+                "ok": True,
+                "tool": name,
+                "count": len(packs) if packs else (1 if brief else 0),
+                "brief": brief,
+                "pack_ids": [str(p.get("id") or "") for p in packs],
+            }
+
         return {"ok": False, "tool": name, "error": "unknown tool"}
     except Exception as e:
         return {"ok": False, "tool": name, "error": str(e)[:200]}
@@ -705,8 +751,13 @@ def gather_live_context(
     if not ctx.get("username"):
         ctx["username"] = username
     ctx["role"] = role
-    hits: dict[str, list] = {"followups": [], "prospects": [], "team": [], "stuck": []}
-
+    hits: dict[str, list] = {
+        "followups": [],
+        "prospects": [],
+        "team": [],
+        "stuck": [],
+        "products": [],
+    }
     for res in results:
         if not res.get("ok"):
             continue
@@ -741,6 +792,11 @@ def gather_live_context(
                 ctx["due"] = hits["stuck"][:6]
         elif t == TOOL_TEAM_OVERVIEW:
             hits["team"] = list(res.get("rows") or [])
+        elif t == TOOL_PRODUCT_KB:
+            brief = str(res.get("brief") or "").strip()
+            if brief:
+                ctx["product_brief"] = brief
+                hits["products"] = list(res.get("pack_ids") or [])
 
     ctx["tool_hits"] = hits
     ctx["_tools_used"] = tools
@@ -755,10 +811,23 @@ def system_prompt(ctx: dict[str, Any]) -> str:
         labels = [TOOL_CATALOG.get(t, t) for t in tools_used]
         tool_note = "\n本回合已即時查過：" + "、".join(labels) + "。\n"
     who = ctx.get("username") or "呢位同事"
-    base = f"""你係 AI Tim——TIM TEAM 嘅私人教練（同 Telegram AI Tim／Coach Tim 同一個角色）。
+    channel = str(ctx.get("channel") or "app").strip().lower()
+    if channel == "telegram":
+        place = "而家喺 **Telegram** 同 **{who}** 一對一傾偈（Coach Tim AI）。".format(
+            who=who
+        )
+        write_rule = (
+            "7. Telegram 頻道唔直接寫入 M+2；要打卡／改數引導同事去 M+2 App 確認。"
+        )
+    else:
+        place = "而家喺 M+2 App 入面同 **{who}** 傾偈。".format(who=who)
+        write_rule = (
+            "7. 寫入系統必須經用戶確認（Phase 3）。未確認前唔好話已經改咗資料。"
+        )
+    base = f"""你係 AI Tim／Coach Tim——TIM TEAM 嘅私人教練（App 同 Telegram 同一個角色）。
 用香港粵語為主、間中書面語。直接、務實、鼓勵但不吹水。好似喺 Telegram 一對一傾偈。
 
-而家喺 M+2 App 入面同 **{who}** 傾偈。以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
+{place}以下係系統即時讀到嘅佢嘅業績／跟進／準客戶（真相，唔好估數、唔好發明 FYC）：
 {tool_note}
 {briefing}
 
@@ -766,11 +835,21 @@ def system_prompt(ctx: dict[str, Any]) -> str:
 1. 按佢問嘅問題答——唔好每次都背同一套 Extra 10 講稿。
 2. 幫佢決定「而家最緊要做邊一件」：優先清卡案／今日要跟，再補本週活動，再衝準客戶／MDRT。
 3. 跟進建議要具體：下一句點開、點約 next appointment、Fact find 邊條要補。
-4. 數字只引用上面 briefing；冇嘅就話未讀到，叫佢去對應頁更新。
+4. 數字只引用上面 briefing；冇嘅就話未讀到，叫佢去對應頁更新（或喺 Telegram 用 /link 綁定 M+2 帳號）。
 5. 回覆短：2–8 句＋最多 3 個 bullet action；可以追問個案名。
 6. 如果問醫療融資／保障缺口／打卡／準客戶名單，引導去 M+2 對應功能。
-7. 寫入系統必須經用戶確認（Phase 3）。未確認前唔好話已經改咗資料。
+{write_rule}
+8. 如果 briefing 有「產品知識」（例如危疾全應援），可以教銷售角度／三個級別差異／自選附約；但條款細節以正式計劃書為準，唔好發明保費或保證回報。
+9. 如果 briefing 有「培訓知識／MDRT 基本功」，先診斷卡喺邊關，再俾對應目標＋最多 3 段 Script（A/B/C）；提醒 Script 只係示範，要按對方語氣改。
 """
+    product_brief = str(ctx.get("product_brief") or "").strip()
+    if product_brief:
+        base = (
+            base
+            + "\n以下係系統載入嘅產品知識（內部培訓用，唔係報價）：\n"
+            + product_brief
+            + "\n"
+        )
     try:
         from tt_core.coach_writes import write_rules_for_prompt
 
@@ -841,6 +920,14 @@ def _offline_intent(text: str) -> str:
         return "followup"
     if any(k in t for k in ("醫療融資", "保障缺口", "T-Account", "核保")):
         return "tools"
+    try:
+        from tt_core.product_knowledge import product_query_intent
+
+        if product_query_intent(t):
+            return "product"
+    except Exception:
+        if any(k in t for k in ("危疾", "全應援", "應援保", "所需全", "更周全", "摯齊全", "賣點")):
+            return "product"
     return "clarify"
 
 
@@ -909,7 +996,8 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
     if intent == "help":
         return (
             f"我係 **AI Tim**，讀你 M+2 即時數據幫你排跟進同活動。\n"
-            "直接問：今日優先、本週活動、MDRT、招募，或者講個案名（例如「拆 Ave 點跟」）。"
+            "直接問：今日優先、本週活動、MDRT、招募，講個案名（例如「拆 Ave 點跟」），"
+            "或者問產品（例如「危疾全應援點賣」「所需全同更周全分別」）。"
         )
 
     if intent == "greet":
@@ -1079,6 +1167,21 @@ def offline_reply(user_text: str, ctx: dict[str, Any]) -> str:
             f"{name}，呢啲喺 M+2 側欄／選單：\n"
             "- 醫療融資計算機、保障缺口、收入／支出 T-Account、常見疾病核保\n"
             "用完可以返嚟問我點解釋俾客戶聽。"
+        )
+
+    if intent == "product":
+        try:
+            from tt_core.product_knowledge import offline_product_reply
+
+            ans = offline_product_reply(text, username=str(name))
+            if ans:
+                return ans
+        except Exception:
+            pass
+        return (
+            f"{name}，你可以問我 **危疾全應援**（所需全／更周全／摯齊全）、"
+            "家添守護、樂齡無憂點賣；或者 **MDRT 基本功**（約唔到人／異議／轉介紹）"
+            "要 3 段 Script。細節以計劃書為準；話術請自然調整。"
         )
 
     if intent == "checkin_write":
@@ -1491,9 +1594,18 @@ def welcome_message(ctx: dict[str, Any]) -> str:
     name = ctx.get("username") or ""
     bit = f"今日有 **{due_n}** 宗要跟。" if due_n else "今日冇逾期案——保持！"
     mode = "AI 教練" if llm_configured() else "教練"
+    channel = str(ctx.get("channel") or "app").strip().lower()
+    if channel == "telegram":
+        return (
+            f"你好 {name}，我係 **Coach Tim／AI Tim**（Telegram · {mode}）。"
+            f"{bit}\n\n"
+            "可以問產品（例如危疾全應援點賣）、下一步點做、拆邊單；"
+            "綁定 M+2 用 `/link 你的帳號`。"
+        )
     return (
         f"你好 {name}，我係 **AI Tim**（{mode}）。"
         f"已讀你嘅業績、本週活動、跟進同準客戶。{bit}\n\n"
-        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10；"
+        "可以直接問下一步點做、拆邊單、本週活動、MDRT／Extra 10、"
+        "危疾全應援點賣、或者「約唔到人點開」／MDRT 基本功 Script；"
         "要打卡可以講「幫我打卡」——齊料後你確認先會寫入。"
     )

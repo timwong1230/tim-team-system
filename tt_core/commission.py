@@ -22,10 +22,10 @@ PRODUCT_CATALOG: list[dict[str, Any]] = [
     {"key": "vfamily", "label": "醫家保", "group": "醫療", "rate": 0.27, "qsb": False},
     {"key": "vprime", "label": "尊衛你", "group": "醫療", "rate": 0.25, "qsb": False},
     {"key": "ebeyond", "label": "智員善", "group": "醫療", "rate": 0.25, "qsb": False},
-    # 危疾應援保 / 全應援（QSB）
-    {"key": "crisis_20", "label": "危疾應援保 20pay", "group": "危疾應援保/全應援", "rate": 0.50, "qsb": True},
-    {"key": "crisis_25", "label": "危疾應援保 25pay", "group": "危疾應援保/全應援", "rate": 0.52, "qsb": True},
-    {"key": "crisis_30", "label": "危疾應援保 30pay", "group": "危疾應援保/全應援", "rate": 0.53, "qsb": True},
+    # 危疾應援保 / 危疾全應援（QSB）— Crisis AllSupporter series
+    {"key": "crisis_20", "label": "危疾全應援／應援保 20pay", "group": "危疾應援保/全應援", "rate": 0.50, "qsb": True},
+    {"key": "crisis_25", "label": "危疾全應援／應援保 25pay", "group": "危疾應援保/全應援", "rate": 0.52, "qsb": True},
+    {"key": "crisis_30", "label": "危疾全應援／應援保 30pay", "group": "危疾應援保/全應援", "rate": 0.53, "qsb": True},
     # Saving
     {"key": "icon_1", "label": "智盈匯聚/超凡 1pay", "group": "Saving", "rate": 0.03, "qsb": False},
     {"key": "maxfocus_2", "label": "盈聚天下II 2pay", "group": "Saving", "rate": 0.07, "qsb": False},
