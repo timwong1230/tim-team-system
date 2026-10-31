@@ -1015,6 +1015,7 @@ def _bill_dict_for_session(
         return {
             "total": prod,
             "subtotal": prod,
+            "serviceable_subtotal": prod,
             "snack_charge": 0,
             "service_charge": 0,
             "discount_amount": 0,

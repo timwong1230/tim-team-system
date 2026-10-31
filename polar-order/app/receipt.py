@@ -113,7 +113,7 @@ def generate_receipt_pdf(
         )
     row(f"Snack charge ({bill['party_size']} × $10)", bill["snack_charge"])
     row(
-        f"Service {int(bill['service_charge_rate'] * 100)}% (on full price)",
+        f"Service {int(bill['service_charge_rate'] * 100)}% (excl. Free Flow)",
         bill["service_charge"],
     )
     if payment_method == "Credit":

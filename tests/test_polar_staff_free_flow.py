@@ -85,6 +85,67 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert bill.status_code == 200
         assert b"With Shisha" in bill.content
         assert b"Without Shisha" in bill.content
+        assert b"excl. Free Flow" in bill.content
+
+        # Free Flow alone: no service on $750 products — only on snack charge
+        # party 4 → snack $40 → service $4 (not $79)
+        conn = db.connect()
+        session = db.get_open_session(conn, db.get_table_by_code(conn, "TABLE2")["id"])
+        lines = [
+            dict(x)
+            for x in conn.execute(
+                """
+                SELECT oi.* FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.session_id = ? AND o.status != 'cancelled'
+                """,
+                (session["id"],),
+            ).fetchall()
+        ]
+        from app.pricing import compute_bill
+
+        calc = compute_bill(lines, party_size=4, snack_waived=False)
+        conn.close()
+        assert calc["subtotal"] == 750.0
+        assert calc["serviceable_subtotal"] == 0.0
+        assert calc["snack_charge"] == 40.0
+        assert calc["service_charge"] == 4.0
+        assert calc["total"] == 794.0
+
+        # Mixed bill: Coke attracts service; Free Flow does not
+        mixed = client.post(
+            "/api/staff/bill/TABLE3/orders",
+            json={
+                "pin": pin,
+                "guest_name": "Mixed",
+                "party_size": 2,
+                "items": [
+                    {"item_id": "free-flow-with-shisha", "qty": 1},
+                    {"item_id": "coke", "qty": 1},
+                ],
+            },
+        )
+        assert mixed.status_code == 200, mixed.text
+        conn = db.connect()
+        session3 = db.get_open_session(conn, db.get_table_by_code(conn, "TABLE3")["id"])
+        lines3 = [
+            dict(x)
+            for x in conn.execute(
+                """
+                SELECT oi.* FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.session_id = ? AND o.status != 'cancelled'
+                """,
+                (session3["id"],),
+            ).fetchall()
+        ]
+        calc3 = compute_bill(lines3, party_size=2, snack_waived=False)
+        conn.close()
+        assert calc3["subtotal"] == 509.0  # 450 + 59
+        assert calc3["serviceable_subtotal"] == 59.0
+        assert calc3["snack_charge"] == 20.0
+        assert calc3["service_charge"] == 7.9  # (59+20)*10%
+        assert calc3["total"] == 536.9
 
     # Guest nav tree must not reference free-flow
     tree_src = (_POLAR / "app" / "guest_nav.py").read_text(encoding="utf-8")
