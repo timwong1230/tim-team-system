@@ -265,13 +265,33 @@ def _serve_rank(unit: str | None) -> int:
     return 2
 
 
-def _menu_payload(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _staff_only_category_ids() -> set[str]:
+    """Category ids marked staff_only in menu.json (hidden from guest QR menu)."""
+    try:
+        meta = load_menu_meta()
+    except Exception:
+        return set()
+    return {
+        str(c["id"])
+        for c in (meta.get("categories") or [])
+        if c.get("staff_only") and c.get("id")
+    }
+
+
+def _menu_payload(
+    conn: sqlite3.Connection,
+    *,
+    include_staff_only: bool = False,
+) -> list[dict[str, Any]]:
     promo = current_promo()
+    staff_only_ids = _staff_only_category_ids()
     cats = conn.execute(
         "SELECT * FROM menu_categories ORDER BY sort_order ASC"
     ).fetchall()
     out = []
     for cat in cats:
+        if cat["id"] in staff_only_ids and not include_staff_only:
+            continue
         items = conn.execute(
             "SELECT * FROM menu_items WHERE category_id = ? AND available = 1",
             (cat["id"],),
@@ -710,7 +730,8 @@ def boss_station(request: Request, boss_id: str):
         raise HTTPException(500, "Boss seat not seeded")
     # Keep an open personal tab so staff can see running total
     start_session(conn, table["id"], boss["name"], party_size=1)
-    menu = _menu_payload(conn)
+    # Boss station is staff-facing — include Free Flow etc.
+    menu = _menu_payload(conn, include_staff_only=True)
     single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()
@@ -994,6 +1015,7 @@ def _bill_dict_for_session(
         return {
             "total": prod,
             "subtotal": prod,
+            "serviceable_subtotal": prod,
             "snack_charge": 0,
             "service_charge": 0,
             "discount_amount": 0,
@@ -1028,7 +1050,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         boss_id = table_code.replace("BOSS", "").lower()
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
-    menu = _menu_payload(conn)
+    menu = _menu_payload(conn, include_staff_only=True)
     single_mix_spirits = list_spirit_glass_options(conn)
     promo = current_promo()
     conn.close()

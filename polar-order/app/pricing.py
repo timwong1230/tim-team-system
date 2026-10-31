@@ -7,6 +7,12 @@ HK = ZoneInfo("Asia/Hong_Kong")
 
 SHISHA_COMBO_SNACK_PRICE = 40.0
 SHISHA_REGULAR_ID = "shisha-regular"
+FREE_FLOW_CATEGORY_ID = "free-flow"
+
+
+def _line_is_free_flow(line: dict) -> bool:
+    """Free Flow packages do not attract the 10% service charge."""
+    return (line.get("category_id") or "") == FREE_FLOW_CATEGORY_ID
 
 
 def current_promo(now: datetime | None = None) -> dict:
@@ -170,16 +176,22 @@ def compute_bill(
     discount_percent: 0 = full price, 10 = 10% off, 20 = 20% off.
 
     - Discount applies to products + snack charge (not service).
-    - Service charge is calculated on full price: (subtotal + snack) × rate.
+    - Service charge is on (non–Free Flow products + snack) × rate.
+      Free Flow packages have no 10% service charge.
     - snack_waived: guest declined bar snacks → $0 snack charge.
     """
     subtotal = round(sum(float(x["line_total"]) for x in lines), 1)
+    serviceable_subtotal = round(
+        sum(float(x["line_total"]) for x in lines if not _line_is_free_flow(x)),
+        1,
+    )
     if snack_waived:
         snack_charge = 0.0
     else:
         snack_charge = round(max(1, party_size) * snack_charge_per_head, 1)
     discount_base = round(subtotal + snack_charge, 1)
-    service = round(discount_base * service_charge_rate, 1)  # full price
+    service_base = round(serviceable_subtotal + snack_charge, 1)
+    service = round(service_base * service_charge_rate, 1)
     try:
         disc = max(0.0, min(100.0, float(discount_percent or 0)))
     except (TypeError, ValueError):
@@ -188,6 +200,7 @@ def compute_bill(
     total = round(subtotal + snack_charge + service - discount_amount, 1)
     return {
         "subtotal": subtotal,
+        "serviceable_subtotal": serviceable_subtotal,
         "snack_charge": snack_charge,
         "snack_waived": bool(snack_waived),
         "service_charge": service,

@@ -151,7 +151,12 @@ def _detect_mood(text: str) -> str | None:
 
 
 # Not vibe picks — skip in mood recommendations
-SKIP_AI_IDS = {"shisha-change", "not-on-menu"}
+SKIP_AI_IDS = {
+    "shisha-change",
+    "not-on-menu",
+    "free-flow-with-shisha",
+    "free-flow-without-shisha",
+}
 
 
 def _rank_in_group(item: dict[str, Any]) -> tuple:

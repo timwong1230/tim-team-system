@@ -27,9 +27,30 @@
       ]
     },
     {
+      "id": "free-flow",
+      "name": "Free Flow",
+      "sort": 2,
+      "promo": "none",
+      "staff_only": true,
+      "items": [
+        {
+          "id": "free-flow-with-shisha",
+          "name": "With Shisha",
+          "price": 450,
+          "note": "Free flow with shisha — staff only"
+        },
+        {
+          "id": "free-flow-without-shisha",
+          "name": "Without Shisha",
+          "price": 300,
+          "note": "Free flow without shisha — staff only"
+        }
+      ]
+    },
+    {
       "id": "celestial",
       "name": "Celestial Signatures",
-      "sort": 2,
+      "sort": 3,
       "promo": "drinks",
       "items": [
         {
@@ -121,7 +142,7 @@
     {
       "id": "non-alcohol",
       "name": "Non Alcohol",
-      "sort": 3,
+      "sort": 4,
       "promo": "drinks",
       "items": [
         {
@@ -199,7 +220,7 @@
     {
       "id": "teas",
       "name": "Special Teas",
-      "sort": 4,
+      "sort": 5,
       "promo": "drinks",
       "items": [
         {
@@ -228,7 +249,7 @@
     {
       "id": "snacks",
       "name": "Bar Snacks",
-      "sort": 5,
+      "sort": 6,
       "promo": "snacks",
       "items": [
         {
@@ -254,7 +275,7 @@
     {
       "id": "beer",
       "name": "Beer",
-      "sort": 6,
+      "sort": 7,
       "promo": "drinks",
       "items": [
         {
@@ -290,7 +311,7 @@
     {
       "id": "tower",
       "name": "Tower",
-      "sort": 7,
+      "sort": 8,
       "promo": "drinks",
       "items": [
         {
@@ -316,7 +337,7 @@
     {
       "id": "red-wine",
       "name": "Red Wine",
-      "sort": 8,
+      "sort": 9,
       "promo": "drinks",
       "items": [
         {
@@ -352,7 +373,7 @@
     {
       "id": "white-wine",
       "name": "White Wine",
-      "sort": 9,
+      "sort": 10,
       "promo": "drinks",
       "items": [
         {
@@ -409,7 +430,7 @@
     {
       "id": "vodka",
       "name": "Vodka",
-      "sort": 10,
+      "sort": 11,
       "promo": "drinks",
       "items": [
         {
@@ -459,7 +480,7 @@
     {
       "id": "gin",
       "name": "Gin",
-      "sort": 11,
+      "sort": 12,
       "promo": "drinks",
       "items": [
         {
@@ -537,7 +558,7 @@
     {
       "id": "whisky",
       "name": "Whisky",
-      "sort": 12,
+      "sort": 13,
       "promo": "drinks",
       "items": [
         {
@@ -643,7 +664,7 @@
     {
       "id": "liqueur",
       "name": "Liqueur",
-      "sort": 13,
+      "sort": 14,
       "promo": "drinks",
       "items": [
         {
@@ -715,7 +736,7 @@
     {
       "id": "champagne",
       "name": "Champagne",
-      "sort": 14,
+      "sort": 15,
       "promo": "drinks",
       "items": [
         {
@@ -744,7 +765,7 @@
     {
       "id": "tequila",
       "name": "Tequila",
-      "sort": 15,
+      "sort": 16,
       "promo": "drinks",
       "items": [
         {
@@ -794,7 +815,7 @@
     {
       "id": "rum",
       "name": "Rum",
-      "sort": 16,
+      "sort": 17,
       "promo": "drinks",
       "items": [
         {
@@ -830,7 +851,7 @@
     {
       "id": "cognac",
       "name": "Cognac",
-      "sort": 17,
+      "sort": 18,
       "promo": "drinks",
       "items": [
         {
