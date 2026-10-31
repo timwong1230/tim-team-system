@@ -209,13 +209,19 @@ document.addEventListener("DOMContentLoaded", () => {
       qty += line.qty;
       total += line.lineTotal;
     }
+    // Always show the bar so staff can open the cart / Not on Menu as the first item
+    // without ordering a menu product first.
+    if (cartBar) cartBar.style.display = "flex";
+    const openBtn = document.getElementById("openCart");
     if (!qty) {
-      cartBar.style.display = "none";
+      if (cartCount) cartCount.textContent = "0 items";
+      if (cartTotal) cartTotal.textContent = money(0);
+      if (openBtn) openBtn.textContent = "Not on Menu";
       return;
     }
-    cartBar.style.display = "flex";
-    cartCount.textContent = `${qty} item${qty > 1 ? "s" : ""}`;
-    cartTotal.textContent = money(total);
+    if (cartCount) cartCount.textContent = `${qty} item${qty > 1 ? "s" : ""}`;
+    if (cartTotal) cartTotal.textContent = money(total);
+    if (openBtn) openBtn.textContent = "View cart";
   }
 
   function renderCartLines() {
@@ -460,4 +466,6 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.textContent = "Send order for table";
     }
   });
+
+  renderCartBar();
 });
