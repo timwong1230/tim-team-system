@@ -65,7 +65,10 @@ def generate_receipt_pdf(
     line(f"Closed: {closed_local}")
     line(f"Receipt: R-{session_id:05d}")
     if payment_method:
-        line(f"Paid: {payment_method}", bold=True, size=11)
+        if payment_method == "Credit":
+            line("Boss credit (not a sale)", bold=True, size=11)
+        else:
+            line(f"Paid: {payment_method}", bold=True, size=11)
     y -= 2 * mm
     c.setStrokeColor(colors.HexColor("#d4c08c"))
     c.line(18 * mm, y, width - 18 * mm, y)
@@ -113,14 +116,23 @@ def generate_receipt_pdf(
         f"Service {int(bill['service_charge_rate'] * 100)}% (on full price)",
         bill["service_charge"],
     )
-    row("Amount due", bill["total"], bold=True)
+    if payment_method == "Credit":
+        row("Credit used", bill["total"], bold=True)
+    else:
+        row("Amount due", bill["total"], bold=True)
 
     y -= 8 * mm
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.grey)
     c.drawString(18 * mm, y, "Thank you for visiting Polar Lounge.")
     y -= 4 * mm
-    if payment_method:
+    if payment_method == "Credit":
+        c.drawString(
+            18 * mm,
+            y,
+            "Recorded as Polar credit — not guest sales. Keep for boss ledger.",
+        )
+    elif payment_method:
         c.drawString(18 * mm, y, f"Paid by {payment_method}. Keep this receipt for your records.")
     else:
         c.drawString(18 * mm, y, "Payment collected separately. Keep this receipt for your records.")
