@@ -41,12 +41,17 @@ def test_staff_place_order_api_and_page():
         assert b"staff-order-shell" in page.content
         assert b'id="staffCatRail"' in page.content
         assert b'id="staffOrderMain"' in page.content
+        # Cart bar stays visible so Not on Menu works as the first item
+        assert b'id="cartBar"' in page.content
+        assert b'id="nomBox"' in page.content
+        assert b">Not on Menu</button>" in page.content
         # First category visible; others start hidden
         assert b'id="cat-shisha"' in page.content
         js = (_POLAR / "static/js/staff_order.js").read_text(encoding="utf-8")
         assert "/staff/tables?pin=" in js
         assert "back to tables" in js
         assert "openStaffCategory" in js
+        assert 'cartBar.style.display = "none"' not in js
         css = (_POLAR / "static/css/app.css").read_text(encoding="utf-8")
         assert ".guest-cat-rail" in css
 

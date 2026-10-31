@@ -67,24 +67,6 @@
     </div>
   </div>
 
-  <div class="card nom-box">
-    <h3 style="margin-top:0">Not on Menu</h3>
-    <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price).</p>
-    <label class="muted" for="staffNomName">Product name</label>
-    <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
-    <div class="nom-row">
-      <div>
-        <label class="muted" for="staffNomPrice">Price (HKD)</label>
-        <input class="field" id="staffNomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
-      </div>
-      <div>
-        <label class="muted" for="staffNomQty">Qty</label>
-        <input class="field" id="staffNomQty" type="number" min="1" max="50" value="1" />
-      </div>
-    </div>
-    <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
-  </div>
-
   {% if not is_boss and transfer_targets %}
   <div class="card transfer-box" id="transferBox">
     <h3 style="margin-top:0">Move to another table</h3>
@@ -182,6 +164,25 @@
     </button>
   </form>
   {% endif %}
+
+  {# Always available — Not on Menu can be the first item (opens a Walk-in session if needed). #}
+  <div class="card nom-box">
+    <h3 style="margin-top:0">Not on Menu</h3>
+    <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price). Can be the first item.</p>
+    <label class="muted" for="staffNomName">Product name</label>
+    <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="staffNomPrice">Price (HKD)</label>
+        <input class="field" id="staffNomPrice" type="number" min="0" max="50000" step="1" placeholder="0" />
+      </div>
+      <div>
+        <label class="muted" for="staffNomQty">Qty</label>
+        <input class="field" id="staffNomQty" type="number" min="1" max="50" value="1" />
+      </div>
+    </div>
+    <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

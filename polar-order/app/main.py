@@ -149,6 +149,9 @@ class StaffCustomIn(BaseModel):
     custom_price: float = Field(ge=0, le=50000)
     qty: int = Field(default=1, ge=1, le=50)
     note: str | None = None
+    # Used when the table has no open session yet (NOM as first item)
+    guest_name: str | None = Field(default=None, max_length=40)
+    party_size: int | None = Field(default=None, ge=1, le=30)
 
 
 class StaffOrderIn(BaseModel):
@@ -1298,7 +1301,7 @@ def staff_open_table_split(table_code: str, body: StaffSplitIn):
 
 @app.post("/api/staff/bill/{table_code}/custom")
 async def staff_add_custom(table_code: str, body: StaffCustomIn):
-    """Staff adds a Not on Menu line to the open session."""
+    """Staff adds a Not on Menu line — may be the first item on the bill."""
     if body.pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     conn = connect()
@@ -1307,9 +1310,14 @@ async def staff_add_custom(table_code: str, body: StaffCustomIn):
         conn.close()
         raise HTTPException(404, "Table not found")
     session = get_open_session(conn, table["id"])
-    if not session:
-        conn.close()
-        raise HTTPException(400, "No open session — guest must check in first")
+    if not session or not session["guest_name"]:
+        name = (body.guest_name or "").strip() or "Walk-in"
+        party = int(body.party_size or 2)
+        try:
+            session = start_session(conn, table["id"], name, party_size=party)
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(400, str(e)) from e
     try:
         order_id, payload = _create_order(
             conn,
