@@ -6505,23 +6505,14 @@ def page_prospect_list():
                 out.append({"name": name, "premium": prem, "rate": rate_val})
         return out
 
-    def _request_clear_add_sales_form() -> None:
-        """Flag a reset — must apply BEFORE widgets are created on the next run."""
-        st.session_state["pl_as_clear"] = True
-        st.session_state["pl_as_keep_open"] = True  # keep expander open for next entry
+    def _add_sales_prefix() -> str:
+        """Generation-scoped key prefix so each new prospect gets a blank form."""
+        return f"pl_as_g{int(st.session_state.get('pl_as_gen', 0))}"
 
-    def _apply_clear_add_sales_form() -> None:
-        """Wipe add-form widget keys before they are instantiated."""
-        if not st.session_state.pop("pl_as_clear", False):
-            return
-        for p in PRODUCT_CATALOG:
-            st.session_state.pop(f"pl_as_{p['key']}", None)
-        for i in range(3):
-            st.session_state.pop(f"pl_as_oname_{i}", None)
-            st.session_state.pop(f"pl_as_oprem_{i}", None)
-            st.session_state.pop(f"pl_as_orate_{i}", None)
-        st.session_state.pop("pl_as_name", None)
-        st.session_state["pl_as_ff"] = pr.factfind_template()
+    def _request_clear_add_sales_form() -> None:
+        """After successful add: blank the form (new widget gen) and keep panel open."""
+        st.session_state["pl_as_gen"] = int(st.session_state.get("pl_as_gen", 0)) + 1
+        st.session_state["pl_as_expander"] = True
 
     with tab_sales:
         sales = all_rows[all_rows["list_type"] == pr.LIST_SALES] if not all_rows.empty else all_rows
@@ -6551,16 +6542,27 @@ def page_prospect_list():
                 st.text(f"{p['group']} · {p['label']}: {p['rate']*100:g}%{mark}")
 
         if can_edit:
-            # Clear must run before any pl_as_* widgets are created
-            _apply_clear_add_sales_form()
-            keep_open = bool(st.session_state.pop("pl_as_keep_open", False))
-            with st.expander("＋ 新增準客戶（簽單）", expanded=keep_open):
-                aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_as_q")
-                an = st.text_input("Name", key="pl_as_name")
-                _render_hot_products("pl_as")
-                _render_other_inputs("pl_as")
-                live_hot = _read_hot("pl_as")
-                live_other = _read_others("pl_as")
+            # Keyed expander keeps open/closed across widget reruns (typing no longer collapses it).
+            if "pl_as_expander" not in st.session_state:
+                st.session_state["pl_as_expander"] = False
+            as_prefix = _add_sales_prefix()
+            with st.expander(
+                "＋ 新增準客戶（簽單）",
+                key="pl_as_expander",
+                on_change="rerun",
+            ):
+                st.caption("新增成功後會自動清空欄位，表格會維持打開方便連續輸入。")
+                aq = st.selectbox(
+                    "季度",
+                    [1, 2, 3, 4],
+                    format_func=lambda q: f"Q{q}",
+                    key="pl_as_q",  # preserve quarter across clears
+                )
+                an = st.text_input("Name", key=f"{as_prefix}_name")
+                _render_hot_products(as_prefix)
+                _render_other_inputs(as_prefix)
+                live_hot = _read_hot(as_prefix)
+                live_other = _read_others(as_prefix)
                 live_fyc = calc_fyc(live_hot, others=live_other, ytd_fyc=ytd_fyc)
                 st.info(
                     f"預計 FYC：**${live_fyc:,.2f}**"
@@ -6572,18 +6574,19 @@ def page_prospect_list():
                         f"{row['label']}: ${row['premium']:,.0f} × {row['eff_rate']*100:g}% "
                         f"= ${row['fyc']:,.2f}{tag}"
                     )
-                if "pl_as_ff" not in st.session_state:
-                    st.session_state["pl_as_ff"] = pr.factfind_template()
+                ff_key = f"{as_prefix}_ff"
+                if ff_key not in st.session_state:
+                    st.session_state[ff_key] = pr.factfind_template()
                 aff = st.text_area(
                     "Fact find（15 條）",
                     height=220,
-                    key="pl_as_ff",
+                    key=ff_key,
                 )
-                if st.button("新增", type="primary", use_container_width=True, key="pl_as_submit"):
+                if st.button("新增", type="primary", use_container_width=True, key=f"{as_prefix}_submit"):
                     try:
-                        premiums = _read_hot("pl_as")
-                        others = _read_others("pl_as")
-                        name_val = str(st.session_state.get("pl_as_name") or an or "").strip()
+                        premiums = _read_hot(as_prefix)
+                        others = _read_others(as_prefix)
+                        name_val = str(st.session_state.get(f"{as_prefix}_name") or an or "").strip()
                         if not name_val:
                             st.error("必須填寫 Name")
                         elif not premiums and not others:
@@ -6724,7 +6727,14 @@ def page_prospect_list():
         )
 
         if can_edit:
-            with st.expander("＋ 新增準客戶（招募）", expanded=False):
+            if "pl_ar_expander" not in st.session_state:
+                st.session_state["pl_ar_expander"] = False
+            with st.expander(
+                "＋ 新增準客戶（招募）",
+                key="pl_ar_expander",
+                on_change="rerun",
+            ):
+                st.caption("新增成功後表格會維持打開，方便連續輸入。")
                 with st.form("pl_add_recruit", clear_on_submit=True):
                     aq = st.selectbox("季度", [1, 2, 3, 4], format_func=lambda q: f"Q{q}", key="pl_ar_q")
                     an = st.text_input("Name", key="pl_ar_name")
@@ -6745,7 +6755,8 @@ def page_prospect_list():
                                 category=ac,
                                 factfind=aff,
                             )
-                            st.success(f"已加入 {an}")
+                            st.session_state["pl_ar_expander"] = True
+                            st.toast(f"已加入 {an}", icon="✅")
                             st.rerun()
                         except Exception as e:
                             st.error(str(e))

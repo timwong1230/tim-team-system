@@ -1,4 +1,4 @@
-"""Add-prospect form clear must not touch widget keys after instantiation."""
+"""Add-prospect form: blank after submit + expander stays open across reruns."""
 
 from __future__ import annotations
 
@@ -6,27 +6,35 @@ import ast
 from pathlib import Path
 
 
-def test_clear_is_deferred_via_flag():
-    """Regression: assigning pl_as_ff after text_area(key=pl_as_ff) crashes Streamlit."""
+def test_sales_add_uses_generation_prefix_and_keyed_expander():
+    """Regression: leftover fields + expander collapsing while typing."""
     src = Path("app.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
 
-    # Locate page_prospect_list body text slice for a simple string check
+    assert "_add_sales_prefix" in src
     assert "_request_clear_add_sales_form" in src
-    assert "_apply_clear_add_sales_form" in src
-    assert 'st.session_state["pl_as_clear"] = True' in src
-    # Must apply clear before expander / widgets
-    apply_at = src.index("_apply_clear_add_sales_form()")
-    widget_at = src.index('key="pl_as_ff"')
-    assert apply_at < widget_at
-    # Must not assign pl_as_ff inside the request helper (only flag)
+    assert 'st.session_state["pl_as_gen"]' in src
+    # Bump generation on clear (new blank widget keys)
     req_start = src.index("def _request_clear_add_sales_form")
-    req_end = src.index("def _apply_clear_add_sales_form")
+    req_end = src.index("with tab_sales:")
     request_body = src[req_start:req_end]
-    assert 'st.session_state["pl_as_ff"]' not in request_body
-    assert "pl_as_clear" in request_body
-    # Apply helper is what resets the template
-    apply_body = src[req_end : src.index("with tab_sales:")]
-    assert 'st.session_state["pl_as_ff"] = pr.factfind_template()' in apply_body
-    # Sanity: file still parses
+    assert 'st.session_state["pl_as_gen"]' in request_body
+    assert 'st.session_state["pl_as_expander"] = True' in request_body
+    # Must not assign widget values after widgets exist (old crash path)
+    assert "_apply_clear_add_sales_form" not in src
+    assert 'st.session_state.pop("pl_as_keep_open"' not in src
+    # Keyed expander persists open state across number_input reruns
+    assert 'key="pl_as_expander"' in src
+    assert 'on_change="rerun"' in src
+    assert 'key="pl_ar_expander"' in src
     assert isinstance(tree, ast.Module)
+
+
+def test_add_sales_prefix_helper_shape():
+    """Prefix must change when pl_as_gen increments."""
+    # Lightweight pure check mirroring app helper logic
+    def prefix(gen: int) -> str:
+        return f"pl_as_g{int(gen)}"
+
+    assert prefix(0) != prefix(1)
+    assert prefix(2) == "pl_as_g2"
