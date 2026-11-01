@@ -190,6 +190,18 @@ def init_db() -> None:
             amount REAL NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS daily_report_snapshots (
+            business_date TEXT PRIMARY KEY,
+            gross_sales REAL NOT NULL DEFAULT 0,
+            session_count INTEGER NOT NULL DEFAULT 0,
+            claims_total REAL NOT NULL DEFAULT 0,
+            cash_tilt REAL NOT NULL DEFAULT 0,
+            by_payment_method_json TEXT NOT NULL DEFAULT '[]',
+            sessions_json TEXT NOT NULL DEFAULT '[]',
+            claims_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()
@@ -907,10 +919,96 @@ def set_booking_status(
     return row
 
 
-def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
-    """Wipe orders/sessions/events/claims/cash tilt/receipts. Keeps seats + menu + bookings."""
-    from .paths import RECEIPT_DIR
+def upsert_daily_report_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    business_date: str,
+    gross_sales: float,
+    session_count: int,
+    claims_total: float,
+    cash_tilt: float,
+    by_payment_method: list[dict[str, Any]],
+    sessions: list[dict[str, Any]],
+    claims: list[dict[str, Any]],
+) -> None:
+    """Persist a day's close figures so past reports survive session wipes."""
+    conn.execute(
+        """
+        INSERT INTO daily_report_snapshots (
+          business_date, gross_sales, session_count, claims_total, cash_tilt,
+          by_payment_method_json, sessions_json, claims_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(business_date) DO UPDATE SET
+          gross_sales = excluded.gross_sales,
+          session_count = excluded.session_count,
+          claims_total = excluded.claims_total,
+          cash_tilt = excluded.cash_tilt,
+          by_payment_method_json = excluded.by_payment_method_json,
+          sessions_json = excluded.sessions_json,
+          claims_json = excluded.claims_json,
+          updated_at = excluded.updated_at
+        """,
+        (
+            business_date,
+            float(gross_sales or 0),
+            int(session_count or 0),
+            float(claims_total or 0),
+            float(cash_tilt or 0),
+            json.dumps(by_payment_method or [], ensure_ascii=False),
+            json.dumps(sessions or [], ensure_ascii=False),
+            json.dumps(claims or [], ensure_ascii=False),
+            utc_now(),
+        ),
+    )
+    conn.commit()
 
+
+def get_daily_report_snapshot(
+    conn: sqlite3.Connection, business_date: str
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM daily_report_snapshots WHERE business_date = ?",
+        (business_date,),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        by_pay = json.loads(row["by_payment_method_json"] or "[]")
+    except json.JSONDecodeError:
+        by_pay = []
+    try:
+        sessions = json.loads(row["sessions_json"] or "[]")
+    except json.JSONDecodeError:
+        sessions = []
+    try:
+        claims = json.loads(row["claims_json"] or "[]")
+    except json.JSONDecodeError:
+        claims = []
+    return {
+        "business_date": row["business_date"],
+        "gross_sales": float(row["gross_sales"] or 0),
+        "session_count": int(row["session_count"] or 0),
+        "claims_total": float(row["claims_total"] or 0),
+        "cash_tilt": float(row["cash_tilt"] or 0),
+        "by_payment_method": by_pay if isinstance(by_pay, list) else [],
+        "sessions": sessions if isinstance(sessions, list) else [],
+        "claims": claims if isinstance(claims, list) else [],
+        "updated_at": row["updated_at"],
+    }
+
+
+def count_daily_report_snapshots(conn: sqlite3.Connection) -> int:
+    return int(
+        conn.execute("SELECT COUNT(*) AS c FROM daily_report_snapshots").fetchone()["c"]
+    )
+
+
+def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
+    """Wipe live orders/sessions/events/claims/cash tilt.
+
+    Keeps seats, menu, bookings, ``daily_report_snapshots``, and receipt PDFs
+    so past Daily reports (totals + per-table bills) remain openable.
+    """
     counts = {
         "order_items": conn.execute("SELECT COUNT(*) AS c FROM order_items").fetchone()["c"],
         "orders": conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"],
@@ -920,6 +1018,8 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
         "daily_cash_tilt": conn.execute(
             "SELECT COUNT(*) AS c FROM daily_cash_tilt"
         ).fetchone()["c"],
+        "daily_report_snapshots_kept": count_daily_report_snapshots(conn),
+        "receipts_kept": True,
     }
     conn.execute("DELETE FROM order_items")
     conn.execute("DELETE FROM orders")
@@ -932,12 +1032,4 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
         "('order_items','orders','sessions','events','claims')"
     )
     conn.commit()
-
-    receipts_removed = 0
-    RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
-    for path in RECEIPT_DIR.iterdir():
-        if path.is_file():
-            path.unlink()
-            receipts_removed += 1
-    counts["receipts"] = receipts_removed
     return counts
