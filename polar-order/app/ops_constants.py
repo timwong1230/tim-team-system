@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
+# Password to reopen a Mark-paid bill for item edits (separate from staff PIN).
+BILL_EDIT_PASSWORD: str = (
+    os.getenv("POLAR_BILL_EDIT_PASSWORD", "polar2019").strip() or "polar2019"
+)
+
 PAYMENT_METHODS: tuple[str, ...] = (
     "Cash",
     "Visa",
