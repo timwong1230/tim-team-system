@@ -1019,6 +1019,7 @@ def staff_tables(request: Request, pin: str = ""):
             "is_demo": zone == "demo",
             "is_split": zone == "table_split",
             "can_split": zone == "table",
+            "is_ff_party": session_is_ff_party(session),
             "parent_label": None,
         }
         if entry["is_split"]:

@@ -8,45 +8,21 @@
   <div class="hero">
     <h1>{{ table.label }}</h1>
     {% if session %}
-    <p>{% if session.guest_name %}{{ session.guest_name }} · {% endif %}party {{ session.party_size }}</p>
+    <p>{% if session.guest_name %}{{ session.guest_name }} · {% endif %}party {{ session.party_size }}{% if ff_party %} · Free Flow party{% endif %}</p>
     {% else %}
     <p>No open session</p>
     {% endif %}
   </div>
   {% if not is_boss %}
-  <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
-    <a class="primary" style="display:inline-block;width:auto;text-align:center"
-       href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for this table</a>
-    {% if can_split %}
-    <button class="ghost" type="button" id="splitPartyBtn" style="width:auto">
-      ＋ Split party ({{ split_parent|replace('TABLE', 'Table ') }}A–D)
-    </button>
-    {% endif %}
-  </div>
-  {% if can_split and split_siblings %}
-  <div class="card" style="margin-bottom:16px">
-    <h3 style="margin-top:0">Parties at {{ split_parent|replace('TABLE', 'Table ') }}</h3>
-    <p class="muted" style="margin-top:0">
-      Same physical table, separate bills — each seat has its own guest name and headcount.
-    </p>
-    <div class="pay-method-grid" style="gap:8px">
-      {% for s in split_siblings %}
-      <a class="ghost" style="display:block;text-align:center;padding:10px;text-decoration:none"
-         href="/staff/bill/{{ s.code }}?pin={{ pin }}">{{ s.label }}</a>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  {% if not is_boss %}
-  <div class="card" id="ffPartyCard" style="margin-bottom:16px"
+  {# Free Flow party first — staff look here when guests arrive one by one. #}
+  <div class="card" id="ffPartyCard" style="margin-bottom:16px;border-color:rgba(212,192,140,0.55)"
        data-enabled="{{ 1 if ff_party else 0 }}"
        data-default-price="{{ ff_default_price if ff_party else 450 }}">
     <h3 style="margin-top:0">Free Flow party</h3>
     {% if not ff_party %}
     <p class="muted" style="margin-top:0">
-      Guests arrive one by one — set a custom head price per person and collect when they walk in.
+      客人陸續入場、每人自訂人頭價 → 撳下面開始。
+      Guests arrive one by one — custom head price per person, collect when they walk in.
       Covered drinks stay off the paid menu; only extras go on Order.
     </p>
     <label class="muted" for="ffPartyName">Party name</label>
@@ -117,6 +93,32 @@
     <p class="muted" id="ffPartyMsg" style="margin-bottom:0"></p>
     {% endif %}
   </div>
+
+  <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
+    <a class="primary" style="display:inline-block;width:auto;text-align:center"
+       href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for this table</a>
+    <a class="ghost" style="display:inline-block;width:auto;text-align:center"
+       href="#ffPartyCard">Free Flow party</a>
+    {% if can_split %}
+    <button class="ghost" type="button" id="splitPartyBtn" style="width:auto">
+      ＋ Split party ({{ split_parent|replace('TABLE', 'Table ') }}A–D)
+    </button>
+    {% endif %}
+  </div>
+  {% if can_split and split_siblings %}
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="margin-top:0">Parties at {{ split_parent|replace('TABLE', 'Table ') }}</h3>
+    <p class="muted" style="margin-top:0">
+      Same physical table, separate bills — each seat has its own guest name and headcount.
+    </p>
+    <div class="pay-method-grid" style="gap:8px">
+      {% for s in split_siblings %}
+      <a class="ghost" style="display:block;text-align:center;padding:10px;text-decoration:none"
+         href="/staff/bill/{{ s.code }}?pin={{ pin }}">{{ s.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if bill %}
@@ -613,6 +615,11 @@
   const PIN = {{ pin|tojson }};
   const TABLE = {{ table.code|tojson }};
   const ffMsg = document.getElementById('ffPartyMsg');
+
+  // Deep-link from Tables «Free Flow party» button
+  if (location.hash === '#ffPartyCard') {
+    document.getElementById('ffPartyCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   function ffError(err) {
     const detail = err && err.message ? err.message : 'Failed';
