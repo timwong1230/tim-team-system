@@ -22,12 +22,16 @@ from pydantic import BaseModel, Field
 
 from .db import (
     add_claim,
+    add_ff_party_guest,
     clear_open_session,
     connect,
     create_booking,
     delete_claim,
+    delete_ff_party_guest,
     ensure_session,
+    ff_party_summary,
     find_next_open_split,
+    get_ff_party_guest,
     get_open_session,
     get_session,
     get_table_by_code,
@@ -39,12 +43,15 @@ from .db import (
     list_guest_tables,
     list_table_splits,
     load_menu_meta,
+    mark_ff_party_guest_paid,
     publish_event,
     reset_operational_data,
+    session_is_ff_party,
     set_booking_status,
     set_cash_tilt,
     start_session,
     transfer_open_session,
+    sync_ff_party_size,
     update_booking,
     utc_now,
 )
@@ -201,6 +208,30 @@ class StaffSplitIn(BaseModel):
 
 
 class StaffClearTableIn(BaseModel):
+    pin: str
+
+
+class StaffFfPartyEnableIn(BaseModel):
+    pin: str
+    party_name: str | None = Field(default=None, max_length=40)
+    expected_size: int = Field(default=4, ge=1, le=40)
+    default_price: float = Field(default=450, ge=0, le=50000)
+    waive_snacks: bool = True
+
+
+class StaffFfPartyGuestIn(BaseModel):
+    pin: str
+    guest_label: str = Field(min_length=1, max_length=40)
+    head_price: float = Field(ge=0, le=50000)
+    package_label: str | None = Field(default=None, max_length=80)
+    collect_now: bool = True
+
+
+class StaffFfPartyGuestPayIn(BaseModel):
+    pin: str
+
+
+class StaffFfPartyGuestDeleteIn(BaseModel):
     pin: str
 
 
@@ -387,6 +418,27 @@ def _create_order(
     raw_entries = []
     for entry in items:
         custom_name = (entry.custom_name or "").strip()
+        # Free Flow party head — custom price, no 10% service (free-flow category).
+        if (entry.item_id or "") == "ff-party-head":
+            if not custom_name:
+                raise HTTPException(400, "Free Flow head needs a guest name")
+            if entry.custom_price is None:
+                raise HTTPException(400, "Free Flow head needs a price")
+            price = round(float(entry.custom_price), 1)
+            if price < 0:
+                raise HTTPException(400, "Invalid price")
+            raw_entries.append(
+                {
+                    "item_id": "ff-party-head",
+                    "name": custom_name,
+                    "category_id": "free-flow",
+                    "promo": "none",
+                    "base_price": price,
+                    "qty": entry.qty,
+                    "note": entry.note,
+                }
+            )
+            continue
         is_custom = (
             entry.item_id in ("not-on-menu", "custom", "nom")
             or bool(custom_name)
@@ -1081,6 +1133,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
             "pin": pin,
             "needs_checkin": not bool(session and session["guest_name"]),
             "single_mix_spirits": single_mix_spirits,
+            "ff_party": session_is_ff_party(session),
         },
     )
 
@@ -1140,6 +1193,10 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
         else (parent_table_code(table["code"]) or table["code"])
     )
     split_siblings = list_table_splits(conn, split_parent) if can_split else []
+    ff_party = session_is_ff_party(session) and not is_boss
+    ff_summary = (
+        ff_party_summary(conn, session["id"]) if ff_party and session else None
+    )
     conn.close()
     return templates.TemplateResponse(
         "staff_bill.html",
@@ -1160,8 +1217,230 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
             "can_split": can_split,
             "split_parent": split_parent,
             "split_siblings": split_siblings,
+            "ff_party": ff_party,
+            "ff_summary": ff_summary,
+            "ff_expected": int(session["ff_expected"] or 0) if session and ff_party else 0,
+            "ff_default_price": (
+                float(session["ff_default_price"])
+                if session and ff_party and session["ff_default_price"] is not None
+                else 450.0
+            ),
         },
     )
+
+
+def _ff_party_bill_payload(conn: sqlite3.Connection, session: sqlite3.Row) -> dict[str, Any]:
+    session = get_session(conn, session["id"]) or session
+    summary = ff_party_summary(conn, session["id"])
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = compute_bill(
+        lines,
+        session["party_size"],
+        meta["service_charge_rate"],
+        meta["snack_charge_per_head"],
+        discount_percent=float(session["discount_percent"] or 0),
+        snack_waived=_session_snack_waived(session),
+    )
+    return {
+        "ff_party": True,
+        "ff_expected": int(session["ff_expected"] or 0),
+        "ff_default_price": float(session["ff_default_price"] or 0),
+        "party_size": session["party_size"],
+        "snack_waived": _session_snack_waived(session),
+        "summary": summary,
+        "bill": bill,
+        "lines": lines,
+    }
+
+
+def _collect_ff_guest_payment(
+    conn: sqlite3.Connection,
+    *,
+    table: sqlite3.Row,
+    session: sqlite3.Row,
+    guest: sqlite3.Row,
+) -> tuple[sqlite3.Row, dict[str, Any]]:
+    """Ring a Free Flow head line (no service) and mark guest paid."""
+    if guest["status"] == "paid":
+        raise HTTPException(400, "Guest already paid")
+    label = guest["guest_label"]
+    price = float(guest["head_price"])
+    note = guest["package_label"]
+    order_id, payload = _create_order(
+        conn,
+        table=table,
+        session=session,
+        items=[
+            CartItemIn(
+                item_id="ff-party-head",
+                qty=1,
+                note=note,
+                custom_name=f"Free Flow · {label}",
+                custom_price=price,
+            )
+        ],
+        note="Free Flow party head",
+        created_by="Staff",
+    )
+    paid = mark_ff_party_guest_paid(conn, guest_id=guest["id"], order_id=order_id)
+    return paid, payload
+
+
+@app.post("/api/staff/bill/{table_code}/ff-party/enable")
+def staff_enable_ff_party(table_code: str, body: StaffFfPartyEnableIn):
+    """Start Free Flow party mode — head fees collected as guests arrive."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    if (table["zone"] or "") in ("boss", "demo"):
+        conn.close()
+        raise HTTPException(400, "Free Flow party is for guest tables only")
+    name = (body.party_name or "").strip() or "Free Flow party"
+    try:
+        session = ensure_session(
+            conn,
+            table["id"],
+            party_size=body.expected_size,
+            guest_name=name,
+        )
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    conn.execute(
+        """
+        UPDATE sessions SET
+          ff_party = 1,
+          ff_expected = ?,
+          ff_default_price = ?,
+          party_size = ?,
+          snack_waived = ?
+        WHERE id = ?
+        """,
+        (
+            body.expected_size,
+            round(float(body.default_price), 1),
+            body.expected_size,
+            1 if body.waive_snacks else 0,
+            session["id"],
+        ),
+    )
+    conn.commit()
+    session = get_open_session(conn, table["id"])
+    payload = _ff_party_bill_payload(conn, session)
+    conn.close()
+    return {"ok": True, **payload}
+
+
+@app.post("/api/staff/bill/{table_code}/ff-party/guests")
+async def staff_add_ff_party_guest(table_code: str, body: StaffFfPartyGuestIn):
+    """Add a Free Flow guest (custom head price); optionally collect now."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session or not session_is_ff_party(session):
+        conn.close()
+        raise HTTPException(400, "Enable Free Flow party on this bill first")
+    try:
+        guest = add_ff_party_guest(
+            conn,
+            session_id=session["id"],
+            guest_label=body.guest_label,
+            head_price=body.head_price,
+            package_label=body.package_label,
+        )
+        session = sync_ff_party_size(conn, session)
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+
+    broadcast = None
+    if body.collect_now:
+        try:
+            guest, broadcast = _collect_ff_guest_payment(
+                conn, table=table, session=session, guest=guest
+            )
+        except HTTPException:
+            conn.close()
+            raise
+    payload = _ff_party_bill_payload(conn, session)
+    conn.close()
+    if broadcast:
+        await _broadcast({"type": "order.new", "data": broadcast})
+    return {"ok": True, "guest": dict(guest), **payload}
+
+
+@app.post("/api/staff/bill/{table_code}/ff-party/guests/{guest_id}/pay")
+async def staff_pay_ff_party_guest(
+    table_code: str, guest_id: int, body: StaffFfPartyGuestPayIn
+):
+    """Collect head fee for a pending Free Flow guest."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session or not session_is_ff_party(session):
+        conn.close()
+        raise HTTPException(400, "Not a Free Flow party")
+    guest = get_ff_party_guest(conn, guest_id)
+    if not guest or guest["session_id"] != session["id"]:
+        conn.close()
+        raise HTTPException(404, "Guest not found")
+    try:
+        guest, broadcast = _collect_ff_guest_payment(
+            conn, table=table, session=session, guest=guest
+        )
+    except HTTPException:
+        conn.close()
+        raise
+    payload = _ff_party_bill_payload(conn, session)
+    conn.close()
+    await _broadcast({"type": "order.new", "data": broadcast})
+    return {"ok": True, "guest": dict(guest), **payload}
+
+
+@app.post("/api/staff/bill/{table_code}/ff-party/guests/{guest_id}/delete")
+def staff_delete_ff_party_guest(
+    table_code: str, guest_id: int, body: StaffFfPartyGuestDeleteIn
+):
+    """Remove an unpaid Free Flow guest from the list."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    conn = connect()
+    table = get_table_by_code(conn, table_code)
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    session = get_open_session(conn, table["id"])
+    if not session or not session_is_ff_party(session):
+        conn.close()
+        raise HTTPException(400, "Not a Free Flow party")
+    guest = get_ff_party_guest(conn, guest_id)
+    if not guest or guest["session_id"] != session["id"]:
+        conn.close()
+        raise HTTPException(404, "Guest not found")
+    try:
+        delete_ff_party_guest(conn, guest_id)
+        session = sync_ff_party_size(conn, session)
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e)) from e
+    payload = _ff_party_bill_payload(conn, session)
+    conn.close()
+    return {"ok": True, **payload}
 
 
 @app.post("/api/staff/bill/{table_code}/party")

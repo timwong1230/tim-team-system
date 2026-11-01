@@ -42,6 +42,9 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         ("sessions", "business_date", "TEXT"),
         ("sessions", "payment_method", "TEXT"),
         ("sessions", "snack_waived", "INTEGER NOT NULL DEFAULT 0"),
+        ("sessions", "ff_party", "INTEGER NOT NULL DEFAULT 0"),
+        ("sessions", "ff_expected", "INTEGER NOT NULL DEFAULT 0"),
+        ("sessions", "ff_default_price", "REAL"),
         ("orders", "created_by", "TEXT"),
         ("orders", "deliver_table_id", "INTEGER"),
         ("orders", "gift_message", "TEXT"),
@@ -57,6 +60,22 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
             category TEXT NOT NULL,
             amount REAL NOT NULL,
             created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ff_party_guests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            guest_label TEXT NOT NULL,
+            head_price REAL NOT NULL,
+            package_label TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            paid_at TEXT,
+            order_id INTEGER,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES sessions(id)
         )
         """
     )
@@ -516,6 +535,7 @@ def clear_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row:
         """,
         (now, session["id"]),
     )
+    conn.execute("DELETE FROM ff_party_guests WHERE session_id = ?", (session["id"],))
     conn.execute(
         """
         UPDATE sessions SET
@@ -529,7 +549,10 @@ def clear_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row:
           total = 0,
           receipt_path = NULL,
           business_date = NULL,
-          payment_method = NULL
+          payment_method = NULL,
+          ff_party = 0,
+          ff_expected = 0,
+          ff_default_price = NULL
         WHERE id = ?
         """,
         (now, session["id"]),
@@ -539,6 +562,122 @@ def clear_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row:
     if not cleared:
         raise ValueError("Session missing after clear")
     return cleared
+
+
+def session_is_ff_party(session: sqlite3.Row | None) -> bool:
+    if not session:
+        return False
+    if "ff_party" not in session.keys():
+        return False
+    return bool(session["ff_party"])
+
+
+def list_ff_party_guests(conn: sqlite3.Connection, session_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT * FROM ff_party_guests
+        WHERE session_id = ?
+        ORDER BY id ASC
+        """,
+        (session_id,),
+    ).fetchall()
+
+
+def get_ff_party_guest(conn: sqlite3.Connection, guest_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM ff_party_guests WHERE id = ?", (guest_id,)
+    ).fetchone()
+
+
+def add_ff_party_guest(
+    conn: sqlite3.Connection,
+    *,
+    session_id: int,
+    guest_label: str,
+    head_price: float,
+    package_label: str | None = None,
+) -> sqlite3.Row:
+    label = (guest_label or "").strip() or "Guest"
+    price = round(float(head_price), 1)
+    if price < 0:
+        raise ValueError("Head price must be 0 or more")
+    pkg = (package_label or "").strip() or None
+    now = utc_now()
+    cur = conn.execute(
+        """
+        INSERT INTO ff_party_guests
+        (session_id, guest_label, head_price, package_label, status, created_at)
+        VALUES (?, ?, ?, ?, 'pending', ?)
+        """,
+        (session_id, label[:40], price, pkg[:80] if pkg else None, now),
+    )
+    conn.commit()
+    row = get_ff_party_guest(conn, int(cur.lastrowid))
+    if not row:
+        raise RuntimeError("Failed to add Free Flow guest")
+    return row
+
+
+def sync_ff_party_size(conn: sqlite3.Connection, session: sqlite3.Row) -> sqlite3.Row:
+    """Party size = max(expected, guest list count), at least 1."""
+    guests = list_ff_party_guests(conn, session["id"])
+    expected = int(session["ff_expected"] or 0) if "ff_expected" in session.keys() else 0
+    size = max(1, expected, len(guests))
+    if size != session["party_size"]:
+        conn.execute(
+            "UPDATE sessions SET party_size = ? WHERE id = ?",
+            (size, session["id"]),
+        )
+        conn.commit()
+    refreshed = get_open_session(conn, session["table_id"]) or get_session(conn, session["id"])
+    if not refreshed:
+        raise RuntimeError("Session missing after party size sync")
+    return refreshed
+
+
+def mark_ff_party_guest_paid(
+    conn: sqlite3.Connection,
+    *,
+    guest_id: int,
+    order_id: int,
+) -> sqlite3.Row:
+    now = utc_now()
+    conn.execute(
+        """
+        UPDATE ff_party_guests
+        SET status = 'paid', paid_at = ?, order_id = ?
+        WHERE id = ? AND status = 'pending'
+        """,
+        (now, order_id, guest_id),
+    )
+    conn.commit()
+    row = get_ff_party_guest(conn, guest_id)
+    if not row or row["status"] != "paid":
+        raise ValueError("Guest already paid or missing")
+    return row
+
+
+def delete_ff_party_guest(conn: sqlite3.Connection, guest_id: int) -> None:
+    row = get_ff_party_guest(conn, guest_id)
+    if not row:
+        raise ValueError("Guest not found")
+    if row["status"] == "paid":
+        raise ValueError("Cannot remove a paid Free Flow guest — void the bill line instead")
+    conn.execute("DELETE FROM ff_party_guests WHERE id = ?", (guest_id,))
+    conn.commit()
+
+
+def ff_party_summary(conn: sqlite3.Connection, session_id: int) -> dict[str, Any]:
+    guests = [dict(g) for g in list_ff_party_guests(conn, session_id)]
+    paid = [g for g in guests if g.get("status") == "paid"]
+    pending = [g for g in guests if g.get("status") != "paid"]
+    return {
+        "guests": guests,
+        "paid_count": len(paid),
+        "pending_count": len(pending),
+        "paid_total": round(sum(float(g["head_price"]) for g in paid), 1),
+        "pending_total": round(sum(float(g["head_price"]) for g in pending), 1),
+    }
 
 
 def add_claim(

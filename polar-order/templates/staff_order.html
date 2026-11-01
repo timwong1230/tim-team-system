@@ -24,6 +24,16 @@
   </div>
   {% endif %}
 
+  {% if ff_party %}
+  <div class="card" style="margin-bottom:16px;border-color:rgba(212,192,140,0.45)">
+    <h3 style="margin-top:0">Free Flow party</h3>
+    <p class="muted" style="margin-top:0;margin-bottom:0">
+      Head fees are collected on the <a href="/staff/bill/{{ table.code }}?pin={{ pin }}">Bill</a> as guests arrive.
+      Only ring <strong>extra</strong> items here — covered Free Flow drinks stay $0 / don’t need charging.
+    </p>
+  </div>
+  {% endif %}
+
   <div class="promo">
     <div class="promo-now"><strong>Now: {{ promo.label }}</strong></div>
   </div>
