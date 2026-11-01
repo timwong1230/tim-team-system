@@ -252,6 +252,12 @@
   <div class="card nom-box">
     <h3 style="margin-top:0">Not on Menu</h3>
     <p class="muted" style="margin-top:0">Add an off-menu product for this table (name + price). Can be the first item.</p>
+    {% if not session and not is_boss %}
+    <p class="muted" style="margin-top:0">開新枱必須先入人數。</p>
+    <label class="muted" for="staffNomParty">Party size（人數）*</label>
+    <input class="field" id="staffNomParty" type="number" min="1" max="30" step="1" required
+           inputmode="numeric" placeholder="e.g. 4" value="" />
+    {% endif %}
     <label class="muted" for="staffNomName">Product name</label>
     <input class="field" id="staffNomName" type="text" maxlength="80" placeholder="e.g. Special bottle" />
     <div class="nom-row">
@@ -537,18 +543,32 @@
     const qty = Number(document.getElementById('staffNomQty').value || 1);
     if (!name) return alert('Enter product name');
     if (Number.isNaN(price) || price < 0) return alert('Enter a valid price');
+    const payload = {
+      pin: {{ pin|tojson }},
+      custom_name: name,
+      custom_price: price,
+      qty: qty,
+    };
+    const partyEl = document.getElementById('staffNomParty');
+    if (partyEl) {
+      const partyRaw = (partyEl.value || '').trim();
+      const partySize = Number(partyRaw);
+      if (!partyRaw || Number.isNaN(partySize) || partySize < 1 || partySize > 30) {
+        alert('Enter party size (人數) before opening the table');
+        partyEl.focus();
+        return;
+      }
+      payload.party_size = Math.floor(partySize);
+      payload.guest_name = 'Walk-in';
+    }
     const res = await fetch('/api/staff/bill/{{ table.code }}/custom', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pin: {{ pin|tojson }},
-        custom_name: name,
-        custom_price: price,
-        qty: qty,
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      alert('Failed to add');
+      const data = await res.json().catch(() => ({}));
+      alert(data.detail || 'Failed to add');
       return;
     }
     location.reload();
