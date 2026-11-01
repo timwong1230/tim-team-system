@@ -13,6 +13,13 @@
     <p>No open session</p>
     {% endif %}
   </div>
+  {% if bill_reopened and session %}
+  <div class="card" style="margin-bottom:16px;border-color:rgba(212,192,140,0.7)">
+    <p style="margin:0">
+      <strong>Editing paid bill</strong> — 改完 qty／加單之後，記得再 <strong>Mark paid</strong> 出新 PDF。
+    </p>
+  </div>
+  {% endif %}
   {% if not is_boss %}
   {# Free Flow party setup stays hidden until staff tap «Free Flow party». #}
   {# Once the party is active, the card stays visible for check-ins. #}

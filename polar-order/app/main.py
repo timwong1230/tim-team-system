@@ -56,7 +56,12 @@ from .db import (
     utc_now,
 )
 from .seats import parent_table_code, parse_table_split
-from .ops_constants import BOSS_CREDIT_METHOD, CLAIM_PRESETS, PAYMENT_METHODS
+from .ops_constants import (
+    BILL_EDIT_PASSWORD,
+    BOSS_CREDIT_METHOD,
+    CLAIM_PRESETS,
+    PAYMENT_METHODS,
+)
 from .pricing import (
     SHISHA_COMBO_SNACK_PRICE,
     SHISHA_REGULAR_ID,
@@ -109,7 +114,7 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
 # Bump when shipping guest UI/CSS/JS so iPhone Safari cannot keep a stale bundle.
-ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261031b").strip() or "20261031b"
+ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261101c").strip() or "20261101c"
 templates.env.globals["asset_v"] = ASSET_VERSION
 _subscribers: list[asyncio.Queue] = []
 
@@ -1150,7 +1155,13 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
 
 
 @app.get("/staff/bill/{table_code}", response_class=HTMLResponse)
-def staff_bill(request: Request, table_code: str, pin: str = "", discount: float = 0):
+def staff_bill(
+    request: Request,
+    table_code: str,
+    pin: str = "",
+    discount: float = 0,
+    edited: str = "",
+):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
     conn = connect()
@@ -1236,6 +1247,7 @@ def staff_bill(request: Request, table_code: str, pin: str = "", discount: float
                 if session and ff_party and session["ff_default_price"] is not None
                 else 450.0
             ),
+            "bill_reopened": (edited or "").strip() in ("1", "true", "yes"),
         },
     )
 
@@ -1950,7 +1962,11 @@ def close_bill(
             snack_waived=_session_snack_waived(session),
         )
     now = utc_now()
-    biz = business_date(datetime.now(HK)).isoformat()
+    # Keep original business_date when re-closing an edited (reopened) bill.
+    existing_biz = None
+    if "business_date" in session.keys() and session["business_date"]:
+        existing_biz = str(session["business_date"]).strip()[:10] or None
+    biz = existing_biz or business_date(datetime.now(HK)).isoformat()
     guest_name = session["guest_name"] if session["guest_name"] else None
     receipt_rel = generate_receipt_pdf(
         session_id=session["id"],
@@ -2014,6 +2030,85 @@ def close_bill(
 class StaffPaymentUpdateIn(BaseModel):
     pin: str
     payment_method: str = Field(min_length=1, max_length=40)
+
+
+class StaffReopenEditIn(BaseModel):
+    pin: str
+    edit_password: str = Field(min_length=1, max_length=80)
+
+
+@app.post("/api/staff/sessions/{session_id}/reopen-edit")
+def staff_reopen_session_for_edit(session_id: int, body: StaffReopenEditIn):
+    """Unlock a Mark-paid bill for item edits (password-gated)."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if (body.edit_password or "").strip() != BILL_EDIT_PASSWORD:
+        raise HTTPException(403, "Wrong edit password")
+    conn = connect()
+    session = get_session(conn, session_id)
+    if not session or session["status"] != "closed":
+        conn.close()
+        raise HTTPException(404, "Closed bill not found")
+    table = conn.execute(
+        "SELECT * FROM tables WHERE id = ?", (session["table_id"],)
+    ).fetchone()
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    open_sess = get_open_session(conn, table["id"])
+    if open_sess and int(open_sess["id"]) != int(session_id):
+        conn.close()
+        raise HTTPException(
+            400,
+            f"{table['label']} already has an open party — finish or clear it first",
+        )
+    # Keep business_date so re-close stays on the original night.
+    conn.execute(
+        """
+        UPDATE sessions SET
+          status = 'open',
+          closed_at = NULL,
+          receipt_path = NULL,
+          payment_method = NULL,
+          discount_percent = 0,
+          subtotal = NULL,
+          snack_charge = NULL,
+          service_charge = NULL,
+          discount_amount = NULL,
+          total = NULL
+        WHERE id = ?
+        """,
+        (session_id,),
+    )
+    # Orders stay non-cancelled so staff can edit qty / add items, then Mark paid again.
+    conn.execute(
+        """
+        UPDATE orders SET status = 'placed', updated_at = ?
+        WHERE session_id = ? AND status = 'served'
+        """,
+        (utc_now(), session_id),
+    )
+    conn.commit()
+    # Refresh that night's snapshot without this bill until they re-close.
+    biz = session["business_date"]
+    if biz:
+        try:
+            daily_sales_report(
+                conn,
+                date.fromisoformat(str(biz)[:10]),
+                use_snapshot_fallback=False,
+                force_snapshot=True,
+            )
+        except Exception:
+            pass
+    conn.close()
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "table_code": table["code"],
+        "table_label": table["label"],
+        "redirect": f"/staff/bill/{table['code']}?pin={body.pin}&edited=1",
+    }
 
 
 @app.post("/api/staff/sessions/{session_id}/payment")

@@ -30,12 +30,15 @@ def _is_boss_session(s: sqlite3.Row) -> bool:
     return (zone or "") == "boss"
 
 
-def _persist_daily_snapshot(conn: sqlite3.Connection, report: dict) -> None:
+def _persist_daily_snapshot(
+    conn: sqlite3.Connection, report: dict, *, force: bool = False
+) -> None:
     """Save live day totals so Reports still work after sessions are wiped."""
-    if int(report.get("session_count") or 0) <= 0 and float(report.get("gross_sales") or 0) <= 0:
-        # Still persist if claims / cash tilt were recorded for the night.
-        if float(report.get("claims_total") or 0) <= 0 and float(report.get("cash_tilt") or 0) <= 0:
-            return
+    if not force:
+        if int(report.get("session_count") or 0) <= 0 and float(report.get("gross_sales") or 0) <= 0:
+            # Still persist if claims / cash tilt were recorded for the night.
+            if float(report.get("claims_total") or 0) <= 0 and float(report.get("cash_tilt") or 0) <= 0:
+                return
     upsert_daily_report_snapshot(
         conn,
         business_date=str(report["business_date"]),
@@ -69,7 +72,13 @@ def _report_from_snapshot(biz: date, snap: dict, *, start: datetime, end: dateti
     }
 
 
-def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
+def daily_sales_report(
+    conn: sqlite3.Connection,
+    biz: date,
+    *,
+    use_snapshot_fallback: bool = True,
+    force_snapshot: bool = False,
+) -> dict:
     start, end = business_day_window(biz)
     sessions = conn.execute(
         """
@@ -98,6 +107,7 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
             {
                 "session_id": s["id"],
                 "table": s["table_label"],
+                "table_code": s["table_code"],
                 "party_size": s["party_size"],
                 "discount_percent": s["discount_percent"] or 0,
                 "payment_method": method if method != "—" else None,
@@ -146,19 +156,26 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
     }
 
     # Live night still open / recorded — keep a durable snapshot.
-    if live["session_count"] or live["claims_total"] or live["cash_tilt"] or live["gross_sales"]:
-        _persist_daily_snapshot(conn, live)
+    if (
+        live["session_count"]
+        or live["claims_total"]
+        or live["cash_tilt"]
+        or live["gross_sales"]
+        or force_snapshot
+    ):
+        _persist_daily_snapshot(conn, live, force=force_snapshot)
         return live
 
     # Past day after a reset/redeploy wipe — fall back to saved close.
-    snap = get_daily_report_snapshot(conn, biz.isoformat())
-    if snap and (
-        int(snap.get("session_count") or 0)
-        or float(snap.get("gross_sales") or 0)
-        or float(snap.get("claims_total") or 0)
-        or float(snap.get("cash_tilt") or 0)
-    ):
-        return _report_from_snapshot(biz, snap, start=start, end=end)
+    if use_snapshot_fallback:
+        snap = get_daily_report_snapshot(conn, biz.isoformat())
+        if snap and (
+            int(snap.get("session_count") or 0)
+            or float(snap.get("gross_sales") or 0)
+            or float(snap.get("claims_total") or 0)
+            or float(snap.get("cash_tilt") or 0)
+        ):
+            return _report_from_snapshot(biz, snap, start=start, end=end)
     return live
 
 

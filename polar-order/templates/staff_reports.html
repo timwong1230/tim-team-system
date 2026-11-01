@@ -37,7 +37,10 @@
       {% endfor %}
     </div>
     {% endif %}
-    <p class="muted" style="margin:8px 0 0">Wrong tender after Mark paid? Change payment method on the row — PDF updates too.</p>
+    <p class="muted" style="margin:8px 0 0">
+      Wrong tender after Mark paid? Change payment method on the row — PDF updates too.
+      打錯單？撳 <strong>Edit</strong> 再入密碼，開返 Bill 改嘢，然後重新 Mark paid。
+    </p>
     {% for s in daily.sessions %}
     <div class="cart-line session-pay-row" data-session="{{ s.session_id }}">
       <div style="flex:1;min-width:0">
@@ -56,10 +59,17 @@
         <div class="muted" style="margin-top:6px">{{ s.payment_method }}</div>
         {% endif %}
       </div>
-      <div>
+      <div style="text-align:right">
         ${{ '%.0f'|format(s.total) }}
         {% if s.receipt_path %}
         <div><a class="session-pdf-link" href="/staff/receipt/{{ s.session_id }}?pin={{ pin }}">PDF</a></div>
+        {% endif %}
+        {% if s.payment_method != 'Credit' and s.table_code %}
+        <div style="margin-top:6px">
+          <button type="button" class="ghost bill-edit-reopen-btn"
+                  data-session="{{ s.session_id }}" data-table="{{ s.table_code }}"
+                  style="width:auto;padding:6px 10px">Edit</button>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -305,6 +315,29 @@
         alert(err.message || 'Update failed');
         sel.value = prev;
         sel.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll('.bill-edit-reopen-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const sessionId = btn.dataset.session;
+      if (!sessionId) return;
+      const pw = prompt('Edit bill password:');
+      if (pw == null) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/staff/sessions/${sessionId}/reopen-edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: PIN, edit_password: pw }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Cannot edit bill');
+        location.href = data.redirect || `/staff/bill/${btn.dataset.table}?pin=${encodeURIComponent(PIN)}&edited=1`;
+      } catch (err) {
+        alert(err.message || 'Cannot edit bill');
+        btn.disabled = false;
       }
     });
   });
