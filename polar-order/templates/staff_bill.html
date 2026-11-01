@@ -266,7 +266,9 @@
     const waived = snacksWaived();
     const snack = isBoss || waived ? 0 : party * snackHead;
     // Free Flow is in subtotal but excluded from 10% service charge.
-    const service = isBoss ? 0 : (serviceable + snack) * rate;
+    // Round UP to whole HKD — no cents on service.
+    const rawService = isBoss ? 0 : (serviceable + snack) * rate;
+    const service = rawService > 0 ? Math.ceil(rawService - 1e-9) : 0;
     let d = Number(input.value || 0);
     if (Number.isNaN(d)) d = 0;
     d = Math.max(0, Math.min(100, d));

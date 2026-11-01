@@ -46,5 +46,5 @@ def test_free_flow_excluded_from_service_charge():
     )
     assert mixed["subtotal"] == 809.0
     assert mixed["serviceable_subtotal"] == 59.0
-    assert mixed["service_charge"] == 5.9
-    assert mixed["total"] == 814.9
+    assert mixed["service_charge"] == 6.0  # ceil(59*10%)
+    assert mixed["total"] == 815.0

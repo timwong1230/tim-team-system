@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -183,6 +184,7 @@ def compute_bill(
     - Discount applies to products + snack charge (not service).
     - Service charge is on (non–Free Flow products + snack) × rate.
       Free Flow packages have no 10% service charge.
+    - Service charge is always rounded **up** to a whole dollar (no cents).
     - snack_waived: guest declined bar snacks → $0 snack charge.
     """
     subtotal = round(sum(float(x["line_total"]) for x in lines), 1)
@@ -196,7 +198,9 @@ def compute_bill(
         snack_charge = round(max(1, party_size) * snack_charge_per_head, 1)
     discount_base = round(subtotal + snack_charge, 1)
     service_base = round(serviceable_subtotal + snack_charge, 1)
-    service = round(service_base * service_charge_rate, 1)
+    # Round UP to whole HKD — never show service with cents.
+    raw_service = service_base * service_charge_rate
+    service = float(math.ceil(raw_service - 1e-9)) if raw_service > 0 else 0.0
     try:
         disc = max(0.0, min(100.0, float(discount_percent or 0)))
     except (TypeError, ValueError):

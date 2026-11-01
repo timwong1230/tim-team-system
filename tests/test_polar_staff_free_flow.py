@@ -172,8 +172,8 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert calc3["subtotal"] == 509.0  # 450 + 59
         assert calc3["serviceable_subtotal"] == 59.0
         assert calc3["snack_charge"] == 20.0
-        assert calc3["service_charge"] == 7.9  # (59+20)*10%
-        assert calc3["total"] == 536.9
+        assert calc3["service_charge"] == 8.0  # ceil((59+20)*10%)
+        assert calc3["total"] == 537.0
 
     # Guest nav tree must not reference free-flow
     tree_src = (_POLAR / "app" / "guest_nav.py").read_text(encoding="utf-8")
