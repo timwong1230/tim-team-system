@@ -39,6 +39,86 @@
   {% endif %}
   {% endif %}
 
+  {% if not is_boss %}
+  <div class="card" id="ffPartyCard" style="margin-bottom:16px"
+       data-enabled="{{ 1 if ff_party else 0 }}"
+       data-default-price="{{ ff_default_price if ff_party else 450 }}">
+    <h3 style="margin-top:0">Free Flow party</h3>
+    {% if not ff_party %}
+    <p class="muted" style="margin-top:0">
+      Guests arrive one by one — set a custom head price per person and collect when they walk in.
+      Covered drinks stay off the paid menu; only extras go on Order.
+    </p>
+    <label class="muted" for="ffPartyName">Party name</label>
+    <input class="field" id="ffPartyName" type="text" maxlength="40" placeholder="e.g. Amy birthday FF" value="Free Flow party" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="ffExpected">Expected heads</label>
+        <input class="field" id="ffExpected" type="number" min="1" max="40" value="7" />
+      </div>
+      <div>
+        <label class="muted" for="ffDefaultPrice">Default head price</label>
+        <input class="field" id="ffDefaultPrice" type="number" min="0" max="50000" step="1" value="450" />
+      </div>
+    </div>
+    <label class="snack-waive-row" style="display:flex;align-items:center;gap:10px;margin:10px 0;cursor:pointer">
+      <input type="checkbox" id="ffWaiveSnacks" checked />
+      <span>Waive bar snack charge（Free Flow 通常包）</span>
+    </label>
+    <button class="primary" type="button" id="ffEnableBtn" style="width:auto">Start Free Flow party</button>
+    {% else %}
+    <p class="muted" style="margin-top:0">
+      Expected {{ ff_expected }} · paid {{ ff_summary.paid_count }} · pending {{ ff_summary.pending_count }} ·
+      collected <strong>${{ '%.0f'|format(ff_summary.paid_total) }}</strong>
+      {% if ff_summary.pending_total %} · pending ${{ '%.0f'|format(ff_summary.pending_total) }}{% endif %}
+    </p>
+    <div id="ffGuestList">
+      {% for g in ff_summary.guests %}
+      <div class="cart-line ff-guest-row" data-id="{{ g.id }}">
+        <div>
+          <strong>{{ g.guest_label }}</strong>
+          <div class="muted">
+            ${{ '%.0f'|format(g.head_price) }}
+            {% if g.package_label %} · {{ g.package_label }}{% endif %}
+            · {% if g.status == 'paid' %}Paid{% else %}Pending{% endif %}
+          </div>
+        </div>
+        <div class="ff-guest-actions">
+          {% if g.status != 'paid' %}
+          <button type="button" class="ghost ff-pay-btn" data-id="{{ g.id }}" style="width:auto;padding:6px 10px">Collect</button>
+          <button type="button" class="ghost ff-del-btn" data-id="{{ g.id }}" style="width:auto;padding:6px 10px;margin-left:4px">Remove</button>
+          {% else %}
+          <span class="muted">✓</span>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p class="muted" id="ffGuestEmpty">No guests yet — add when they arrive.</p>
+      {% endfor %}
+    </div>
+    <hr class="claim-sep" />
+    <h3 style="margin-top:0;font-size:1rem">Guest arrives</h3>
+    <label class="muted" for="ffGuestLabel">Name / nickname</label>
+    <input class="field" id="ffGuestLabel" type="text" maxlength="40" placeholder="e.g. Amy" />
+    <div class="nom-row">
+      <div>
+        <label class="muted" for="ffGuestPrice">Head price (HKD)</label>
+        <input class="field" id="ffGuestPrice" type="number" min="0" max="50000" step="1" value="{{ '%.0f'|format(ff_default_price) }}" />
+      </div>
+      <div>
+        <label class="muted" for="ffGuestPkg">Note (optional)</label>
+        <input class="field" id="ffGuestPkg" type="text" maxlength="80" placeholder="With Shisha / custom" />
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+      <button class="primary" type="button" id="ffCollectBtn" style="width:auto">Add &amp; collect</button>
+      <button class="ghost" type="button" id="ffAddPendingBtn" style="width:auto">Add pending</button>
+    </div>
+    <p class="muted" id="ffPartyMsg" style="margin-bottom:0"></p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if bill %}
   {# Items first — staff need the order list before admin / payment controls. #}
   <div class="card" id="billItemsCard">
@@ -527,6 +607,115 @@
       location.href = '/staff/tables?pin={{ pin }}';
     } else {
       alert(data.detail || 'Failed to close');
+    }
+  });
+
+  const PIN = {{ pin|tojson }};
+  const TABLE = {{ table.code|tojson }};
+  const ffMsg = document.getElementById('ffPartyMsg');
+
+  function ffError(err) {
+    const detail = err && err.message ? err.message : 'Failed';
+    if (ffMsg) ffMsg.textContent = detail;
+    else alert(detail);
+  }
+
+  document.getElementById('ffEnableBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ffEnableBtn');
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/staff/bill/${TABLE}/ff-party/enable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: PIN,
+          party_name: (document.getElementById('ffPartyName')?.value || '').trim() || 'Free Flow party',
+          expected_size: Math.max(1, Number(document.getElementById('ffExpected')?.value || 7)),
+          default_price: Math.max(0, Number(document.getElementById('ffDefaultPrice')?.value || 450)),
+          waive_snacks: !!document.getElementById('ffWaiveSnacks')?.checked,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Failed to start Free Flow party');
+      location.reload();
+    } catch (err) {
+      ffError(err);
+      btn.disabled = false;
+    }
+  });
+
+  async function addFfGuest(collectNow) {
+    const label = (document.getElementById('ffGuestLabel')?.value || '').trim();
+    const price = Number(document.getElementById('ffGuestPrice')?.value);
+    const pkg = (document.getElementById('ffGuestPkg')?.value || '').trim();
+    if (!label) {
+      ffError(new Error('Enter guest name'));
+      return;
+    }
+    if (Number.isNaN(price) || price < 0) {
+      ffError(new Error('Enter a valid head price'));
+      return;
+    }
+    if (ffMsg) ffMsg.textContent = collectNow ? 'Collecting…' : 'Adding…';
+    try {
+      const res = await fetch(`/api/staff/bill/${TABLE}/ff-party/guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: PIN,
+          guest_label: label,
+          head_price: price,
+          package_label: pkg || null,
+          collect_now: collectNow,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Failed');
+      location.reload();
+    } catch (err) {
+      ffError(err);
+    }
+  }
+
+  document.getElementById('ffCollectBtn')?.addEventListener('click', () => addFfGuest(true));
+  document.getElementById('ffAddPendingBtn')?.addEventListener('click', () => addFfGuest(false));
+
+  document.getElementById('ffGuestList')?.addEventListener('click', async (e) => {
+    const pay = e.target.closest('.ff-pay-btn');
+    const del = e.target.closest('.ff-del-btn');
+    if (pay) {
+      pay.disabled = true;
+      try {
+        const res = await fetch(`/api/staff/bill/${TABLE}/ff-party/guests/${pay.dataset.id}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: PIN }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Collect failed');
+        location.reload();
+      } catch (err) {
+        ffError(err);
+        pay.disabled = false;
+      }
+      return;
+    }
+    if (del) {
+      if (!confirm('Remove this pending guest?')) return;
+      del.disabled = true;
+      try {
+        const res = await fetch(`/api/staff/bill/${TABLE}/ff-party/guests/${del.dataset.id}/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: PIN }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Remove failed');
+        location.reload();
+      } catch (err) {
+        ffError(err);
+        del.disabled = false;
+      }
     }
   });
 
