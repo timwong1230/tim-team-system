@@ -129,6 +129,13 @@
   {% endif %}
   {% endif %}
 
+  {% if is_boss %}
+  <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
+    <a class="primary" style="display:inline-block;width:auto;text-align:center"
+       href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for boss</a>
+  </div>
+  {% endif %}
+
   {% if bill %}
   {# Items first — staff need the order list before admin / payment controls. #}
   <div class="card" id="billItemsCard">

@@ -7,7 +7,9 @@
   </div>
   <div class="hero">
     <h1>{{ table.label }}</h1>
-    {% if session and session.guest_name %}
+    {% if is_boss %}
+    <p>Personal tab · not guest sales. Staff can add items for <strong>{{ session.guest_name }}</strong>.</p>
+    {% elif session and session.guest_name %}
     <p>Ordering for <strong>{{ session.guest_name }}</strong> · party {{ session.party_size }}. Staff can send menu items for this table.</p>
     {% else %}
     <p>No check-in yet — enter guest name, then order for them.</p>
