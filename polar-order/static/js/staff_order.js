@@ -456,10 +456,15 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     if (cfg.needsCheckin) {
       payload.guest_name = (document.getElementById("staffGuestName")?.value || "").trim() || "Walk-in";
-      payload.party_size = Math.max(
-        1,
-        Number(document.getElementById("staffPartySize")?.value || 2)
-      );
+      const partyRaw = (document.getElementById("staffPartySize")?.value || "").trim();
+      const partySize = Number(partyRaw);
+      if (!partyRaw || Number.isNaN(partySize) || partySize < 1 || partySize > 30) {
+        showToast("Enter party size (人數) before opening the table");
+        document.getElementById("staffPartySize")?.focus();
+        document.getElementById("staffCheckin")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      payload.party_size = Math.floor(partySize);
     }
     const btn = document.getElementById("submitOrder");
     btn.disabled = true;
@@ -470,7 +475,16 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        let detail = "Failed to send order";
+        try {
+          const errBody = await res.json();
+          if (errBody && errBody.detail) detail = errBody.detail;
+        } catch (_) {
+          /* ignore */
+        }
+        throw new Error(detail);
+      }
       cart.clear();
       renderCartBar();
       drawer.classList.remove("open");
@@ -480,7 +494,7 @@ document.addEventListener("DOMContentLoaded", () => {
         location.href = `/staff/tables?pin=${encodeURIComponent(pin)}`;
       }, 450);
     } catch (err) {
-      showToast("Failed to send order");
+      showToast(err.message || "Failed to send order");
       console.error(err);
       btn.disabled = false;
       btn.textContent = "Send order for table";

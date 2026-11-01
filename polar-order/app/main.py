@@ -1692,8 +1692,13 @@ async def staff_add_custom(table_code: str, body: StaffCustomIn):
         raise HTTPException(404, "Table not found")
     session = get_open_session(conn, table["id"])
     if not session or not session["guest_name"]:
+        if body.party_size is None:
+            conn.close()
+            raise HTTPException(
+                400, "Enter party size (number of guests) before opening the table"
+            )
         name = (body.guest_name or "").strip() or "Walk-in"
-        party = int(body.party_size or 2)
+        party = max(1, min(30, int(body.party_size)))
         try:
             session = start_session(conn, table["id"], name, party_size=party)
         except ValueError as e:
@@ -1847,8 +1852,13 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
 
     session = get_open_session(conn, table["id"])
     if not session or not session["guest_name"]:
+        if body.party_size is None:
+            conn.close()
+            raise HTTPException(
+                400, "Enter party size (number of guests) before opening the table"
+            )
         name = (body.guest_name or "").strip() or "Walk-in"
-        party = int(body.party_size or 2)
+        party = max(1, min(30, int(body.party_size)))
         try:
             session = start_session(conn, table["id"], name, party_size=party)
         except ValueError as e:

@@ -17,10 +17,12 @@
   {% if needs_checkin %}
   <div class="card" id="staffCheckin">
     <h3 style="margin-top:0">Guest check-in</h3>
+    <p class="muted" style="margin-top:0">必須先入人數，先開到枱／落單。</p>
     <label class="muted" for="staffGuestName">Guest name</label>
     <input class="field" id="staffGuestName" type="text" maxlength="40" placeholder="Name / nickname" value="Walk-in" />
-    <label class="muted" for="staffPartySize">Party size</label>
-    <input class="field" id="staffPartySize" type="number" min="1" max="30" value="2" />
+    <label class="muted" for="staffPartySize">Party size（人數）*</label>
+    <input class="field" id="staffPartySize" type="number" min="1" max="30" step="1" required
+           inputmode="numeric" placeholder="e.g. 4" value="" />
   </div>
   {% endif %}
 

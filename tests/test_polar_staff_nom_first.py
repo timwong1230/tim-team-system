@@ -43,7 +43,13 @@ def test_staff_not_on_menu_as_first_item():
 
     bill_html = (_POLAR / "templates/staff_bill.html").read_text(encoding="utf-8")
     # NOM block is outside `{% if bill %}` so empty tables can add it first
-    assert bill_html.rfind("nom-box") > bill_html.rfind("{% endif %}")
+    bill_if = bill_html.find("{% if bill %}")
+    nom_idx = bill_html.find('class="card nom-box"')
+    assert bill_if != -1 and nom_idx != -1 and nom_idx > bill_if
+    clear_idx = bill_html.find('id="clearTableBtn"')
+    assert clear_idx != -1 and clear_idx < nom_idx
+    bill_close = bill_html.find("{% endif %}", clear_idx)
+    assert bill_close != -1 and bill_close < nom_idx
 
     with TestClient(main.app) as client:
         order_page = client.get(f"/staff/order/TABLE2?pin={pin}")
@@ -87,6 +93,7 @@ def test_staff_not_on_menu_as_first_item():
         assert b"Not on Menu" in bill.content
 
         # Fresh table — custom endpoint creates Walk-in session for first NOM line
+        # Party size is required to open the table.
         res2 = client.post(
             "/api/staff/bill/TABLE3/custom",
             json={
@@ -94,6 +101,8 @@ def test_staff_not_on_menu_as_first_item():
                 "custom_name": "Off-menu shot",
                 "custom_price": 68,
                 "qty": 2,
+                "party_size": 2,
+                "guest_name": "Walk-in",
             },
         )
         assert res2.status_code == 200, res2.text
