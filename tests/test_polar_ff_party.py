@@ -34,10 +34,17 @@ def test_ff_party_custom_head_prices():
 
     pin = "polar2026"
     with TestClient(main.app) as client:
+        tables = client.get(f"/staff/tables?pin={pin}")
+        assert tables.status_code == 200
+        assert b"Free Flow party" in tables.content
+        assert b"#ffPartyCard" in tables.content
+
         bill = client.get(f"/staff/bill/TABLE1?pin={pin}")
         assert bill.status_code == 200
-        assert b"Free Flow party" in bill.content
+        assert b'id="ffPartyCard"' in bill.content
         assert b"Start Free Flow party" in bill.content
+        # Card is near the top (before Order actions / items)
+        assert bill.content.index(b'id="ffPartyCard"') < bill.content.index(b"Order for this table")
 
         enabled = client.post(
             "/api/staff/bill/TABLE1/ff-party/enable",

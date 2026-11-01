@@ -9,6 +9,7 @@
     <h1>Open seats</h1>
     <p>
       Table 1–5 · Terrace · Bar. Tap a seat for bill, or <strong>Order</strong> for the guest.
+      <strong>Free Flow party</strong>：客人陸續入場收人頭 — 撳枱位入 Bill，最上有 Free Flow party。
       Shared tables: open Table 1–5, then <strong>Split party (A–D)</strong> for separate parties
       (own name + headcount). Active splits appear here only when in use.
     </p>
@@ -20,6 +21,9 @@
         <strong>{{ row.table.label }}</strong>
         {% if row.is_split %}
           <div class="muted" style="font-size:0.8rem">Split · same physical table</div>
+        {% endif %}
+        {% if row.is_ff_party %}
+          <div class="muted" style="font-size:0.8rem;color:var(--gold)">Free Flow party</div>
         {% endif %}
         {% if row.session and row.session.guest_name %}
           <div class="guest-name">{{ row.session.guest_name }}</div>
@@ -33,6 +37,8 @@
       </a>
       <a class="ghost" style="display:block;text-align:center;padding:8px 10px;font-size:0.9rem"
          href="/staff/order/{{ row.table.code }}?pin={{ pin }}">Order for table</a>
+      <a class="primary" style="display:block;text-align:center;padding:8px 10px;font-size:0.9rem;text-decoration:none"
+         href="/staff/bill/{{ row.table.code }}?pin={{ pin }}#ffPartyCard">Free Flow party</a>
       {% if row.can_split %}
       <button class="ghost split-party-btn" type="button"
               data-table="{{ row.table.code }}"
