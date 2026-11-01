@@ -14,8 +14,10 @@
     {% endif %}
   </div>
   {% if not is_boss %}
-  {# Free Flow party first — staff look here when guests arrive one by one. #}
-  <div class="card" id="ffPartyCard" style="margin-bottom:16px;border-color:rgba(212,192,140,0.55)"
+  {# Free Flow party setup stays hidden until staff tap «Free Flow party». #}
+  {# Once the party is active, the card stays visible for check-ins. #}
+  <div class="card" id="ffPartyCard"
+       style="margin-bottom:16px;border-color:rgba(212,192,140,0.55){% if not ff_party %};display:none{% endif %}"
        data-enabled="{{ 1 if ff_party else 0 }}"
        data-default-price="{{ ff_default_price if ff_party else 450 }}">
     <h3 style="margin-top:0">Free Flow party</h3>
@@ -97,8 +99,7 @@
   <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
     <a class="primary" style="display:inline-block;width:auto;text-align:center"
        href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for this table</a>
-    <a class="ghost" style="display:inline-block;width:auto;text-align:center"
-       href="#ffPartyCard">Free Flow party</a>
+    <button class="ghost" type="button" id="ffPartyRevealBtn" style="width:auto">Free Flow party</button>
     {% if can_split %}
     <button class="ghost" type="button" id="splitPartyBtn" style="width:auto">
       ＋ Split party ({{ split_parent|replace('TABLE', 'Table ') }}A–D)
@@ -615,10 +616,27 @@
   const PIN = {{ pin|tojson }};
   const TABLE = {{ table.code|tojson }};
   const ffMsg = document.getElementById('ffPartyMsg');
+  const ffCard = document.getElementById('ffPartyCard');
+
+  function showFfPartyCard(scroll) {
+    if (!ffCard) return;
+    ffCard.style.display = '';
+    if (scroll) {
+      ffCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  // Only reveal setup after staff tap «Free Flow party» (or Tables deep-link).
+  document.getElementById('ffPartyRevealBtn')?.addEventListener('click', () => {
+    if (location.hash !== '#ffPartyCard') {
+      history.replaceState(null, '', '#ffPartyCard');
+    }
+    showFfPartyCard(true);
+  });
 
   // Deep-link from Tables «Free Flow party» button
-  if (location.hash === '#ffPartyCard') {
-    document.getElementById('ffPartyCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (location.hash === '#ffPartyCard' || new URLSearchParams(location.search).get('ff') === '1') {
+    showFfPartyCard(true);
   }
 
   function ffError(err) {

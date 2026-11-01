@@ -43,8 +43,10 @@ def test_ff_party_custom_head_prices():
         assert bill.status_code == 200
         assert b'id="ffPartyCard"' in bill.content
         assert b"Start Free Flow party" in bill.content
-        # Card is near the top (before Order actions / items)
-        assert bill.content.index(b'id="ffPartyCard"') < bill.content.index(b"Order for this table")
+        assert b'id="ffPartyRevealBtn"' in bill.content
+        # Setup stays hidden until staff tap Free Flow party (or #ffPartyCard / ?ff=1)
+        assert b"border-color:rgba(212,192,140,0.55);display:none" in bill.content
+        assert b"showFfPartyCard" in bill.content
 
         enabled = client.post(
             "/api/staff/bill/TABLE1/ff-party/enable",
@@ -69,6 +71,8 @@ def test_ff_party_custom_head_prices():
         assert b"Amy birthday" in page.content or b"Expected 7" in page.content
         assert b"Guest arrives" in page.content
         assert b"Add &amp; collect" in page.content or b"Add & collect" in page.content
+        # Active party card stays visible (no display:none on the gold card)
+        assert b"border-color:rgba(212,192,140,0.55);display:none" not in page.content
 
         # First guest — custom price, collect now
         g1 = client.post(
