@@ -2090,18 +2090,21 @@ def staff_update_session_payment(session_id: int, body: StaffPaymentUpdateIn):
 def staff_receipt(session_id: int, pin: str = ""):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
+    from .paths import RECEIPT_DIR
+
     conn = connect()
     session = get_session(conn, session_id)
     conn.close()
-    if not session or not session["receipt_path"]:
+    candidates = []
+    if session and session["receipt_path"]:
+        rel = session["receipt_path"]
+        candidates.append(DATA_DIR / rel)
+        candidates.append(ROOT / rel)
+    # After a live-data reset, session rows are gone but PDFs + snapshots remain.
+    candidates.append(RECEIPT_DIR / f"receipt-S{session_id}.pdf")
+    path = next((p for p in candidates if p.exists()), None)
+    if not path:
         raise HTTPException(404, "Receipt not found")
-    # New receipts live under DATA_DIR; keep ROOT fallback for older rows.
-    rel = session["receipt_path"]
-    path = DATA_DIR / rel
-    if not path.exists():
-        path = ROOT / rel
-    if not path.exists():
-        raise HTTPException(404, "Receipt file missing")
     return FileResponse(
         path,
         media_type="application/pdf",
@@ -2490,6 +2493,10 @@ def staff_add_claim(body: ClaimBody):
         amount=round(float(body.amount), 1),
     )
     claims = list_claims(conn, body.business_date)
+    try:
+        daily_sales_report(conn, date.fromisoformat(body.business_date))
+    except Exception:
+        pass
     conn.close()
     total = round(sum(float(c["amount"]) for c in claims), 1)
     return {

@@ -1004,13 +1004,11 @@ def count_daily_report_snapshots(conn: sqlite3.Connection) -> int:
 
 
 def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
-    """Wipe live orders/sessions/events/claims/cash tilt/receipts.
+    """Wipe live orders/sessions/events/claims/cash tilt.
 
-    Keeps seats, menu, bookings, and ``daily_report_snapshots`` so past Daily
-    reports can still be opened after a test reset or accidental wipe.
+    Keeps seats, menu, bookings, ``daily_report_snapshots``, and receipt PDFs
+    so past Daily reports (totals + per-table bills) remain openable.
     """
-    from .paths import RECEIPT_DIR
-
     counts = {
         "order_items": conn.execute("SELECT COUNT(*) AS c FROM order_items").fetchone()["c"],
         "orders": conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"],
@@ -1021,6 +1019,7 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
             "SELECT COUNT(*) AS c FROM daily_cash_tilt"
         ).fetchone()["c"],
         "daily_report_snapshots_kept": count_daily_report_snapshots(conn),
+        "receipts_kept": True,
     }
     conn.execute("DELETE FROM order_items")
     conn.execute("DELETE FROM orders")
@@ -1033,12 +1032,4 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
         "('order_items','orders','sessions','events','claims')"
     )
     conn.commit()
-
-    receipts_removed = 0
-    RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
-    for path in RECEIPT_DIR.iterdir():
-        if path.is_file():
-            path.unlink()
-            receipts_removed += 1
-    counts["receipts"] = receipts_removed
     return counts

@@ -57,15 +57,29 @@ def test_past_day_report_survives_reset_via_snapshot():
         )
         conn.commit()
 
+        # Write a fake receipt PDF so post-reset PDF links still resolve.
+        from app.paths import RECEIPT_DIR
+
+        RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
+        pdf_path = RECEIPT_DIR / f"receipt-S{s1}.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 fake polar receipt")
+        conn.execute(
+            "UPDATE sessions SET receipt_path = ? WHERE id = ?",
+            (f"receipts/receipt-S{s1}.pdf", s1),
+        )
+        conn.commit()
+
         live = reports.daily_sales_report(conn, date(2026, 10, 31))
         assert live["gross_sales"] == 19187.0
         assert live["from_snapshot"] is False
         assert db.get_daily_report_snapshot(conn, "2026-10-31") is not None
 
-        # Staff/test reset wipes live sessions but keeps snapshots.
+        # Staff/test reset wipes live sessions but keeps snapshots + PDFs.
         cleared = db.reset_operational_data(conn)
         assert cleared["sessions"] >= 1
         assert cleared["daily_report_snapshots_kept"] >= 1
+        assert cleared.get("receipts_kept") is True
+        assert pdf_path.exists()
         assert (
             conn.execute(
                 "SELECT COUNT(*) AS c FROM sessions WHERE status='closed'"
@@ -77,12 +91,18 @@ def test_past_day_report_survives_reset_via_snapshot():
         assert restored["from_snapshot"] is True
         assert restored["gross_sales"] == 19187.0
         assert restored["session_count"] == 1
+        assert restored["sessions"][0]["receipt_path"]
         conn.close()
 
         page = client.get(f"/staff/reports?pin={pin}&day=2026-10-31")
         assert page.status_code == 200
         assert b"19187" in page.content
         assert b"snapshot" in page.content.lower() or "存檔".encode() in page.content
+        assert f"/staff/receipt/{s1}".encode() in page.content
+
+        pdf = client.get(f"/staff/receipt/{s1}?pin={pin}")
+        assert pdf.status_code == 200, pdf.text
+        assert pdf.content.startswith(b"%PDF")
 
         wa = client.get(
             f"/api/staff/whatsapp-sales-report?pin={pin}&day=2026-10-31"
