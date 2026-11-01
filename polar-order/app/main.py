@@ -1113,6 +1113,14 @@ def _bill_dict_for_session(
     )
 
 
+def _boss_for_table_code(table_code: str) -> dict | None:
+    """Resolve BOSSJON / bossjon → boss dict."""
+    raw = (table_code or "").strip()
+    if not raw.upper().startswith("BOSS"):
+        return None
+    return boss_by_id(raw[4:])
+
+
 @app.get("/staff/order/{table_code}", response_class=HTMLResponse)
 def staff_order_page(request: Request, table_code: str, pin: str = ""):
     """Staff menu — order for a guest table (not the guest QR phone)."""
@@ -1123,12 +1131,15 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
-    if (table["zone"] or "") == "boss":
-        conn.close()
-        # Boss personal tabs use /boss/{id}
-        boss_id = table_code.replace("BOSS", "").lower()
-        return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
+    is_boss = (table["zone"] or "") == "boss"
     session = get_open_session(conn, table["id"])
+    if is_boss:
+        boss = _boss_for_table_code(table["code"])
+        if not boss:
+            conn.close()
+            raise HTTPException(404, "Boss not found")
+        # Keep personal tab open so staff can order without guest check-in
+        session = start_session(conn, table["id"], boss["name"], party_size=1)
     menu = _menu_payload(
         conn,
         include_staff_only=True,
@@ -1147,9 +1158,11 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
             "menu": menu,
             "promo": promo,
             "pin": pin,
-            "needs_checkin": not bool(session and session["guest_name"]),
+            "needs_checkin": (not is_boss)
+            and (not bool(session and session["guest_name"])),
             "single_mix_spirits": single_mix_spirits,
-            "ff_party": session_is_ff_party(session),
+            "ff_party": (not is_boss) and session_is_ff_party(session),
+            "is_boss": is_boss,
         },
     )
 
@@ -1692,13 +1705,21 @@ async def staff_add_custom(table_code: str, body: StaffCustomIn):
         raise HTTPException(404, "Table not found")
     session = get_open_session(conn, table["id"])
     if not session or not session["guest_name"]:
-        if body.party_size is None:
-            conn.close()
-            raise HTTPException(
-                400, "Enter party size (number of guests) before opening the table"
-            )
-        name = (body.guest_name or "").strip() or "Walk-in"
-        party = max(1, min(30, int(body.party_size)))
+        if (table["zone"] or "") == "boss":
+            boss = _boss_for_table_code(table["code"])
+            if not boss:
+                conn.close()
+                raise HTTPException(404, "Boss not found")
+            name = boss["name"]
+            party = 1
+        else:
+            if body.party_size is None:
+                conn.close()
+                raise HTTPException(
+                    400, "Enter party size (number of guests) before opening the table"
+                )
+            name = (body.guest_name or "").strip() or "Walk-in"
+            party = max(1, min(30, int(body.party_size)))
         try:
             session = start_session(conn, table["id"], name, party_size=party)
         except ValueError as e:
@@ -1846,12 +1867,20 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
-    if (table["zone"] or "") == "boss":
-        conn.close()
-        raise HTTPException(400, "Use boss station to order for boss tabs")
+    is_boss = (table["zone"] or "") == "boss"
 
     session = get_open_session(conn, table["id"])
-    if not session or not session["guest_name"]:
+    if is_boss:
+        boss = _boss_for_table_code(table["code"])
+        if not boss:
+            conn.close()
+            raise HTTPException(404, "Boss not found")
+        try:
+            session = start_session(conn, table["id"], boss["name"], party_size=1)
+        except ValueError as e:
+            conn.close()
+            raise HTTPException(400, str(e)) from e
+    elif not session or not session["guest_name"]:
         if body.party_size is None:
             conn.close()
             raise HTTPException(
