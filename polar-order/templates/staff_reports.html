@@ -21,6 +21,12 @@
     <p class="muted">{{ daily.window }}</p>
     <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(daily.gross_sales) }}</div>
     <div class="muted">{{ daily.session_count }} closed tables</div>
+    {% if daily.from_snapshot %}
+    <p class="muted" style="margin:8px 0 0;color:var(--gold)">
+      呢日 live sessions 已唔喺庫 — 顯示已存檔嘅 Daily report snapshot
+      {% if daily.snapshot_updated_at %}（{{ daily.snapshot_updated_at }}）{% endif %}。
+    </p>
+    {% endif %}
     {% if daily.by_payment_method %}
     <div class="pay-breakdown" style="margin:12px 0 4px">
       {% for p in daily.by_payment_method %}
@@ -251,9 +257,12 @@
   </div>
 
   <div class="card" style="border-color:#5a2a2a">
-    <h3 style="margin-top:0">Reset all sales data</h3>
-    <p class="muted">Clears every order, closed table, receipt PDF, and live session. Menu and seat map stay. Use after testing so reports start at $0.</p>
-    <button class="ghost" type="button" id="resetSalesBtn" style="width:auto;border-color:#a55;color:#f6c">Reset everything to $0</button>
+    <h3 style="margin-top:0">Reset live sales data</h3>
+    <p class="muted">
+      Clears open/closed tables, orders, claims, cash tilt, and receipt PDFs（測試用）.
+      <strong>Daily report snapshots 會保留</strong> — 過往日子嘅 Reports 仲睇得返已存檔數字。
+    </p>
+    <button class="ghost" type="button" id="resetSalesBtn" style="width:auto;border-color:#a55;color:#f6c">Reset live data</button>
     <p class="muted" id="resetSalesMsg" style="margin-top:10px"></p>
   </div>
 </div>
@@ -504,7 +513,11 @@
   });
 
   document.getElementById('resetSalesBtn')?.addEventListener('click', async () => {
-    const ok = confirm('Delete ALL sales / orders / receipts and set reports to $0?\n\nThis cannot be undone.');
+    const ok = confirm(
+      'Delete live orders / closed tables / receipts?\n\n' +
+      'Saved Daily report snapshots for past nights are KEPT.\n\n' +
+      'This cannot restore wiped live sessions.'
+    );
     if (!ok) return;
     const typed = prompt('Type RESET to confirm:');
     if ((typed || '').trim().toUpperCase() !== 'RESET') {

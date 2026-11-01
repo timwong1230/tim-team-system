@@ -117,12 +117,22 @@ _subscribers: list[asyncio.Queue] = []
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    # One-shot cloud wipe: set POLAR_RESET_ON_START=RESET, deploy once, then remove the env var.
-    if os.getenv("POLAR_RESET_ON_START", "").strip().upper() == "RESET":
+    # One-shot cloud wipe: set POLAR_RESET_ON_START=RESET-YYYY-MM-DD (HK date).
+    # A bare "RESET" is ignored so a forgotten env var cannot wipe every restart.
+    reset_token = os.getenv("POLAR_RESET_ON_START", "").strip().upper()
+    today_hk = business_date(datetime.now(HK)).isoformat()
+    expected = f"RESET-{today_hk}"
+    if reset_token == expected:
         conn = connect()
         cleared = reset_operational_data(conn)
         conn.close()
         print(f"[polar] POLAR_RESET_ON_START wiped operational data: {cleared}", flush=True)
+    elif reset_token in {"RESET", "1", "TRUE", "YES"}:
+        print(
+            f"[polar] POLAR_RESET_ON_START={reset_token!r} ignored — "
+            f"use {expected} for a one-shot wipe",
+            flush=True,
+        )
     yield
 
 
@@ -1987,6 +1997,11 @@ def close_bill(
         (now, session["id"]),
     )
     conn.commit()
+    # Snapshot tonight's running totals so yesterday's report survives resets.
+    try:
+        daily_sales_report(conn, date.fromisoformat(biz))
+    except Exception:
+        pass
     conn.close()
     return {
         "ok": True,
@@ -2056,6 +2071,12 @@ def staff_update_session_payment(session_id: int, body: StaffPaymentUpdateIn):
         (method, receipt_rel, session["id"]),
     )
     conn.commit()
+    biz_iso = session["business_date"]
+    if biz_iso:
+        try:
+            daily_sales_report(conn, date.fromisoformat(str(biz_iso)[:10]))
+        except Exception:
+            pass
     conn.close()
     return {
         "ok": True,
@@ -2537,6 +2558,10 @@ def staff_set_cash_tilt(body: CashTiltBody, background_tasks: BackgroundTasks):
         raise HTTPException(400, "Invalid business date") from exc
     conn = connect()
     amount = set_cash_tilt(conn, body.business_date, round(float(body.amount), 1))
+    try:
+        daily_sales_report(conn, date.fromisoformat(body.business_date))
+    except Exception:
+        pass
     conn.close()
     auto = False
     if sheets_configured():
@@ -2709,7 +2734,7 @@ def staff_get_bank_evidence(evidence_id: str, pin: str = ""):
 
 @app.post("/api/staff/reset-sales")
 def staff_reset_sales(pin: str = Form(...), confirm: str = Form("")):
-    """Wipe all guest/boss orders, sessions, events, and receipts (menu/seats kept)."""
+    """Wipe live orders/sessions/events/receipts. Keeps daily report snapshots."""
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
     if (confirm or "").strip().upper() != "RESET":
@@ -2722,4 +2747,27 @@ def staff_reset_sales(pin: str = Form(...), confirm: str = Form("")):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "promo": current_promo()}
+    from .db import count_daily_report_snapshots
+    from .paths import DATA_DIR, DB_PATH
+
+    closed = 0
+    snaps = 0
+    try:
+        conn = connect()
+        closed = int(
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM sessions WHERE status = 'closed'"
+            ).fetchone()["c"]
+        )
+        snaps = count_daily_report_snapshots(conn)
+        conn.close()
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "promo": current_promo(),
+        "data_dir": str(DATA_DIR),
+        "db_exists": DB_PATH.exists(),
+        "closed_sessions": closed,
+        "daily_report_snapshots": snaps,
+    }

@@ -5,7 +5,11 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .db import get_cash_tilt
+from .db import (
+    get_cash_tilt,
+    get_daily_report_snapshot,
+    upsert_daily_report_snapshot,
+)
 from .ops_constants import WHATSAPP_PAYMENT_LINES
 from .pricing import business_date, business_day_window
 from .seats import BOSSES
@@ -24,6 +28,45 @@ def _is_boss_session(s: sqlite3.Row) -> bool:
     """Boss personal tabs are excluded from guest sales reports."""
     zone = s["zone"] if "zone" in s.keys() else None
     return (zone or "") == "boss"
+
+
+def _persist_daily_snapshot(conn: sqlite3.Connection, report: dict) -> None:
+    """Save live day totals so Reports still work after sessions are wiped."""
+    if int(report.get("session_count") or 0) <= 0 and float(report.get("gross_sales") or 0) <= 0:
+        # Still persist if claims / cash tilt were recorded for the night.
+        if float(report.get("claims_total") or 0) <= 0 and float(report.get("cash_tilt") or 0) <= 0:
+            return
+    upsert_daily_report_snapshot(
+        conn,
+        business_date=str(report["business_date"]),
+        gross_sales=float(report.get("gross_sales") or 0),
+        session_count=int(report.get("session_count") or 0),
+        claims_total=float(report.get("claims_total") or 0),
+        cash_tilt=float(report.get("cash_tilt") or 0),
+        by_payment_method=list(report.get("by_payment_method") or []),
+        sessions=list(report.get("sessions") or []),
+        claims=list(report.get("claims") or []),
+    )
+
+
+def _report_from_snapshot(biz: date, snap: dict, *, start: datetime, end: datetime) -> dict:
+    claims = list(snap.get("claims") or [])
+    claims_total = round(float(snap.get("claims_total") or 0), 1)
+    total = round(float(snap.get("gross_sales") or 0), 1)
+    return {
+        "business_date": biz.isoformat(),
+        "window": f"{start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')} (HK)",
+        "session_count": int(snap.get("session_count") or 0),
+        "gross_sales": total,
+        "sessions": list(snap.get("sessions") or []),
+        "by_payment_method": list(snap.get("by_payment_method") or []),
+        "claims": claims,
+        "claims_total": claims_total,
+        "net_after_claims": round(total - claims_total, 1),
+        "cash_tilt": round(float(snap.get("cash_tilt") or 0), 1),
+        "from_snapshot": True,
+        "snapshot_updated_at": snap.get("updated_at"),
+    }
 
 
 def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
@@ -84,7 +127,7 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
     claims_total = round(sum(c["amount"] for c in claim_rows), 1)
     cash_tilt = round(get_cash_tilt(conn, biz.isoformat()), 1)
 
-    return {
+    live = {
         "business_date": biz.isoformat(),
         "window": f"{start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')} (HK)",
         "session_count": len(rows),
@@ -98,7 +141,25 @@ def daily_sales_report(conn: sqlite3.Connection, biz: date) -> dict:
         "claims_total": claims_total,
         "net_after_claims": round(total - claims_total, 1),
         "cash_tilt": cash_tilt,
+        "from_snapshot": False,
+        "snapshot_updated_at": None,
     }
+
+    # Live night still open / recorded — keep a durable snapshot.
+    if live["session_count"] or live["claims_total"] or live["cash_tilt"] or live["gross_sales"]:
+        _persist_daily_snapshot(conn, live)
+        return live
+
+    # Past day after a reset/redeploy wipe — fall back to saved close.
+    snap = get_daily_report_snapshot(conn, biz.isoformat())
+    if snap and (
+        int(snap.get("session_count") or 0)
+        or float(snap.get("gross_sales") or 0)
+        or float(snap.get("claims_total") or 0)
+        or float(snap.get("cash_tilt") or 0)
+    ):
+        return _report_from_snapshot(biz, snap, start=start, end=end)
+    return live
 
 
 def _money_line(amount: float) -> str:
@@ -187,12 +248,18 @@ def monthly_sales_report(conn: sqlite3.Connection, year: int, month: int) -> dic
     month_sessions = 0
     for d in range(1, last + 1):
         day = daily_sales_report(conn, date(year, month, d))
-        if day["session_count"]:
+        if (
+            day["session_count"]
+            or day["gross_sales"]
+            or day["claims_total"]
+            or day["cash_tilt"]
+        ):
             days.append(
                 {
                     "business_date": day["business_date"],
                     "session_count": day["session_count"],
                     "gross_sales": day["gross_sales"],
+                    "from_snapshot": bool(day.get("from_snapshot")),
                 }
             )
             month_total += day["gross_sales"]
