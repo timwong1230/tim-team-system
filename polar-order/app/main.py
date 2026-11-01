@@ -73,6 +73,7 @@ from .reports import (
     format_whatsapp_sales_report,
     item_purchase_report,
     monthly_boss_report,
+    month_to_date_sales,
     monthly_sales_report,
 )
 from .bank_evidence import (
@@ -2193,6 +2194,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
 
     conn = connect()
     daily = daily_sales_report(conn, biz)
+    mtd = month_to_date_sales(conn, biz)
     monthly = monthly_sales_report(conn, year, mon)
     items = item_purchase_report(conn, year=year, month=mon)
     bosses = monthly_boss_report(conn, year, mon)
@@ -2205,6 +2207,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "title": "Reports",
             "pin": pin,
             "daily": daily,
+            "mtd": mtd,
             "monthly": monthly,
             "items": items,
             "bosses": bosses,
@@ -2504,7 +2507,7 @@ def _sync_daily_sales_for_biz(biz: date) -> dict[str, Any]:
         )
     conn = connect()
     daily = daily_sales_report(conn, biz)
-    monthly = monthly_sales_report(conn, biz.year, biz.month)
+    mtd = month_to_date_sales(conn, biz)
     conn.close()
     row = build_daily_sales_sheet_row(
         business_date=biz,
@@ -2512,7 +2515,7 @@ def _sync_daily_sales_for_biz(biz: date) -> dict[str, Any]:
         claims_total=float(daily["claims_total"]),
         daily_sales=float(daily["gross_sales"]),
         cash_tilt=float(daily["cash_tilt"]),
-        monthly_total=float(monthly["gross_sales"]),
+        monthly_total=float(mtd["gross_sales"]),
     )
     return upsert_daily_sales_row(row)
 
@@ -2566,7 +2569,7 @@ def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
 
     conn = connect()
     daily = daily_sales_report(conn, biz)
-    monthly = monthly_sales_report(conn, biz.year, biz.month)
+    mtd = month_to_date_sales(conn, biz)
     conn.close()
 
     message = format_whatsapp_sales_report(
@@ -2575,12 +2578,14 @@ def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
         claims_total=float(daily["claims_total"]),
         daily_sales=float(daily["gross_sales"]),
         cash_tilt=float(daily["cash_tilt"]),
-        monthly_total=float(monthly["gross_sales"]),
+        monthly_total=float(mtd["gross_sales"]),
     )
     return {
         "ok": True,
         "business_date": biz.isoformat(),
         "message": message,
+        "monthly_total": float(mtd["gross_sales"]),
+        "monthly_days": len(mtd["days"]),
         "wa_url": f"https://wa.me/?text={quote(message)}",
     }
 

@@ -20,7 +20,15 @@
     </form>
     <p class="muted">{{ daily.window }}</p>
     <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(daily.gross_sales) }}</div>
-    <div class="muted">{{ daily.session_count }} closed tables</div>
+    <div class="muted">{{ daily.session_count }} closed tables · Daily Sales</div>
+    <div class="cart-line" style="margin-top:10px;font-weight:700">
+      <div>Monthly Total（本月累計至呢日）</div>
+      <div>${{ '%.0f'|format(mtd.gross_sales) }}</div>
+    </div>
+    <div class="muted" style="margin-top:0">
+      {{ mtd.days|length }} night{% if mtd.days|length != 1 %}s{% endif %} with sales in {{ mtd.label }}
+      · WhatsApp「Monthly Total」用呢個數
+    </div>
     {% if daily.by_payment_method %}
     <div class="pay-breakdown" style="margin:12px 0 4px">
       {% for p in daily.by_payment_method %}

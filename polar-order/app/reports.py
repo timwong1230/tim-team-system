@@ -180,31 +180,86 @@ def format_whatsapp_sales_report(
     return "\n".join(lines)
 
 
-def monthly_sales_report(conn: sqlite3.Connection, year: int, month: int) -> dict:
-    last = monthrange(year, month)[1]
+def _closed_guest_sales_by_business_date(
+    conn: sqlite3.Connection,
+) -> dict[str, dict[str, float | int]]:
+    """Map business_date → {gross_sales, session_count} for guest tables only."""
+    sessions = conn.execute(
+        """
+        SELECT s.total, s.business_date, s.closed_at
+        FROM sessions s
+        JOIN tables t ON t.id = s.table_id
+        WHERE s.status = 'closed' AND s.closed_at IS NOT NULL
+          AND COALESCE(t.zone, '') NOT IN ('boss', 'demo')
+        """
+    ).fetchall()
+    by_day: dict[str, dict[str, float | int]] = {}
+    for s in sessions:
+        if s["business_date"]:
+            bd = str(s["business_date"]).strip()
+            # Guard against accidental timestamps stored in business_date.
+            if len(bd) >= 10 and bd[4] == "-" and bd[7] == "-":
+                bd = bd[:10]
+            else:
+                try:
+                    bd = date.fromisoformat(bd).isoformat()
+                except ValueError:
+                    closed = _parse_iso(s["closed_at"])
+                    bd = business_date(closed).isoformat()
+        else:
+            closed = _parse_iso(s["closed_at"])
+            bd = business_date(closed).isoformat()
+        bucket = by_day.setdefault(bd, {"gross_sales": 0.0, "session_count": 0})
+        bucket["gross_sales"] = float(bucket["gross_sales"]) + float(s["total"] or 0)
+        bucket["session_count"] = int(bucket["session_count"]) + 1
+    for bucket in by_day.values():
+        bucket["gross_sales"] = round(float(bucket["gross_sales"]), 1)
+    return by_day
+
+
+def month_to_date_sales(conn: sqlite3.Connection, through: date) -> dict:
+    """Sum guest gross sales from the 1st through ``through`` (inclusive).
+
+    Used for WhatsApp / Daily_Sales «Monthly Total» — running MTD as of that
+    business night, not the whole calendar month after the fact.
+    """
+    by_day = _closed_guest_sales_by_business_date(conn)
+    start = date(through.year, through.month, 1)
     days = []
     month_total = 0.0
     month_sessions = 0
-    for d in range(1, last + 1):
-        day = daily_sales_report(conn, date(year, month, d))
-        if day["session_count"]:
+    cursor = start
+    while cursor <= through:
+        key = cursor.isoformat()
+        row = by_day.get(key)
+        if row and int(row["session_count"]):
+            gross = float(row["gross_sales"])
+            count = int(row["session_count"])
             days.append(
                 {
-                    "business_date": day["business_date"],
-                    "session_count": day["session_count"],
-                    "gross_sales": day["gross_sales"],
+                    "business_date": key,
+                    "session_count": count,
+                    "gross_sales": gross,
                 }
             )
-            month_total += day["gross_sales"]
-            month_sessions += day["session_count"]
+            month_total += gross
+            month_sessions += count
+        cursor += timedelta(days=1)
     return {
-        "year": year,
-        "month": month,
-        "label": f"{year}-{month:02d}",
+        "year": through.year,
+        "month": through.month,
+        "label": f"{through.year}-{through.month:02d}",
+        "through": through.isoformat(),
         "session_count": month_sessions,
         "gross_sales": round(month_total, 1),
         "days": days,
     }
+
+
+def monthly_sales_report(conn: sqlite3.Connection, year: int, month: int) -> dict:
+    """Full calendar-month guest sales (for the Monthly sales card)."""
+    last = monthrange(year, month)[1]
+    return month_to_date_sales(conn, date(year, month, last))
 
 
 def item_purchase_report(
