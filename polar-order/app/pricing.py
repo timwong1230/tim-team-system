@@ -170,6 +170,14 @@ def price_order_lines(
     return priced
 
 
+def round_hkd_whole(amount: float) -> float:
+    """Nearest whole HKD (half-up). Matches bill UI Math.round for Visa / cash."""
+    n = float(amount or 0)
+    if n <= 0:
+        return 0.0
+    return float(math.floor(n + 0.5))
+
+
 def compute_bill(
     lines: list[dict],
     party_size: int,
@@ -185,6 +193,8 @@ def compute_bill(
     - Service charge is on (non–Free Flow products + snack) × rate.
       Free Flow packages have no 10% service charge.
     - Service charge is always rounded **up** to a whole dollar (no cents).
+    - Amount due is always a whole HKD (half-up) so Visa/terminal
+      settlement matches Daily report payment totals (no leftover .1/.4/.6).
     - snack_waived: guest declined bar snacks → $0 snack charge.
     """
     subtotal = round(sum(float(x["line_total"]) for x in lines), 1)
@@ -206,7 +216,10 @@ def compute_bill(
     except (TypeError, ValueError):
         disc = 0.0
     discount_amount = round(discount_base * (disc / 100.0), 1)
-    total = round(subtotal + snack_charge + service - discount_amount, 1)
+    raw_total = round(subtotal + snack_charge + service - discount_amount, 1)
+    # Promo drink prices can leave tenths (e.g. $68×20% off → $54.4). Staff
+    # charge the on-screen whole dollar on Visa; persist that same amount.
+    total = round_hkd_whole(raw_total)
     return {
         "subtotal": subtotal,
         "serviceable_subtotal": serviceable_subtotal,
