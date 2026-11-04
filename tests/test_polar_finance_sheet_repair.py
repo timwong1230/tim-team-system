@@ -94,6 +94,18 @@ def test_repair_finance_workbook_updates_tabs():
         value_input_option="USER_ENTERED",
     )
     pl.update.assert_any_call("B5", [[11]], value_input_option="USER_ENTERED")
+    pl.update.assert_any_call("B4", [[2026]], value_input_option="USER_ENTERED")
+    daily.update.assert_any_call(
+        "Q5",
+        [["='P&L_Monthly'!B5"]],
+        value_input_option="USER_ENTERED",
+    )
+    daily.update.assert_any_call(
+        "Q4",
+        [["='P&L_Monthly'!B4"]],
+        value_input_option="USER_ENTERED",
+    )
+    assert pl.add_validation.call_count >= 2
     bs.update.assert_any_call(
         "B4", [["2026-11-04"]], value_input_option="USER_ENTERED"
     )
@@ -102,3 +114,21 @@ def test_repair_finance_workbook_updates_tabs():
         [[""] * 14 for _ in range(40)],
         value_input_option="RAW",
     )
+    assert "P&L_Monthly Year/Month dropdowns (pick, don't type)" in result["actions"]
+
+
+def test_apply_year_month_dropdowns_lists():
+    from gspread.utils import ValidationConditionType
+
+    from app.sheets_sync import _apply_year_month_dropdowns
+
+    pl = MagicMock()
+    _apply_year_month_dropdowns(pl, year=2026, month=11)
+    assert pl.add_validation.call_count == 2
+    year_call, month_call = pl.add_validation.call_args_list
+    assert year_call.args[0] == "B4"
+    assert year_call.args[1] == ValidationConditionType.one_of_list
+    assert "2026" in year_call.args[2]
+    assert month_call.args[0] == "B5"
+    assert month_call.args[2] == [str(m) for m in range(1, 13)]
+    assert month_call.kwargs.get("showCustomUi") is True
