@@ -78,29 +78,79 @@ def sheets_configured() -> bool:
         return False
 
 
-def sheets_status() -> dict[str, Any]:
+def format_sheets_error(exc: BaseException) -> str:
+    """Human-readable Sheets/Google error — never return a blank string."""
+    parts: list[str] = []
+    cur: BaseException | None = exc
+    for _ in range(5):
+        if cur is None:
+            break
+        name = type(cur).__name__
+        msg = (str(cur) or "").strip()
+        resp = getattr(cur, "resp", None)
+        status = getattr(resp, "status", None) if resp is not None else None
+        reason = getattr(resp, "reason", None) if resp is not None else None
+        content = getattr(cur, "content", None)
+        bit = f"{name}"
+        if status:
+            bit += f" HTTP {status}"
+        if reason:
+            bit += f" ({reason})"
+        if msg:
+            bit += f": {msg}"
+        parts.append(bit)
+        if isinstance(content, (bytes, bytearray)):
+            parts.append(content.decode("utf-8", errors="replace")[:400])
+        elif isinstance(content, str) and content.strip():
+            parts.append(content.strip()[:400])
+        # gspread APIError often nests the response JSON in .args
+        if not msg and getattr(cur, "args", None):
+            parts.append(repr(cur.args)[:400])
+        cur = cur.__cause__ or cur.__context__
+    text = " | ".join(p for p in parts if p).strip()
+    return text or f"{type(exc).__name__}: (no message — check Sheets API enabled + SA Editor share)"
+
+
+def sheets_status(*, probe: bool = False) -> dict[str, Any]:
     """Staff-safe diagnostics (no secrets)."""
     gap = sheets_config_gap()
     raw = _raw_credentials_text()
     parsed_ok = False
     client_email = None
+    private_key_ok = False
     if raw:
         try:
             data = _parse_credentials_json(raw)
             parsed_ok = isinstance(data, dict)
             if parsed_ok:
                 client_email = str(data.get("client_email") or "") or None
+                pk = str(data.get("private_key") or "")
+                private_key_ok = (
+                    "BEGIN PRIVATE KEY" in pk and "\n" in pk and "END PRIVATE KEY" in pk
+                )
         except SheetsNotConfigured:
             parsed_ok = False
-    return {
+    out: dict[str, Any] = {
         "ready": gap is None,
         "gap": gap,
         "has_sheet_id": bool(_sheet_id()),
         "sheet_id_suffix": (_sheet_id()[-8:] if _sheet_id() else None),
         "has_credentials_env": bool(raw),
         "credentials_parse_ok": parsed_ok,
+        "private_key_looks_ok": private_key_ok,
         "service_account_email": client_email,
     }
+    if probe and gap is None:
+        try:
+            spreadsheet = _open_spreadsheet()
+            titles = [ws.title for ws in spreadsheet.worksheets()[:12]]
+            out["probe_ok"] = True
+            out["spreadsheet_title"] = spreadsheet.title
+            out["worksheets"] = titles
+        except Exception as exc:  # noqa: BLE001
+            out["probe_ok"] = False
+            out["probe_error"] = format_sheets_error(exc)
+    return out
 
 
 def sheets_config_gap() -> str | None:
@@ -168,6 +218,24 @@ def _parse_credentials_json(raw: str) -> dict[str, Any]:
             ) from exc
     if not isinstance(data, dict):
         raise SheetsNotConfigured("POLAR_GSPREAD_KEY 必須係 JSON object")
+    return _normalize_service_account(data)
+
+
+def _normalize_service_account(data: dict[str, Any]) -> dict[str, Any]:
+    """Fix private_key newlines mangled by env-var paste."""
+    pk = data.get("private_key")
+    if not isinstance(pk, str) or "BEGIN" not in pk:
+        return data
+    fixed = pk
+    # Double-escaped \\n left as two chars breaks Google auth.
+    if "\\n" in fixed:
+        fixed = fixed.replace("\\n", "\n")
+    # Some pastes use literal "\n" with spaces removed incorrectly.
+    if "-----BEGIN" in fixed and "\n" not in fixed and " " in fixed:
+        fixed = fixed.replace("-----BEGIN PRIVATE KEY----- ", "-----BEGIN PRIVATE KEY-----\n")
+        fixed = fixed.replace(" -----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----\n")
+    if fixed != pk:
+        data = {**data, "private_key": fixed}
     return data
 
 

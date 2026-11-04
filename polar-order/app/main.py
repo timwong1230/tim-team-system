@@ -89,6 +89,7 @@ from .bank_import import parse_bank_csv
 from .sheets_sync import (
     SheetsNotConfigured,
     append_bank_entries,
+    format_sheets_error,
     sheets_config_gap,
     sheets_configured,
     sheets_status,
@@ -2755,11 +2756,15 @@ def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
 
 
 @app.get("/api/staff/sheets-status")
-def staff_sheets_status(pin: str = ""):
-    """Why Daily_Sales sync is on/off — no secret values returned."""
+def staff_sheets_status(pin: str = "", probe: str = ""):
+    """Why Daily_Sales sync is on/off — no secret values returned.
+
+    Pass probe=1 to actually open the Finance spreadsheet (catches API / share issues).
+    """
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
-    return {"ok": True, **sheets_status()}
+    do_probe = str(probe or "").strip().lower() in {"1", "true", "yes", "y"}
+    return {"ok": True, **sheets_status(probe=do_probe)}
 
 
 @app.post("/api/staff/sync-daily-sales")
@@ -2781,7 +2786,9 @@ def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
     except SheetsNotConfigured as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — surface Sheets errors to staff
-        raise HTTPException(502, f"Google Sheets sync failed: {exc}") from exc
+        raise HTTPException(
+            502, f"Google Sheets sync failed: {format_sheets_error(exc)}"
+        ) from exc
 
 
 @app.post("/api/staff/import-bank-csv")
