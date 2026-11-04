@@ -89,7 +89,9 @@ from .bank_import import parse_bank_csv
 from .sheets_sync import (
     SheetsNotConfigured,
     append_bank_entries,
+    sheets_config_gap,
     sheets_configured,
+    sheets_status,
     upsert_daily_sales_row,
 )
 from .ai_host import ask_ai
@@ -2371,6 +2373,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
             "sheets_sync_ready": sheets_configured(),
+            "sheets_sync_gap": sheets_config_gap(),
             "bank_evidence_recent": list_recent_evidence(12),
         },
     )
@@ -2749,6 +2752,14 @@ def staff_whatsapp_sales_report(pin: str = "", day: str = ""):
         "message": message,
         "wa_url": f"https://wa.me/?text={quote(message)}",
     }
+
+
+@app.get("/api/staff/sheets-status")
+def staff_sheets_status(pin: str = ""):
+    """Why Daily_Sales sync is on/off — no secret values returned."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    return {"ok": True, **sheets_status()}
 
 
 @app.post("/api/staff/sync-daily-sales")

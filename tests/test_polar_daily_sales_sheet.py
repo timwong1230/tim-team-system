@@ -153,6 +153,9 @@ def test_sync_endpoint_requires_config():
         assert b"Google Sheet" in page.content
         assert b"Sync now (backup)" in page.content
         assert b"Upload bank CSV" in page.content
+        # Missing credentials must be visible — not a silent disabled tap
+        assert "Sheet sync 而家關咗".encode("utf-8") in page.content
+        assert b'data-blocked="1"' in page.content
 
         res = client.post(
             "/api/staff/sync-daily-sales",

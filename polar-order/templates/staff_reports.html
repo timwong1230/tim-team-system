@@ -146,9 +146,20 @@
     {% if sheets_sync_ready %}
     <button class="primary" type="button" id="sheetSyncBtn" style="width:auto">Sync now (backup)</button>
     {% else %}
-    <button class="ghost" type="button" id="sheetSyncBtn" style="width:auto" disabled>Sync now (backup)</button>
-    <p class="muted" style="margin-top:8px">Server 未設定 <code>POLAR_DAILY_SALES_SHEET_ID</code> + <code>POLAR_GSPREAD_KEY</code>。</p>
+    <div class="card" style="margin:10px 0;border-color:rgba(240,192,192,0.55);background:rgba(80,20,20,0.25)">
+      <p style="margin:0;color:#f0c0c0">
+        <strong>Sheet sync 而家關咗</strong> — {{ sheets_sync_gap or '未設定 Google credentials' }}
+      </p>
+      <p class="muted" style="margin:8px 0 0">
+        所以近幾日 Daily_Sales <strong>唔會自動更新</strong>，Sync / Upload bank CSV 都寫唔入 sheet。
+        Tim 去 Render → <code>polar-order</code> → Environment → <strong>Edit</strong>，確認有
+        <code>POLAR_GSPREAD_KEY</code>（Value = 成份 JSON），Save 後再 <strong>Manual Deploy</strong>。
+      </p>
+    </div>
+    <button class="ghost" type="button" id="sheetSyncBtn" style="width:auto"
+            data-blocked="1">Sync now (backup)</button>
     {% endif %}
+    <button class="ghost" type="button" id="sheetStatusBtn" style="width:auto;margin-left:8px">檢查設定</button>
     <p class="muted" id="sheetSyncMsg" style="margin-top:10px;margin-bottom:0"></p>
 
     <hr class="claim-sep" />
@@ -166,7 +177,8 @@
     <input class="field" id="bankCsvFile" type="file" accept=".csv,text/csv" />
     <button class="primary" type="button" id="bankImportBtn" style="width:auto">Upload bank CSV</button>
     {% else %}
-    <button class="ghost" type="button" disabled style="width:auto">Upload bank CSV</button>
+    <button class="ghost" type="button" id="bankImportBtn" style="width:auto"
+            data-blocked="1">Upload bank CSV</button>
     {% endif %}
     <p class="muted" id="bankImportMsg" style="margin-top:10px;margin-bottom:0"></p>
 
@@ -366,7 +378,7 @@
       document.getElementById('cashTiltAmount').value = String(Math.round(Number(data.cash_tilt) || 0));
       msg.textContent = data.sheets_auto_sync_queued
         ? 'Saved. Daily_Sales auto-sync queued.'
-        : 'Saved.';
+        : '已儲存 Cash Tilt。但 Google Sheet sync 未設定，唔會自動寫入 Daily_Sales — 見下面紅框。';
       if (data.sheets_auto_sync_queued) {
         const syncMsg = document.getElementById('sheetSyncMsg');
         if (syncMsg) syncMsg.textContent = 'Auto-sync queued after Cash Tilt…';
@@ -379,6 +391,8 @@
   document.getElementById('waSalesBtn')?.addEventListener('click', async () => {
     const msg = document.getElementById('waSalesMsg');
     msg.textContent = 'Building message…';
+    // Open the tab during the click gesture — iOS blocks window.open after await.
+    const waTab = window.open('about:blank', '_blank');
     try {
       const res = await fetch(
         `/api/staff/whatsapp-sales-report?pin=${encodeURIComponent(PIN)}&day=${encodeURIComponent(BIZ_DAY)}`
@@ -387,17 +401,54 @@
       if (!res.ok) throw new Error(data.detail || 'Failed to build report');
       msg.textContent = data.message || '';
       if (data.wa_url) {
-        window.open(data.wa_url, '_blank');
+        if (waTab) {
+          waTab.location = data.wa_url;
+        } else {
+          // Popup blocked — still show copyable text above.
+          msg.textContent = (data.message || '') + '\n\n（瀏覽器擋住 WhatsApp 視窗 — 可以手動複製上面訊息）';
+        }
+      } else if (waTab) {
+        waTab.close();
       }
     } catch (err) {
+      if (waTab) waTab.close();
       msg.textContent = err.message || 'Failed';
+    }
+  });
+
+  document.getElementById('sheetStatusBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('sheetSyncMsg');
+    msg.textContent = 'Checking…';
+    try {
+      const res = await fetch(
+        `/api/staff/sheets-status?pin=${encodeURIComponent(PIN)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Status check failed');
+      if (data.ready) {
+        msg.textContent =
+          `OK — sync ready` +
+          (data.service_account_email ? `（${data.service_account_email}）` : '') +
+          '。可以 Sync now / Save Cash Tilt。';
+      } else {
+        msg.textContent =
+          (data.gap || '未 ready') +
+          `\ncredentials env: ${data.has_credentials_env ? '有' : '無'}` +
+          ` · JSON parse: ${data.credentials_parse_ok ? 'OK' : '失敗'}` +
+          ` · sheet id: ${data.has_sheet_id ? '有' : '無'}`;
+      }
+    } catch (err) {
+      msg.textContent = err.message || 'Status check failed';
     }
   });
 
   document.getElementById('sheetSyncBtn')?.addEventListener('click', async () => {
     const btn = document.getElementById('sheetSyncBtn');
-    if (btn?.disabled) return;
     const msg = document.getElementById('sheetSyncMsg');
+    if (btn?.dataset.blocked === '1') {
+      msg.textContent = {{ (sheets_sync_gap or 'Google Sheet sync 未設定 — 要 Tim 喺 Render 填 POLAR_GSPREAD_KEY')|tojson }};
+      return;
+    }
     msg.textContent = 'Syncing…';
     try {
       const body = new FormData();
@@ -414,7 +465,12 @@
   });
 
   document.getElementById('bankImportBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('bankImportBtn');
     const msg = document.getElementById('bankImportMsg');
+    if (btn?.dataset.blocked === '1') {
+      msg.textContent = {{ (sheets_sync_gap or 'Google Sheet sync 未設定 — 要 Tim 喺 Render 填 POLAR_GSPREAD_KEY')|tojson }};
+      return;
+    }
     const input = document.getElementById('bankCsvFile');
     const account = document.getElementById('bankAccount')?.value || 'hsbc_ca';
     if (!input?.files?.length) {
