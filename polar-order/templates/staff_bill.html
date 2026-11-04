@@ -376,7 +376,8 @@
     if (Number.isNaN(d)) d = 0;
     d = Math.max(0, Math.min(100, d));
     const discAmt = (subtotal + snack) * (d / 100);
-    const total = subtotal + snack + service - discAmt;
+    // Whole HKD amount due — same figure staff key into Visa / cash.
+    const total = Math.round(subtotal + snack + service - discAmt);
     document.getElementById('billTotal').textContent = money(total);
     document.getElementById('vTotal').textContent = money(total);
     document.getElementById('discountHidden').value = d;
