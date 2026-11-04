@@ -418,24 +418,33 @@
 
   document.getElementById('sheetStatusBtn')?.addEventListener('click', async () => {
     const msg = document.getElementById('sheetSyncMsg');
-    msg.textContent = 'Checking…';
+    msg.textContent = 'Checking…（會試開 Google Sheet）';
     try {
       const res = await fetch(
-        `/api/staff/sheets-status?pin=${encodeURIComponent(PIN)}`
+        `/api/staff/sheets-status?pin=${encodeURIComponent(PIN)}&probe=1`
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Status check failed');
-      if (data.ready) {
-        msg.textContent =
-          `OK — sync ready` +
-          (data.service_account_email ? `（${data.service_account_email}）` : '') +
-          '。可以 Sync now / Save Cash Tilt。';
-      } else {
+      if (!data.ready) {
         msg.textContent =
           (data.gap || '未 ready') +
           `\ncredentials env: ${data.has_credentials_env ? '有' : '無'}` +
           ` · JSON parse: ${data.credentials_parse_ok ? 'OK' : '失敗'}` +
+          ` · private_key: ${data.private_key_looks_ok ? 'OK' : '可疑'}` +
           ` · sheet id: ${data.has_sheet_id ? '有' : '無'}`;
+        return;
+      }
+      if (data.probe_ok) {
+        msg.textContent =
+          `OK — 開到 Sheet「${data.spreadsheet_title || ''}」` +
+          (data.service_account_email ? `（${data.service_account_email}）` : '') +
+          ` · tabs: ${(data.worksheets || []).join(', ')}` +
+          '。可以 Sync now。';
+      } else {
+        msg.textContent =
+          'Credentials 讀到，但開唔到 Sheet：\n' +
+          (data.probe_error || 'unknown') +
+          '\n常見原因：Google Cloud 未開 Sheets API，或 private_key 換行壞咗要重新貼 JSON。';
       }
     } catch (err) {
       msg.textContent = err.message || 'Status check failed';
