@@ -65,28 +65,19 @@ def test_build_daily_sales_sheet_row_matches_whatsapp_fields():
     assert "Master: $200" in wa
 
 
+def _daily_headers():
+    from app.sheets_sync import DAILY_SALES_HEADERS
+
+    return list(DAILY_SALES_HEADERS)
+
+
 def test_upsert_updates_existing_business_date():
     from app.sheets_sync import upsert_daily_sales_row
 
     ws = MagicMock()
     ws.col_values.return_value = ["business_date", "2026-10-25"]
     ws.title = "Daily_Sales"
-    ws.row_values.return_value = [
-        "business_date",
-        "Cash",
-        "Visa",
-        "Master",
-        "AE",
-        "Alipay",
-        "UnionPay",
-        "WeChat pay",
-        "Deposit",
-        "Claim",
-        "Daily Sales",
-        "Cash Tilt",
-        "Monthly Total",
-        "synced_at",
-    ]
+    ws.row_values.return_value = _daily_headers()
 
     with (
         patch.dict(
@@ -119,8 +110,72 @@ def test_upsert_updates_existing_business_date():
         )
 
     assert result["action"] == "updated"
+    assert result["sheet_row"] == 2
+    assert result["header_row"] == 1
     ws.update.assert_called()
-    ws.append_row.assert_not_called()
+    # Must target an explicit row — never rely on append_row
+    assert ws.append_row.call_count == 0
+
+
+def test_upsert_finance_template_header_row_4_and_date_formats():
+    """Live Finance workbook: title rows 1–3, headers on row 4."""
+    from app.sheets_sync import upsert_daily_sales_row
+
+    headers = _daily_headers()
+    ws = MagicMock()
+    ws.title = "Daily_Sales"
+
+    def row_values(r):
+        if r == 4:
+            return headers
+        if r < 4:
+            return ["Daily_Sales — auto from Polar Order"]
+        return []
+
+    ws.row_values.side_effect = row_values
+    # Row4 header + existing night stored as locale / serial-ish string
+    ws.col_values.return_value = [
+        "title",
+        "note",
+        "bridge",
+        "business_date",
+        "11/03/2026",
+    ]
+
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "POLAR_DAILY_SALES_SHEET_ID": "sheet123",
+                "POLAR_GSPREAD_KEY": '{"type":"service_account","client_email":"x@y.iam.gserviceaccount.com"}',
+            },
+            clear=False,
+        ),
+        patch("app.sheets_sync._open_named_worksheet", return_value=ws),
+    ):
+        result = upsert_daily_sales_row(
+            {
+                "business_date": "2026-11-03",
+                "Cash": 0,
+                "Visa": 100,
+                "Master": 0,
+                "AE": 0,
+                "Alipay": 0,
+                "UnionPay": 0,
+                "WeChat pay": 0,
+                "Deposit": 0,
+                "Claim": 0,
+                "Daily Sales": 100,
+                "Cash Tilt": 0,
+                "Monthly Total": 100,
+                "synced_at": "2026-11-04T01:00:00Z",
+            }
+        )
+
+    assert result["header_row"] == 4
+    assert result["action"] == "updated"
+    assert result["sheet_row"] == 5
+    assert ws.update.call_args.args[0] == "A5"
 
 
 def test_sync_endpoint_requires_config():

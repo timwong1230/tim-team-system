@@ -467,7 +467,10 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Sync failed');
       const action = data.action === 'updated' ? 'Updated' : 'Added';
-      msg.textContent = `${action} ${data.business_date} in Google Sheet.`;
+      const where = data.sheet_row
+        ? ` → tab ${data.worksheet || 'Daily_Sales'} row ${data.sheet_row}`
+        : '';
+      msg.textContent = `${action} ${data.business_date} in Google Sheet${where}.`;
     } catch (err) {
       msg.textContent = err.message || 'Sync failed';
     }
