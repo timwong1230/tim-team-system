@@ -90,6 +90,7 @@ from .sheets_sync import (
     SheetsNotConfigured,
     append_bank_entries,
     format_sheets_error,
+    repair_finance_workbook,
     sheets_config_gap,
     sheets_configured,
     sheets_status,
@@ -2767,6 +2768,41 @@ def staff_sheets_status(pin: str = "", probe: str = ""):
     return {"ok": True, **sheets_status(probe=do_probe)}
 
 
+@app.post("/api/staff/repair-finance-sheet")
+def staff_repair_finance_sheet(
+    pin: str = Form(...),
+    month: str = Form(""),
+):
+    """Fix KPI #NAME?, Helpers $0, empty Chart_of_Accounts, Daily_Sales junk cols."""
+    if pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    if not sheets_configured():
+        raise HTTPException(
+            503,
+            "Google Sheet sync not configured. Set POLAR_DAILY_SALES_SHEET_ID "
+            "and POLAR_GSPREAD_KEY on the server.",
+        )
+    report_month: int | None = None
+    if str(month or "").strip():
+        try:
+            report_month = int(str(month).strip())
+        except ValueError as exc:
+            raise HTTPException(400, "month must be 1–12") from exc
+        if report_month < 1 or report_month > 12:
+            raise HTTPException(400, "month must be 1–12")
+    try:
+        return repair_finance_workbook(
+            report_month=report_month,
+            as_of=business_date(datetime.now(HK)),
+        )
+    except SheetsNotConfigured as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            502, f"Finance sheet repair failed: {format_sheets_error(exc)}"
+        ) from exc
+
+
 @app.post("/api/staff/sync-daily-sales")
 def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
     """Upsert tonight's Daily_Sales row into Google Sheets (manual backup)."""
@@ -2782,13 +2818,30 @@ def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
         biz = today_biz
 
     try:
-        return _sync_daily_sales_for_biz(biz)
+        result = _sync_daily_sales_for_biz(biz)
     except SheetsNotConfigured as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — surface Sheets errors to staff
         raise HTTPException(
             502, f"Google Sheets sync failed: {format_sheets_error(exc)}"
         ) from exc
+
+    # One-shot workbook repair after first successful sync post-deploy
+    # (KPI #NAME?, Helpers $0, empty Chart, junk cols).
+    marker = DATA_DIR / ".finance_sheet_repaired_v1"
+    if not marker.exists():
+        try:
+            repair = repair_finance_workbook(
+                report_month=biz.month,
+                as_of=biz,
+            )
+            marker.write_text(repair.get("as_of") or biz.isoformat(), encoding="utf-8")
+            result["workbook_repaired"] = True
+            result["repair_actions"] = repair.get("actions") or []
+        except Exception as exc:  # noqa: BLE001 — sync already succeeded
+            result["workbook_repaired"] = False
+            result["repair_error"] = format_sheets_error(exc)
+    return result
 
 
 @app.post("/api/staff/import-bank-csv")

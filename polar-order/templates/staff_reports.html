@@ -160,6 +160,9 @@
             data-blocked="1">Sync now (backup)</button>
     {% endif %}
     <button class="ghost" type="button" id="sheetStatusBtn" style="width:auto;margin-left:8px">檢查設定</button>
+    {% if sheets_sync_ready %}
+    <button class="ghost" type="button" id="sheetRepairBtn" style="width:auto;margin-left:8px">Repair workbook</button>
+    {% endif %}
     <p class="muted" id="sheetSyncMsg" style="margin-top:10px;margin-bottom:0"></p>
 
     <hr class="claim-sep" />
@@ -473,6 +476,26 @@
       msg.textContent = `${action} ${data.business_date} in Google Sheet${where}.`;
     } catch (err) {
       msg.textContent = err.message || 'Sync failed';
+    }
+  });
+
+  document.getElementById('sheetRepairBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('sheetSyncMsg');
+    msg.textContent = 'Repairing Finance workbook（KPI / Helpers / Chart / junk）…';
+    try {
+      const body = new FormData();
+      body.set('pin', PIN);
+      body.set('month', String(parseInt(String(BIZ_DAY || '').slice(5, 7), 10) || ''));
+      const res = await fetch('/api/staff/repair-finance-sheet', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Repair failed');
+      const steps = (data.actions || []).join(' · ');
+      msg.textContent =
+        `Repaired「${data.spreadsheet_title || ''}」` +
+        (data.report_month ? ` · month ${data.report_month}` : '') +
+        (steps ? `\n${steps}` : '');
+    } catch (err) {
+      msg.textContent = err.message || 'Repair failed';
     }
   });
 
