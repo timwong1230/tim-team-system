@@ -547,3 +547,187 @@ def append_bank_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "sheet_id": _sheet_id(),
         "worksheet": title,
     }
+
+
+CHART_OF_ACCOUNTS_ROWS: tuple[tuple[Any, ...], ...] = (
+    ("Chart of Accounts", "", "", "", "", ""),
+    ("Bank_Entries 嘅 Nature 必須用呢度嘅名稱（下拉），先會入到 P&L / BS。", "", "", "", "", ""),
+    ("", "", "", "", "", ""),
+    ("account_code", "nature", "type", "pl_section", "bs_section", "notes"),
+    ("1000", "HSBC SA", "Asset", "", "Current assets", "Savings"),
+    ("1010", "HSBC CA", "Asset", "", "Current assets", "Current account"),
+    ("1100", "Cash on hand", "Asset", "", "Current assets", "Till / float（參考 Cash Tilt）"),
+    ("1200", "Deposits held", "Asset", "", "Non-current assets", "租約／水電按金"),
+    ("3000", "Partner capital", "Equity", "", "Equity", "開業資本"),
+    ("3100", "Partner drawings", "Equity", "", "Equity", "股東提取"),
+    ("3200", "Partner cash in", "Equity", "", "Equity", "股東注資（銀行入數）"),
+    ("4000", "Sales", "Revenue", "Sales", "", "銀行入數標 Sales；日銷售亦由 Daily_Sales 計"),
+    ("5000", "Drink / Alcohol", "COGS", "COGS", "", "酒水採購"),
+    ("5010", "Shisha stock", "COGS", "COGS", "", "水煙原料"),
+    ("5020", "Nuts / snacks", "COGS", "COGS", "", "小食"),
+    ("5030", "Wine cost", "COGS", "COGS", "", "葡萄酒進貨"),
+    ("5090", "Other COGS", "COGS", "COGS", "", "其他進貨"),
+    ("6000", "Rent", "Expense", "Operating expenses", "", ""),
+    ("6010", "Management fee", "Expense", "Operating expenses", "", ""),
+    ("6020", "Rates (差餉)", "Expense", "Operating expenses", "", ""),
+    ("6100", "Wages", "Expense", "Staff costs", "", "人工／外勞"),
+    ("6200", "Electricity", "Expense", "Utilities", "", "HKE"),
+    ("6210", "Water", "Expense", "Utilities", "", ""),
+    ("6220", "Internet", "Expense", "Utilities", "", "HKBN"),
+    ("6300", "Marketing fee", "Expense", "Operating expenses", "", ""),
+    ("6400", "Claim", "Expense", "Claims", "", "員工墊支報銷（銀行／現金）"),
+    ("6500", "Repairs & maintenance", "Expense", "Operating expenses", "", ""),
+    ("6900", "Miscellaneous", "Expense", "Operating expenses", "", ""),
+    ("6910", "Membership / BNI", "Expense", "Operating expenses", "", ""),
+)
+
+# ISO text dates in Daily_Sales!A — avoid locale TEXT(date) formats that break SUMIFS.
+_HELPER_MONTH = 'TEXT(Q4,"0000")&"-"&TEXT(Q5,"00")'
+_HELPER_YEAR = 'TEXT(Q4,"0000")'
+_PL_MONTH = 'TEXT(YEAR($D$4),"0000")&"-"&TEXT(MONTH($D$4),"00")'
+
+DAILY_SALES_HELPER_FORMULAS: dict[str, str] = {
+    "Q6": f'=SUMPRODUCT((LEFT($A$5:$A$1000,7)={_HELPER_MONTH})*($K$5:$K$1000))',
+    "Q7": f'=SUMPRODUCT((LEFT($A$5:$A$1000,7)={_HELPER_MONTH})*($J$5:$J$1000))',
+    "Q8": f'=SUMPRODUCT((LEFT($A$5:$A$1000,7)={_HELPER_MONTH})*($L$5:$L$1000))',
+    "Q9": f'=SUMPRODUCT((LEFT($A$5:$A$1000,4)={_HELPER_YEAR})*($K$5:$K$1000))',
+    "Q10": '=IFERROR(INDEX($L$5:$L$1000,COUNTA($A$5:$A$1000)),0)',
+}
+
+KPI_FORMULAS: dict[str, str] = {
+    "B4": "='P&L_Monthly'!B4",
+    "B5": "='P&L_Monthly'!B5",
+    "B7": "='P&L_Monthly'!B10",
+    "B8": "='P&L_Monthly'!B20",
+    "B9": "='P&L_Monthly'!B38",
+    "B10": "='P&L_Monthly'!B35",
+    "B11": (
+        '=IF(B7=0,0,ABS(SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Wages",'
+        "Bank_Entries!A:A,\">=\"&'P&L_Monthly'!D4,Bank_Entries!A:A,\"<=\"&'P&L_Monthly'!D5)+"
+        'SUMIFS(Bank_Entries!E:E,Bank_Entries!F:F,"Wages",'
+        "Bank_Entries!A:A,\">=\"&'P&L_Monthly'!D4,Bank_Entries!A:A,\"<=\"&'P&L_Monthly'!D5))/B7)"
+    ),
+    "B12": "=IF(B7=0,0,'P&L_Monthly'!B36/B7)",
+}
+
+
+def repair_finance_workbook(
+    *,
+    report_month: int | None = None,
+    as_of: date | None = None,
+) -> dict[str, Any]:
+    """Fix KPI #NAME?, Helpers $0, empty Chart_of_Accounts, and Daily_Sales junk cols.
+
+    Safe to re-run. Does not touch Daily_Sales A5:N data rows.
+    """
+    spreadsheet = _open_spreadsheet()
+    actions: list[str] = []
+    today = as_of or date.today()
+    month = int(report_month) if report_month else today.month
+
+    # --- Chart_of_Accounts ---
+    try:
+        chart = spreadsheet.worksheet("Chart_of_Accounts")
+    except Exception:
+        chart = spreadsheet.add_worksheet("Chart_of_Accounts", rows=40, cols=8)
+        actions.append("created Chart_of_Accounts")
+    existing = chart.get_all_values()
+    needs_chart = True
+    if existing:
+        flat = " ".join(c for row in existing for c in row)
+        if "HSBC SA" in flat and "account_code" in flat:
+            needs_chart = False
+    if needs_chart:
+        chart.clear()
+        chart.update(
+            "A1",
+            [list(r) for r in CHART_OF_ACCOUNTS_ROWS],
+            value_input_option="RAW",
+        )
+        actions.append("restored Chart_of_Accounts")
+
+    # --- Daily_Sales helpers + junk clear + bridge note ---
+    daily = spreadsheet.worksheet("Daily_Sales")
+    daily.update("A3", [[
+        "Sync writes under this header (row 4). Do not edit A–N number columns. "
+        "Helpers on the right auto-sum by Report year/month."
+    ]], value_input_option="RAW")
+    # Report year/month controls
+    daily.update("P3", [["Helpers (auto)"]], value_input_option="RAW")
+    daily.update("P4", [["Report year"]], value_input_option="RAW")
+    daily.update("Q4", [[today.year]], value_input_option="USER_ENTERED")
+    daily.update("P5", [["Report month (1-12)"]], value_input_option="RAW")
+    daily.update("Q5", [[month]], value_input_option="USER_ENTERED")
+    daily.update("P6", [["Month sales (Daily Sales col)"]], value_input_option="RAW")
+    daily.update("P7", [["Month claims (sheet)"]], value_input_option="RAW")
+    daily.update(
+        "P8",
+        [["Month cash tilt (last nonblank approx = sum)"]],
+        value_input_option="RAW",
+    )
+    daily.update("P9", [["YTD sales"]], value_input_option="RAW")
+    daily.update("P10", [["Latest Cash Tilt"]], value_input_option="RAW")
+    for cell, formula in DAILY_SALES_HELPER_FORMULAS.items():
+        daily.update(cell, [[formula]], value_input_option="USER_ENTERED")
+    actions.append("fixed Daily_Sales Helpers formulas")
+
+    # Clear old mis-append junk (far-right columns from broken append_row)
+    blank = [[""] * 14 for _ in range(40)]
+    daily.update("P11:AC50", blank, value_input_option="RAW")
+    actions.append("cleared Daily_Sales P11:AC50 junk")
+
+    # --- KPI quoted sheet refs ---
+    kpi = spreadsheet.worksheet("KPI")
+    for cell, formula in KPI_FORMULAS.items():
+        kpi.update(cell, [[formula]], value_input_option="USER_ENTERED")
+    actions.append("fixed KPI formulas (quoted P&L_Monthly)")
+
+    # --- P&L month + text-date sales formulas ---
+    pl = spreadsheet.worksheet("P&L_Monthly")
+    pl.update("B5", [[month]], value_input_option="USER_ENTERED")
+    pl.update(
+        "B8",
+        [[
+            f'=SUMPRODUCT((LEFT(Daily_Sales!$A$5:$A$1000,7)={_PL_MONTH})'
+            f'*(Daily_Sales!$K$5:$K$1000))'
+        ]],
+        value_input_option="USER_ENTERED",
+    )
+    pl.update(
+        "B35",
+        [[
+            f'=SUMPRODUCT((LEFT(Daily_Sales!$A$5:$A$1000,7)={_PL_MONTH})'
+            f'*(Daily_Sales!$J$5:$J$1000))'
+        ]],
+        value_input_option="USER_ENTERED",
+    )
+    actions.append(f"P&L_Monthly month→{month} + sales/claims formulas")
+
+    # --- Balance Sheet as-of ---
+    bs = spreadsheet.worksheet("Balance_Sheet")
+    bs.update("B4", [[today.isoformat()]], value_input_option="USER_ENTERED")
+    actions.append(f"Balance_Sheet as-of→{today.isoformat()}")
+
+    # Setup note: bridge sheet id no longer needed
+    try:
+        setup = spreadsheet.worksheet("Setup")
+        setup.update(
+            "A7",
+            [[
+                "7. Daily_Sales sync targets THIS workbook "
+                f"(id {_sheet_id()}) — no IMPORTRANGE bridge."
+            ]],
+            value_input_option="RAW",
+        )
+        actions.append("updated Setup bridge note")
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "sheet_id": _sheet_id(),
+        "spreadsheet_title": spreadsheet.title,
+        "actions": actions,
+        "report_month": month,
+        "as_of": today.isoformat(),
+    }
