@@ -142,10 +142,31 @@ async def lifespan(_: FastAPI):
             f"use {expected} for a one-shot wipe",
             flush=True,
         )
+    # One-shot Finance workbook repair on boot (KPI #NAME?, Helpers $0, Chart, junk).
+    # Survives even if staff never hits Sync / Repair after a deploy.
+    marker = DATA_DIR / ".finance_sheet_repaired_v1"
+    if sheets_configured() and not marker.exists():
+        try:
+            as_of = business_date(datetime.now(HK))
+            repair = repair_finance_workbook(
+                report_month=as_of.month,
+                as_of=as_of,
+            )
+            marker.write_text(repair.get("as_of") or as_of.isoformat(), encoding="utf-8")
+            print(
+                f"[polar] finance sheet repaired on boot: {repair.get('actions')}",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — never block startup
+            print(f"[polar] finance sheet boot repair skipped: {exc}", flush=True)
     yield
 
 
-app = FastAPI(title="Polar Lounge Order", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Polar Lounge Order",
+    version="0.1.1-finance-repair",
+    lifespan=lifespan,
+)
 
 
 @app.middleware("http")
@@ -2982,4 +3003,6 @@ def health():
         "db_exists": DB_PATH.exists(),
         "closed_sessions": closed,
         "daily_report_snapshots": snaps,
+        "app_version": app.version,
+        "finance_repair_ready": True,
     }
