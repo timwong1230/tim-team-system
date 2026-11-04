@@ -65,11 +65,40 @@ class SheetsNotConfigured(RuntimeError):
     """Missing sheet id or service-account credentials."""
 
 
+# Known Finance workbook — used when Render env forgot POLAR_DAILY_SALES_SHEET_ID.
+DEFAULT_DAILY_SALES_SHEET_ID = "1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9cF-I"
+
+
 def sheets_configured() -> bool:
     try:
         return sheets_config_gap() is None
     except SheetsNotConfigured:
         return False
+
+
+def sheets_status() -> dict[str, Any]:
+    """Staff-safe diagnostics (no secrets)."""
+    gap = sheets_config_gap()
+    raw = _raw_credentials_text()
+    parsed_ok = False
+    client_email = None
+    if raw:
+        try:
+            data = _parse_credentials_json(raw)
+            parsed_ok = isinstance(data, dict)
+            if parsed_ok:
+                client_email = str(data.get("client_email") or "") or None
+        except SheetsNotConfigured:
+            parsed_ok = False
+    return {
+        "ready": gap is None,
+        "gap": gap,
+        "has_sheet_id": bool(_sheet_id()),
+        "sheet_id_suffix": (_sheet_id()[-8:] if _sheet_id() else None),
+        "has_credentials_env": bool(raw),
+        "credentials_parse_ok": parsed_ok,
+        "service_account_email": client_email,
+    }
 
 
 def sheets_config_gap() -> str | None:
@@ -79,25 +108,65 @@ def sheets_config_gap() -> str | None:
     """
     if not _sheet_id():
         return "缺少 POLAR_DAILY_SALES_SHEET_ID（Render Environment）"
-    raw = (os.getenv("POLAR_GSPREAD_KEY") or os.getenv("GSPREAD_KEY") or "").strip()
+    raw = _raw_credentials_text()
     if not raw:
         return (
-            "缺少 POLAR_GSPREAD_KEY（Render Environment 要貼上 service account JSON；"
-            "Finance sheet 要 share 俾個 SA Editor）"
+            "缺少 POLAR_GSPREAD_KEY（Render → polar-order → Environment → Edit，"
+            "Key 名要完全係 POLAR_GSPREAD_KEY，Value 貼成份 JSON，Save 後 Manual Deploy）"
         )
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return "POLAR_GSPREAD_KEY 唔係有效 JSON（Render 入面嗰段 key 可能被截斷）"
-    if not isinstance(data, dict):
-        return "POLAR_GSPREAD_KEY 必須係 JSON object"
+        data = _parse_credentials_json(raw)
+    except SheetsNotConfigured as exc:
+        return str(exc)
     if not (data.get("client_email") and data.get("private_key")):
         return "POLAR_GSPREAD_KEY 缺少 client_email / private_key"
     return None
 
 
 def _sheet_id() -> str:
-    return (os.getenv("POLAR_DAILY_SALES_SHEET_ID") or "").strip()
+    return (
+        (os.getenv("POLAR_DAILY_SALES_SHEET_ID") or "").strip()
+        or DEFAULT_DAILY_SALES_SHEET_ID
+    )
+
+
+def _raw_credentials_text() -> str:
+    return (os.getenv("POLAR_GSPREAD_KEY") or os.getenv("GSPREAD_KEY") or "").strip()
+
+
+def _parse_credentials_json(raw: str) -> dict[str, Any]:
+    """Parse service-account JSON; tolerate common Render paste issues."""
+    text = (raw or "").strip()
+    if not text:
+        raise SheetsNotConfigured("POLAR_GSPREAD_KEY is empty")
+    # Smart quotes / BOM from phone copy-paste
+    text = (
+        text.replace("\ufeff", "")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("‘", "'")
+        .replace("’", "'")
+    )
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Sometimes the whole JSON is stored as a quoted string.
+        try:
+            data = json.loads(json.loads(text))
+        except json.JSONDecodeError as exc:
+            raise SheetsNotConfigured(
+                "POLAR_GSPREAD_KEY 唔係有效 JSON（可能被截斷，或唔係由 { 開始到 }）"
+            ) from exc
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise SheetsNotConfigured(
+                "POLAR_GSPREAD_KEY 唔係有效 JSON object"
+            ) from exc
+    if not isinstance(data, dict):
+        raise SheetsNotConfigured("POLAR_GSPREAD_KEY 必須係 JSON object")
+    return data
 
 
 def _daily_worksheet_title() -> str:
@@ -120,16 +189,10 @@ def evidence_folder_id() -> str:
 
 
 def _credentials_dict() -> dict[str, Any] | None:
-    raw = (os.getenv("POLAR_GSPREAD_KEY") or os.getenv("GSPREAD_KEY") or "").strip()
+    raw = _raw_credentials_text()
     if not raw:
         return None
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SheetsNotConfigured("POLAR_GSPREAD_KEY is not valid JSON") from exc
-    if not isinstance(data, dict):
-        raise SheetsNotConfigured("POLAR_GSPREAD_KEY must be a JSON object")
-    return data
+    return _parse_credentials_json(raw)
 
 
 def _gspread_client():

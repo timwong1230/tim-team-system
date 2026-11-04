@@ -152,13 +152,14 @@
       </p>
       <p class="muted" style="margin:8px 0 0">
         所以近幾日 Daily_Sales <strong>唔會自動更新</strong>，Sync / Upload bank CSV 都寫唔入 sheet。
-        Tim 去 Render → <code>polar-order</code> → Environment，貼上完整
-        <code>POLAR_GSPREAD_KEY</code>（service account JSON），再 redeploy／restart。
+        Tim 去 Render → <code>polar-order</code> → Environment → <strong>Edit</strong>，確認有
+        <code>POLAR_GSPREAD_KEY</code>（Value = 成份 JSON），Save 後再 <strong>Manual Deploy</strong>。
       </p>
     </div>
     <button class="ghost" type="button" id="sheetSyncBtn" style="width:auto"
             data-blocked="1">Sync now (backup)</button>
     {% endif %}
+    <button class="ghost" type="button" id="sheetStatusBtn" style="width:auto;margin-left:8px">檢查設定</button>
     <p class="muted" id="sheetSyncMsg" style="margin-top:10px;margin-bottom:0"></p>
 
     <hr class="claim-sep" />
@@ -412,6 +413,32 @@
     } catch (err) {
       if (waTab) waTab.close();
       msg.textContent = err.message || 'Failed';
+    }
+  });
+
+  document.getElementById('sheetStatusBtn')?.addEventListener('click', async () => {
+    const msg = document.getElementById('sheetSyncMsg');
+    msg.textContent = 'Checking…';
+    try {
+      const res = await fetch(
+        `/api/staff/sheets-status?pin=${encodeURIComponent(PIN)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Status check failed');
+      if (data.ready) {
+        msg.textContent =
+          `OK — sync ready` +
+          (data.service_account_email ? `（${data.service_account_email}）` : '') +
+          '。可以 Sync now / Save Cash Tilt。';
+      } else {
+        msg.textContent =
+          (data.gap || '未 ready') +
+          `\ncredentials env: ${data.has_credentials_env ? '有' : '無'}` +
+          ` · JSON parse: ${data.credentials_parse_ok ? 'OK' : '失敗'}` +
+          ` · sheet id: ${data.has_sheet_id ? '有' : '無'}`;
+      }
+    } catch (err) {
+      msg.textContent = err.message || 'Status check failed';
     }
   });
 
