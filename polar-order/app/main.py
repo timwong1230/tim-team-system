@@ -142,9 +142,9 @@ async def lifespan(_: FastAPI):
             f"use {expected} for a one-shot wipe",
             flush=True,
         )
-    # One-shot Finance workbook repair on boot (KPI #NAME?, Helpers $0, Chart, junk).
-    # Survives even if staff never hits Sync / Repair after a deploy.
-    marker = DATA_DIR / ".finance_sheet_repaired_v1"
+    # One-shot Finance workbook repair on boot (KPI #NAME?, Helpers $0, Chart,
+    # junk, Year/Month dropdowns). Bump marker filename when repair gains new steps.
+    marker = DATA_DIR / ".finance_sheet_repaired_v2"
     if sheets_configured() and not marker.exists():
         try:
             as_of = business_date(datetime.now(HK))
@@ -164,7 +164,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Polar Lounge Order",
-    version="0.1.1-finance-repair",
+    version="0.1.2-month-dropdown",
     lifespan=lifespan,
 )
 
@@ -2848,8 +2848,8 @@ def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
         ) from exc
 
     # One-shot workbook repair after first successful sync post-deploy
-    # (KPI #NAME?, Helpers $0, empty Chart, junk cols).
-    marker = DATA_DIR / ".finance_sheet_repaired_v1"
+    # (KPI #NAME?, Helpers $0, empty Chart, junk, Year/Month dropdowns).
+    marker = DATA_DIR / ".finance_sheet_repaired_v2"
     if not marker.exists():
         try:
             repair = repair_finance_workbook(

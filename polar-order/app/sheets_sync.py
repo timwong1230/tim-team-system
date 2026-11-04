@@ -611,6 +611,35 @@ KPI_FORMULAS: dict[str, str] = {
 }
 
 
+def _apply_year_month_dropdowns(pl_worksheet, *, year: int, month: int) -> None:
+    """P&L yellow Year/Month cells: pick from a list instead of typing."""
+    from gspread.utils import ValidationConditionType
+
+    years = [str(y) for y in range(int(year) - 1, int(year) + 3)]
+    months = [str(m) for m in range(1, 13)]
+    # Ensure current values stay in the lists even if clock skew.
+    if str(year) not in years:
+        years = sorted({*years, str(year)}, key=int)
+    if str(month) not in months:
+        months = [str(m) for m in range(1, 13)]
+    pl_worksheet.add_validation(
+        "B4",
+        ValidationConditionType.one_of_list,
+        years,
+        strict=True,
+        showCustomUi=True,
+        inputMessage="揀年份（下拉）",
+    )
+    pl_worksheet.add_validation(
+        "B5",
+        ValidationConditionType.one_of_list,
+        months,
+        strict=True,
+        showCustomUi=True,
+        inputMessage="揀月份 1–12（下拉）",
+    )
+
+
 def repair_finance_workbook(
     *,
     report_month: int | None = None,
@@ -650,14 +679,14 @@ def repair_finance_workbook(
     daily = spreadsheet.worksheet("Daily_Sales")
     daily.update("A3", [[
         "Sync writes under this header (row 4). Do not edit A–N number columns. "
-        "Helpers on the right auto-sum by Report year/month."
+        "Helpers on the right follow P&L_Monthly Year/Month dropdowns."
     ]], value_input_option="RAW")
-    # Report year/month controls
+    # Report year/month — linked to P&L yellow dropdowns (pick once there)
     daily.update("P3", [["Helpers (auto)"]], value_input_option="RAW")
-    daily.update("P4", [["Report year"]], value_input_option="RAW")
-    daily.update("Q4", [[today.year]], value_input_option="USER_ENTERED")
-    daily.update("P5", [["Report month (1-12)"]], value_input_option="RAW")
-    daily.update("Q5", [[month]], value_input_option="USER_ENTERED")
+    daily.update("P4", [["Report year (= P&L)"]], value_input_option="RAW")
+    daily.update("Q4", [["='P&L_Monthly'!B4"]], value_input_option="USER_ENTERED")
+    daily.update("P5", [["Report month (= P&L)"]], value_input_option="RAW")
+    daily.update("Q5", [["='P&L_Monthly'!B5"]], value_input_option="USER_ENTERED")
     daily.update("P6", [["Month sales (Daily Sales col)"]], value_input_option="RAW")
     daily.update("P7", [["Month claims (sheet)"]], value_input_option="RAW")
     daily.update(
@@ -678,13 +707,23 @@ def repair_finance_workbook(
 
     # --- KPI quoted sheet refs ---
     kpi = spreadsheet.worksheet("KPI")
+    kpi.update(
+        "A2",
+        [[
+            "跟 P&L_Monthly 同一個 Year/Month（喺 P&L 頁黃色格用下拉揀；呢頁讀返）。"
+        ]],
+        value_input_option="RAW",
+    )
     for cell, formula in KPI_FORMULAS.items():
         kpi.update(cell, [[formula]], value_input_option="USER_ENTERED")
     actions.append("fixed KPI formulas (quoted P&L_Monthly)")
 
-    # --- P&L month + text-date sales formulas ---
+    # --- P&L year/month dropdowns + text-date sales formulas ---
     pl = spreadsheet.worksheet("P&L_Monthly")
+    pl.update("B4", [[today.year]], value_input_option="USER_ENTERED")
     pl.update("B5", [[month]], value_input_option="USER_ENTERED")
+    _apply_year_month_dropdowns(pl, year=today.year, month=month)
+    actions.append("P&L_Monthly Year/Month dropdowns (pick, don't type)")
     pl.update(
         "B8",
         [[
