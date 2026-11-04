@@ -89,6 +89,7 @@ from .bank_import import parse_bank_csv
 from .sheets_sync import (
     SheetsNotConfigured,
     append_bank_entries,
+    sheets_config_gap,
     sheets_configured,
     upsert_daily_sales_row,
 )
@@ -2371,6 +2372,7 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "day": biz.isoformat(),
             "month": f"{year}-{mon:02d}",
             "sheets_sync_ready": sheets_configured(),
+            "sheets_sync_gap": sheets_config_gap(),
             "bank_evidence_recent": list_recent_evidence(12),
         },
     )

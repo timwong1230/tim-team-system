@@ -66,7 +66,34 @@ class SheetsNotConfigured(RuntimeError):
 
 
 def sheets_configured() -> bool:
-    return bool(_sheet_id() and _credentials_dict())
+    try:
+        return sheets_config_gap() is None
+    except SheetsNotConfigured:
+        return False
+
+
+def sheets_config_gap() -> str | None:
+    """Why Google Sheet sync is off, or None when ready.
+
+    Shown on Staff Reports so disabled Sync / bank upload is not a silent dead tap.
+    """
+    if not _sheet_id():
+        return "缺少 POLAR_DAILY_SALES_SHEET_ID（Render Environment）"
+    raw = (os.getenv("POLAR_GSPREAD_KEY") or os.getenv("GSPREAD_KEY") or "").strip()
+    if not raw:
+        return (
+            "缺少 POLAR_GSPREAD_KEY（Render Environment 要貼上 service account JSON；"
+            "Finance sheet 要 share 俾個 SA Editor）"
+        )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return "POLAR_GSPREAD_KEY 唔係有效 JSON（Render 入面嗰段 key 可能被截斷）"
+    if not isinstance(data, dict):
+        return "POLAR_GSPREAD_KEY 必須係 JSON object"
+    if not (data.get("client_email") and data.get("private_key")):
+        return "POLAR_GSPREAD_KEY 缺少 client_email / private_key"
+    return None
 
 
 def _sheet_id() -> str:
