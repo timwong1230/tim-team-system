@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from datetime import date, datetime, timedelta
 from typing import Any
 
 DAILY_SALES_HEADERS: tuple[str, ...] = (
@@ -295,8 +297,70 @@ def _daily_row_values(row: dict[str, Any]) -> list[Any]:
     return out
 
 
+def _biz_date_candidates(val: Any) -> set[str]:
+    """Possible YYYY-MM-DD readings of a sheet date cell (locale-safe)."""
+    out: set[str] = set()
+    if val is None:
+        return out
+    if isinstance(val, datetime):
+        out.add(val.date().isoformat())
+        return out
+    if isinstance(val, date):
+        out.add(val.isoformat())
+        return out
+    s = str(val).strip()
+    if not s:
+        return out
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y"):
+        try:
+            out.add(datetime.strptime(s[:10], fmt).date().isoformat())
+        except ValueError:
+            pass
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)
+    if m:
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        for month, day in ((a, b), (b, a)):  # m/d/y and d/m/y
+            try:
+                out.add(date(y, month, day).isoformat())
+            except ValueError:
+                pass
+    try:
+        n = float(s)
+        if 20000 < n < 80000:
+            out.add((date(1899, 12, 30) + timedelta(days=int(n))).isoformat())
+    except ValueError:
+        pass
+    m2 = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
+    if m2:
+        out.add(m2.group(1))
+    return out
+
+
+def _find_biz_date_row(worksheet, header_row: int, biz: str) -> int | None:
+    """1-based sheet row of an existing business_date under the header, else None."""
+    col_a = worksheet.col_values(1)
+    for idx in range(header_row, len(col_a)):
+        if biz in _biz_date_candidates(col_a[idx]):
+            return idx + 1
+    return None
+
+
+def _next_daily_sales_row(worksheet, header_row: int) -> int:
+    """First empty row under Daily_Sales headers (do not use append_row)."""
+    col_a = worksheet.col_values(1)
+    last = header_row
+    for idx in range(header_row, len(col_a)):
+        if str(col_a[idx] or "").strip():
+            last = idx + 1
+    return last + 1
+
+
 def upsert_daily_sales_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Insert or update the Daily_Sales row for row['business_date']."""
+    """Insert or update the Daily_Sales row for row['business_date'].
+
+    Finance template has title rows then headers on row 4 — never use bare
+    append_row (it can land far below helper columns / miss date matching).
+    """
     biz = str(row.get("business_date") or "").strip()
     if not biz:
         raise ValueError("business_date is required")
@@ -305,27 +369,28 @@ def upsert_daily_sales_row(row: dict[str, Any]) -> dict[str, Any]:
     header_row = _ensure_headers(worksheet, DAILY_SALES_HEADERS)
     values = _daily_row_values(row)
 
-    # Column A from the row under headers.
-    col_a = worksheet.col_values(1)
-    dates = col_a[header_row:]  # after header row
-    if biz in dates:
-        sheet_row = header_row + dates.index(biz) + 1
-        worksheet.update(
-            f"A{sheet_row}",
-            [values],
-            value_input_option="RAW",
-        )
+    existing = _find_biz_date_row(worksheet, header_row, biz)
+    if existing:
+        sheet_row = existing
         action = "updated"
     else:
-        worksheet.append_row(values, value_input_option="RAW")
+        sheet_row = _next_daily_sales_row(worksheet, header_row)
         action = "appended"
+
+    worksheet.update(
+        f"A{sheet_row}",
+        [values],
+        value_input_option="RAW",
+    )
 
     return {
         "ok": True,
         "action": action,
         "business_date": biz,
         "sheet_id": _sheet_id(),
-        "worksheet": _daily_worksheet_title(),
+        "worksheet": worksheet.title,
+        "header_row": header_row,
+        "sheet_row": sheet_row,
         "row": {h: values[i] for i, h in enumerate(DAILY_SALES_HEADERS)},
     }
 
