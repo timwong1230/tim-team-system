@@ -2,6 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Cache-bust so Render rebuilds app layers after finance-repair merges.
+ARG POLAR_BUILD_STAMP=2026-11-04-finance-repair
+RUN echo "polar-build ${POLAR_BUILD_STAMP}"
+
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libjpeg62-turbo zlib1g \
   && rm -rf /var/lib/apt/lists/*
