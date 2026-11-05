@@ -209,6 +209,13 @@
           "image": "/static/images/menu/tonic.jpg"
         },
         {
+          "id": "soda-water",
+          "name": "Soda Water",
+          "price": 59,
+          "unit": "Glass",
+          "image": "/static/images/menu/soda-water.jpg"
+        },
+        {
           "id": "pellegrino",
           "name": "S.Pellegrino Sparkling Water",
           "price": 98,
