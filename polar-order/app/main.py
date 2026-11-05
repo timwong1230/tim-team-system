@@ -31,6 +31,7 @@ from .db import (
     ensure_session,
     ff_party_summary,
     find_next_open_split,
+    format_payment_label,
     get_ff_party_guest,
     get_open_session,
     get_session,
@@ -41,10 +42,12 @@ from .db import (
     list_bookings_for_month,
     list_claims,
     list_guest_tables,
+    list_session_payments,
     list_table_splits,
     load_menu_meta,
     mark_ff_party_guest_paid,
     publish_event,
+    replace_session_payments,
     reset_operational_data,
     session_is_ff_party,
     set_booking_status,
@@ -61,6 +64,7 @@ from .ops_constants import (
     BOSS_CREDIT_METHOD,
     CLAIM_PRESETS,
     PAYMENT_METHODS,
+    SPLIT_PAYMENT_METHOD,
 )
 from .pricing import (
     SHISHA_COMBO_SNACK_PRICE,
@@ -1964,6 +1968,65 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
     }
 
 
+def _parse_close_payments(
+    *,
+    is_boss: bool,
+    payment_method: str,
+    payments_json: str,
+    amount_due: float,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Return (sessions.payment_method, payment rows) for close / receipt / Daily Sales."""
+    if is_boss:
+        return BOSS_CREDIT_METHOD, []
+
+    raw_list: list[Any] = []
+    text = (payments_json or "").strip()
+    if text:
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, "Invalid split payments payload") from exc
+        if not isinstance(parsed, list):
+            raise HTTPException(400, "Split payments must be a list")
+        raw_list = parsed
+
+    if not raw_list:
+        method = (payment_method or "").strip()
+        if method not in PAYMENT_METHODS:
+            raise HTTPException(400, "Select a payment method")
+        return method, [{"method": method, "amount": round(float(amount_due), 1)}]
+
+    cleaned: list[dict[str, Any]] = []
+    for raw in raw_list:
+        if not isinstance(raw, dict):
+            raise HTTPException(400, "Each payment needs method + amount")
+        method = str(raw.get("method") or "").strip()
+        if method not in PAYMENT_METHODS:
+            raise HTTPException(400, f"Invalid payment method: {method or '—'}")
+        try:
+            amount = round(float(raw.get("amount") or 0), 1)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "Payment amount must be a number") from exc
+        if amount <= 0:
+            raise HTTPException(400, "Each payment amount must be > 0")
+        cleaned.append({"method": method, "amount": amount})
+
+    if not cleaned:
+        raise HTTPException(400, "Add at least one payment")
+
+    paid = round(sum(float(p["amount"]) for p in cleaned), 1)
+    due = round(float(amount_due), 1)
+    if abs(paid - due) > 0.05:
+        raise HTTPException(
+            400,
+            f"Split payments ${paid:g} must equal amount due ${due:g}",
+        )
+
+    if len(cleaned) == 1:
+        return cleaned[0]["method"], cleaned
+    return SPLIT_PAYMENT_METHOD, cleaned
+
+
 @app.post("/api/staff/bill/{table_code}/close")
 def close_bill(
     table_code: str,
@@ -1971,6 +2034,7 @@ def close_bill(
     discount_percent: float = Form(0),
     party_size: int | None = Form(None),
     payment_method: str = Form(""),
+    payments_json: str = Form(""),
 ):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
@@ -1985,14 +2049,6 @@ def close_bill(
         return {"ok": True, "message": "No open session"}
 
     is_boss = (table["zone"] or "") == "boss"
-    # Boss tabs are Polar credit ledgers — not guest payment / not sales.
-    if is_boss:
-        method = BOSS_CREDIT_METHOD
-    else:
-        method = (payment_method or "").strip()
-        if method not in PAYMENT_METHODS:
-            conn.close()
-            raise HTTPException(400, "Select a payment method")
     if not is_boss and party_size is not None:
         size = max(1, min(30, int(party_size)))
         conn.execute(
@@ -2025,6 +2081,18 @@ def close_bill(
             discount_percent=discount_percent,
             snack_waived=_session_snack_waived(session),
         )
+
+    try:
+        method, pay_rows = _parse_close_payments(
+            is_boss=is_boss,
+            payment_method=payment_method,
+            payments_json=payments_json,
+            amount_due=float(bill["total"]),
+        )
+    except HTTPException:
+        conn.close()
+        raise
+
     now = utc_now()
     # Keep original business_date when re-closing an edited (reopened) bill.
     existing_biz = None
@@ -2041,7 +2109,9 @@ def close_bill(
         closed_at_iso=now,
         guest_name=guest_name,
         payment_method=method,
+        payments=pay_rows,
     )
+    replace_session_payments(conn, int(session["id"]), pay_rows)
     conn.execute(
         """
         UPDATE sessions SET
@@ -2144,6 +2214,7 @@ def staff_reopen_session_for_edit(session_id: int, body: StaffReopenEditIn):
         """,
         (session_id,),
     )
+    conn.execute("DELETE FROM session_payments WHERE session_id = ?", (session_id,))
     # Orders stay non-cancelled so staff can edit qty / add items, then Mark paid again.
     conn.execute(
         """
@@ -2215,6 +2286,8 @@ def staff_update_session_payment(session_id: int, body: StaffPaymentUpdateIn):
         "service_charge_rate": float(meta["service_charge_rate"]),
     }
     guest_name = session["guest_name"] if session["guest_name"] else None
+    # Correcting tender collapses any prior split into one method for the full total.
+    pay_rows = [{"method": method, "amount": round(float(bill["total"] or 0), 1)}]
     receipt_rel = generate_receipt_pdf(
         session_id=session["id"],
         table_label=table["label"],
@@ -2224,7 +2297,9 @@ def staff_update_session_payment(session_id: int, body: StaffPaymentUpdateIn):
         closed_at_iso=session["closed_at"] or utc_now(),
         guest_name=guest_name,
         payment_method=method,
+        payments=pay_rows,
     )
+    replace_session_payments(conn, int(session["id"]), pay_rows)
     conn.execute(
         "UPDATE sessions SET payment_method = ?, receipt_path = ? WHERE id = ?",
         (method, receipt_rel, session["id"]),

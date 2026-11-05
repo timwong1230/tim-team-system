@@ -744,6 +744,58 @@ button.pill-action:active {
   height: 16px;
   margin: 0;
 }
+.pay-mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.pay-mode-opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  cursor: pointer;
+  font-weight: 650;
+}
+.pay-mode-opt:has(input:checked) {
+  border-color: var(--gold);
+  background: rgba(212, 192, 140, 0.12);
+}
+.pay-mode-opt input {
+  accent-color: var(--gold);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.pay-split-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pay-split-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1.2fr) minmax(0, 0.9fr) 40px;
+  gap: 8px;
+  align-items: center;
+}
+.pay-split-label {
+  font-weight: 700;
+  color: var(--muted, #9a958c);
+  text-align: center;
+}
+.pay-split-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 .claim-sep {
   border: 0;
   border-top: 1px solid var(--line);
