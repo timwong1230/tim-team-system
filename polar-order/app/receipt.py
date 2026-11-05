@@ -27,6 +27,7 @@ def generate_receipt_pdf(
     closed_at_iso: str,
     guest_name: str | None = None,
     payment_method: str | None = None,
+    payments: list[dict] | None = None,
 ) -> str:
     RECEIPT_DIR.mkdir(parents=True, exist_ok=True)
     path = RECEIPT_DIR / f"receipt-S{session_id}.pdf"
@@ -64,11 +65,23 @@ def generate_receipt_pdf(
     line(f"Session #{session_id} · Party {party_size}")
     line(f"Closed: {closed_local}")
     line(f"Receipt: R-{session_id:05d}")
-    if payment_method:
-        if payment_method == "Credit":
-            line("Boss credit (not a sale)", bold=True, size=11)
-        else:
-            line(f"Paid: {payment_method}", bold=True, size=11)
+    pay_rows = [
+        p
+        for p in (payments or [])
+        if str(p.get("method") or "").strip() and float(p.get("amount") or 0) > 0
+    ]
+    if payment_method == "Credit":
+        line("Boss credit (not a sale)", bold=True, size=11)
+    elif len(pay_rows) >= 2:
+        line("Paid (split):", bold=True, size=11)
+        for p in pay_rows:
+            amt = float(p["amount"])
+            amt_s = f"{amt:,.0f}" if amt == int(amt) else f"{amt:,.1f}"
+            line(f"  {p['method']}  HKD {amt_s}", size=10)
+    elif len(pay_rows) == 1:
+        line(f"Paid: {pay_rows[0]['method']}", bold=True, size=11)
+    elif payment_method and payment_method != "Split":
+        line(f"Paid: {payment_method}", bold=True, size=11)
     y -= 2 * mm
     c.setStrokeColor(colors.HexColor("#d4c08c"))
     c.line(18 * mm, y, width - 18 * mm, y)
@@ -132,8 +145,20 @@ def generate_receipt_pdf(
             y,
             "Recorded as Polar credit — not guest sales. Keep for boss ledger.",
         )
-    elif payment_method:
-        c.drawString(18 * mm, y, f"Paid by {payment_method}. Keep this receipt for your records.")
+    elif len(pay_rows) >= 2:
+        summary = " + ".join(str(p["method"]) for p in pay_rows)
+        c.drawString(
+            18 * mm,
+            y,
+            f"Split payment ({summary}). Keep this receipt for your records.",
+        )
+    elif len(pay_rows) == 1 or (payment_method and payment_method != "Split"):
+        paid = (
+            str(pay_rows[0]["method"])
+            if pay_rows
+            else str(payment_method or "")
+        )
+        c.drawString(18 * mm, y, f"Paid by {paid}. Keep this receipt for your records.")
     else:
         c.drawString(18 * mm, y, "Payment collected separately. Keep this receipt for your records.")
     c.save()

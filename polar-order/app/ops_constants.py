@@ -23,6 +23,10 @@ PAYMENT_METHODS: tuple[str, ...] = (
 # Boss tabs record Polar credit usage — not a guest tender, never guest sales.
 BOSS_CREDIT_METHOD = "Credit"
 
+# sessions.payment_method when the bill was split across multiple tenders.
+# Per-method amounts live in session_payments (Daily Sales expands those rows).
+SPLIT_PAYMENT_METHOD = "Split"
+
 # WhatsApp nightly close labels → matching payment_method values in DB
 WHATSAPP_PAYMENT_LINES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Cash", ("Cash",)),

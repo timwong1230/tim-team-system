@@ -46,13 +46,25 @@
       <div style="flex:1;min-width:0">
         <strong>{{ s.table }}</strong>
         <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}</div>
-        {% if s.payment_method and s.payment_method != 'Credit' %}
+        {% if s.payments and s.payments|length >= 2 %}
+        <div class="muted" style="margin-top:8px">Split payment</div>
+        <div style="margin-top:4px;font-weight:650">{{ s.payment_method }}</div>
+        <label class="muted" for="pay-{{ s.session_id }}" style="display:block;margin-top:8px">Change to one method</label>
+        <select class="field pay-method-edit" id="pay-{{ s.session_id }}"
+                data-session="{{ s.session_id }}" data-prev=""
+                style="margin:4px 0 0;max-width:220px">
+          <option value="" selected disabled>Keep split / pick…</option>
+          {% for m in payment_methods %}
+          <option value="{{ m }}">{{ m }} (whole bill)</option>
+          {% endfor %}
+        </select>
+        {% elif s.payment_method and s.payment_method != 'Credit' %}
         <label class="muted" for="pay-{{ s.session_id }}" style="display:block;margin-top:8px">Payment method</label>
         <select class="field pay-method-edit" id="pay-{{ s.session_id }}"
-                data-session="{{ s.session_id }}" data-prev="{{ s.payment_method }}"
+                data-session="{{ s.session_id }}" data-prev="{{ s.payment_method_raw or s.payment_method }}"
                 style="margin:4px 0 0;max-width:220px">
           {% for m in payment_methods %}
-          <option value="{{ m }}" {% if m == s.payment_method %}selected{% endif %}>{{ m }}</option>
+          <option value="{{ m }}" {% if m == (s.payment_method_raw or s.payment_method) %}selected{% endif %}>{{ m }}</option>
           {% endfor %}
         </select>
         {% elif s.payment_method %}
@@ -311,7 +323,8 @@
       const method = sel.value;
       if (!sessionId || !method || method === prev) return;
       if (!confirm(`Change payment to ${method}?`)) {
-        sel.value = prev;
+        if (prev) sel.value = prev;
+        else sel.selectedIndex = 0;
         return;
       }
       sel.disabled = true;

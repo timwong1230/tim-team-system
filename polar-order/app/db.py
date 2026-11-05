@@ -79,6 +79,18 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS session_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            method TEXT NOT NULL,
+            amount REAL NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(session_id) REFERENCES sessions(id)
+        )
+        """
+    )
     conn.commit()
 
 
@@ -138,6 +150,15 @@ def init_db() -> None:
             category TEXT NOT NULL,
             amount REAL NOT NULL,
             created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS session_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            method TEXT NOT NULL,
+            amount REAL NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(session_id) REFERENCES sessions(id)
         );
 
         CREATE TABLE IF NOT EXISTS orders (
@@ -548,6 +569,7 @@ def clear_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row:
         (now, session["id"]),
     )
     conn.execute("DELETE FROM ff_party_guests WHERE session_id = ?", (session["id"],))
+    conn.execute("DELETE FROM session_payments WHERE session_id = ?", (session["id"],))
     conn.execute(
         """
         UPDATE sessions SET
@@ -574,6 +596,75 @@ def clear_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row:
     if not cleared:
         raise ValueError("Session missing after clear")
     return cleared
+
+
+def list_session_payments(
+    conn: sqlite3.Connection, session_id: int
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT method, amount, sort_order
+        FROM session_payments
+        WHERE session_id = ?
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (int(session_id),),
+    ).fetchall()
+    return [
+        {
+            "method": str(r["method"] or ""),
+            "amount": round(float(r["amount"] or 0), 1),
+            "sort_order": int(r["sort_order"] or 0),
+        }
+        for r in rows
+    ]
+
+
+def replace_session_payments(
+    conn: sqlite3.Connection,
+    session_id: int,
+    payments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace all tender rows for a session. ``payments`` = [{method, amount}, ...]."""
+    conn.execute(
+        "DELETE FROM session_payments WHERE session_id = ?", (int(session_id),)
+    )
+    cleaned: list[dict[str, Any]] = []
+    for idx, raw in enumerate(payments):
+        method = str((raw or {}).get("method") or "").strip()
+        try:
+            amount = round(float((raw or {}).get("amount") or 0), 1)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if not method or amount <= 0:
+            continue
+        conn.execute(
+            """
+            INSERT INTO session_payments (session_id, method, amount, sort_order)
+            VALUES (?, ?, ?, ?)
+            """,
+            (int(session_id), method, amount, idx),
+        )
+        cleaned.append({"method": method, "amount": amount, "sort_order": idx})
+    return cleaned
+
+
+def format_payment_label(
+    payment_method: str | None,
+    payments: list[dict[str, Any]] | None = None,
+) -> str:
+    """Human label for receipts / reports (supports multi-tender)."""
+    pays = [p for p in (payments or []) if float(p.get("amount") or 0) > 0]
+    if len(pays) >= 2:
+        parts = []
+        for p in pays:
+            amt = float(p["amount"])
+            amt_s = f"{amt:.0f}" if amt == int(amt) else f"{amt:.1f}"
+            parts.append(f"{p['method']} ${amt_s}")
+        return " · ".join(parts)
+    if len(pays) == 1:
+        return str(pays[0]["method"])
+    return str(payment_method or "").strip() or "—"
 
 
 def session_is_ff_party(session: sqlite3.Row | None) -> bool:
@@ -1023,13 +1114,16 @@ def reset_operational_data(conn: sqlite3.Connection) -> dict[str, int]:
     }
     conn.execute("DELETE FROM order_items")
     conn.execute("DELETE FROM orders")
+    conn.execute("DELETE FROM session_payments")
+    conn.execute("DELETE FROM ff_party_guests")
     conn.execute("DELETE FROM sessions")
     conn.execute("DELETE FROM events")
     conn.execute("DELETE FROM claims")
     conn.execute("DELETE FROM daily_cash_tilt")
     conn.execute(
         "DELETE FROM sqlite_sequence WHERE name IN "
-        "('order_items','orders','sessions','events','claims')"
+        "('order_items','orders','session_payments','ff_party_guests',"
+        "'sessions','events','claims')"
     )
     conn.commit()
     return counts

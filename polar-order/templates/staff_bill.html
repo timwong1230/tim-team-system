@@ -217,18 +217,44 @@
   {% if is_boss %}
   <p class="muted">Boss tab = Polar credit (not a payment, not guest sales). Close to record credit used.</p>
   {% else %}
-  <p class="muted">Collect payment, choose the method below, then mark paid.</p>
+  <p class="muted">Collect payment, then mark paid. Same table can split across people with different methods.</p>
 
   <div class="card pay-method-card">
-    <h3 style="margin-top:0">Payment method</h3>
-    <p class="muted" style="margin-top:0">Required before closing the table.</p>
-    <div class="pay-method-grid" id="payMethodGrid">
-      {% for m in payment_methods %}
-      <label class="pay-method-opt">
-        <input type="radio" name="payment_method_ui" value="{{ m }}" />
-        <span>{{ m }}</span>
+    <h3 style="margin-top:0">Payment</h3>
+    <div class="pay-mode-toggle" id="payModeToggle" role="group" aria-label="Payment mode">
+      <label class="pay-mode-opt">
+        <input type="radio" name="pay_mode_ui" value="single" checked />
+        <span>One method</span>
       </label>
-      {% endfor %}
+      <label class="pay-mode-opt">
+        <input type="radio" name="pay_mode_ui" value="split" />
+        <span>Split by person</span>
+      </label>
+    </div>
+
+    <div id="paySingleBox">
+      <p class="muted" style="margin-top:0">Whole bill uses one payment method.</p>
+      <div class="pay-method-grid" id="payMethodGrid">
+        {% for m in payment_methods %}
+        <label class="pay-method-opt">
+          <input type="radio" name="payment_method_ui" value="{{ m }}" />
+          <span>{{ m }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div id="paySplitBox" style="display:none">
+      <p class="muted" style="margin-top:0">
+        Each person / tender on its own row. Amounts must add up to
+        <strong id="paySplitDueLabel">amount due</strong>.
+      </p>
+      <div id="paySplitRows" class="pay-split-rows"></div>
+      <div class="pay-split-actions">
+        <button type="button" class="ghost" id="paySplitAdd" style="width:auto">+ Add person</button>
+        <button type="button" class="ghost" id="paySplitEqual" style="width:auto">Split equal</button>
+      </div>
+      <p class="muted" id="paySplitRemain" style="margin-bottom:0"></p>
     </div>
   </div>
   {% endif %}
@@ -238,6 +264,7 @@
     <input type="hidden" name="discount_percent" id="discountHidden" value="{{ discount|int if discount else 0 }}" />
     <input type="hidden" name="party_size" id="partyHidden" value="{{ bill.party_size }}" />
     <input type="hidden" name="payment_method" id="paymentHidden" value="{% if is_boss %}Credit{% endif %}" />
+    <input type="hidden" name="payments_json" id="paymentsJsonHidden" value="" />
     <button class="primary" type="submit">
       {% if is_boss %}Record credit & open PDF{% else %}Mark paid & open PDF receipt{% endif %}
     </button>
@@ -403,6 +430,7 @@
     } else {
       row.style.display = 'none';
     }
+    if (typeof updateSplitRemain === 'function') updateSplitRemain();
   }
 
   async function editBillItem(itemId, qty) {
@@ -607,15 +635,188 @@
     }
   });
 
+  const PAY_METHODS = {{ payment_methods|tojson }};
+  const paySingleBox = document.getElementById('paySingleBox');
+  const paySplitBox = document.getElementById('paySplitBox');
+  const paySplitRows = document.getElementById('paySplitRows');
+  const paySplitRemain = document.getElementById('paySplitRemain');
+  const paymentsJsonHidden = document.getElementById('paymentsJsonHidden');
+  const paymentHidden = document.getElementById('paymentHidden');
+
+  function payMode() {
+    const el = document.querySelector('input[name="pay_mode_ui"]:checked');
+    return el ? el.value : 'single';
+  }
+
+  function amountDueNow() {
+    const t = document.getElementById('vTotal')?.textContent || '';
+    const n = Number(String(t).replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) ? Math.round(n * 10) / 10 : 0;
+  }
+
+  function roundMoney(n) {
+    return Math.round(Number(n) * 10) / 10;
+  }
+
+  function moneyLabel(n) {
+    const v = roundMoney(n);
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  }
+
+  function syncPayModeUi() {
+    const split = payMode() === 'split';
+    if (paySingleBox) paySingleBox.style.display = split ? 'none' : '';
+    if (paySplitBox) paySplitBox.style.display = split ? '' : 'none';
+    if (split && paySplitRows && !paySplitRows.children.length) {
+      seedSplitRows(Math.max(2, partySize()));
+    }
+    updateSplitRemain();
+  }
+
+  function seedSplitRows(count) {
+    if (!paySplitRows) return;
+    paySplitRows.innerHTML = '';
+    const n = Math.max(2, Math.min(12, Number(count) || 2));
+    for (let i = 0; i < n; i += 1) addSplitRow();
+    applyEqualSplit();
+  }
+
+  function addSplitRow(method, amount) {
+    if (!paySplitRows) return;
+    const idx = paySplitRows.children.length + 1;
+    const row = document.createElement('div');
+    row.className = 'pay-split-row';
+    const opts = PAY_METHODS.map((m) =>
+      `<option value="${m}" ${m === (method || PAY_METHODS[0]) ? 'selected' : ''}>${m}</option>`
+    ).join('');
+    row.innerHTML = `
+      <span class="pay-split-label">P${idx}</span>
+      <select class="field pay-split-method" aria-label="Payment method">${opts}</select>
+      <input class="field pay-split-amount" type="number" min="0" step="1" inputmode="decimal"
+             placeholder="Amount" value="${amount != null ? moneyLabel(amount) : ''}" />
+      <button type="button" class="ghost pay-split-remove" style="width:auto" aria-label="Remove">×</button>
+    `;
+    paySplitRows.appendChild(row);
+    renumberSplitRows();
+    updateSplitRemain();
+  }
+
+  function renumberSplitRows() {
+    if (!paySplitRows) return;
+    [...paySplitRows.querySelectorAll('.pay-split-row')].forEach((row, i) => {
+      const lab = row.querySelector('.pay-split-label');
+      if (lab) lab.textContent = `P${i + 1}`;
+    });
+  }
+
+  function readSplitPayments() {
+    if (!paySplitRows) return [];
+    return [...paySplitRows.querySelectorAll('.pay-split-row')].map((row) => ({
+      method: row.querySelector('.pay-split-method')?.value || '',
+      amount: roundMoney(row.querySelector('.pay-split-amount')?.value || 0),
+    })).filter((p) => p.method && p.amount > 0);
+  }
+
+  function updateSplitRemain() {
+    if (!paySplitRemain) return;
+    const due = amountDueNow();
+    const paid = roundMoney(readSplitPayments().reduce((s, p) => s + p.amount, 0));
+    const left = roundMoney(due - paid);
+    const dueEl = document.getElementById('paySplitDueLabel');
+    if (dueEl) dueEl.textContent = `$${moneyLabel(due)}`;
+    if (Math.abs(left) < 0.05) {
+      paySplitRemain.textContent = `OK — covers $${moneyLabel(due)}`;
+      paySplitRemain.style.color = '';
+    } else if (left > 0) {
+      paySplitRemain.textContent = `Still need $${moneyLabel(left)}`;
+      paySplitRemain.style.color = '#f0c0c0';
+    } else {
+      paySplitRemain.textContent = `Over by $${moneyLabel(-left)}`;
+      paySplitRemain.style.color = '#f0c0c0';
+    }
+  }
+
+  function applyEqualSplit() {
+    if (!paySplitRows) return;
+    const rows = [...paySplitRows.querySelectorAll('.pay-split-row')];
+    const n = rows.length;
+    if (!n) return;
+    const dueCents = Math.round(amountDueNow() * 10);
+    const base = Math.floor(dueCents / n);
+    let rem = dueCents - base * n;
+    rows.forEach((row, i) => {
+      const share = (base + (i < rem ? 1 : 0)) / 10;
+      const inp = row.querySelector('.pay-split-amount');
+      if (inp) inp.value = moneyLabel(share);
+    });
+    updateSplitRemain();
+  }
+
+  document.querySelectorAll('input[name="pay_mode_ui"]').forEach((el) => {
+    el.addEventListener('change', syncPayModeUi);
+  });
+  document.getElementById('paySplitAdd')?.addEventListener('click', () => {
+    addSplitRow();
+  });
+  document.getElementById('paySplitEqual')?.addEventListener('click', () => {
+    if (paySplitRows && !paySplitRows.children.length) {
+      seedSplitRows(Math.max(2, partySize()));
+    } else {
+      applyEqualSplit();
+    }
+  });
+  paySplitRows?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pay-split-remove');
+    if (!btn) return;
+    const row = btn.closest('.pay-split-row');
+    if (!row) return;
+    if (paySplitRows.children.length <= 2) {
+      alert('Split needs at least 2 people');
+      return;
+    }
+    row.remove();
+    renumberSplitRows();
+    updateSplitRemain();
+  });
+  paySplitRows?.addEventListener('input', updateSplitRemain);
+  paySplitRows?.addEventListener('change', updateSplitRemain);
+
   document.getElementById('closeForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     recalc();
     const party = partySize();
+    if (paymentsJsonHidden) paymentsJsonHidden.value = '';
     if (isBoss) {
-      document.getElementById('paymentHidden').value = 'Credit';
+      if (paymentHidden) paymentHidden.value = 'Credit';
       if (!confirm('Record this boss tab as Polar credit (not sales)?\nOpen PDF after close.')) {
         return;
       }
+    } else if (payMode() === 'split') {
+      const pays = readSplitPayments();
+      const due = amountDueNow();
+      const paid = roundMoney(pays.reduce((s, p) => s + p.amount, 0));
+      if (pays.length < 2) {
+        alert('Split needs at least 2 payment rows');
+        paySplitBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (Math.abs(paid - due) > 0.05) {
+        alert(`Split amounts ($${moneyLabel(paid)}) must equal amount due ($${moneyLabel(due)})`);
+        paySplitBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (paymentHidden) paymentHidden.value = '';
+      if (paymentsJsonHidden) paymentsJsonHidden.value = JSON.stringify(pays);
+      const summary = pays.map((p) => `${p.method} $${moneyLabel(p.amount)}`).join('\n');
+      const ok = confirm(
+        `Confirm party size: ${party} guest(s)?\nSplit payment:\n${summary}\n\nClose table after payment collected?`
+      );
+      if (!ok) return;
+      await fetch('/api/staff/bill/{{ table.code }}/party', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party }),
+      });
     } else {
       const chosen = document.querySelector('input[name="payment_method_ui"]:checked');
       if (!chosen) {
@@ -623,7 +824,7 @@
         document.getElementById('payMethodGrid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      document.getElementById('paymentHidden').value = chosen.value;
+      if (paymentHidden) paymentHidden.value = chosen.value;
       const ok = confirm(
         `Confirm party size: ${party} guest(s)?\nPayment: ${chosen.value}\n\nSnack charge = ${party} × $10.\nClose table after payment collected?`
       );

@@ -6,11 +6,13 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .db import (
+    format_payment_label,
     get_cash_tilt,
     get_daily_report_snapshot,
+    list_session_payments,
     upsert_daily_report_snapshot,
 )
-from .ops_constants import WHATSAPP_PAYMENT_LINES
+from .ops_constants import SPLIT_PAYMENT_METHOD, WHATSAPP_PAYMENT_LINES
 from .pricing import business_date, business_day_window
 from .seats import BOSSES
 
@@ -102,7 +104,17 @@ def daily_sales_report(
         amt = float(s["total"] or 0)
         total += amt
         method = (s["payment_method"] if "payment_method" in s.keys() else None) or "—"
-        by_method[method] = round(by_method.get(method, 0) + amt, 1)
+        pays = list_session_payments(conn, int(s["id"]))
+        if pays:
+            for p in pays:
+                m = p["method"] or "—"
+                by_method[m] = round(by_method.get(m, 0) + float(p["amount"]), 1)
+            method_label = format_payment_label(method, pays)
+        else:
+            # Legacy single-tender rows (no session_payments yet).
+            if method != SPLIT_PAYMENT_METHOD:
+                by_method[method] = round(by_method.get(method, 0) + amt, 1)
+            method_label = method if method != "—" else None
         rows.append(
             {
                 "session_id": s["id"],
@@ -110,7 +122,9 @@ def daily_sales_report(
                 "table_code": s["table_code"],
                 "party_size": s["party_size"],
                 "discount_percent": s["discount_percent"] or 0,
-                "payment_method": method if method != "—" else None,
+                "payment_method": method_label,
+                "payment_method_raw": method if method != "—" else None,
+                "payments": pays,
                 "total": amt,
                 "closed_at": closed.strftime("%H:%M"),
                 "receipt_path": s["receipt_path"],
