@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dino 數字">
+<meta name="theme-color" content="#8ecae6">
+<title>Dino 數字 · 數蛋</title>
+<link rel="icon" href="icon-180.png">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div id="app">
+  <div id="world"></div>
+  <section id="home" class="screen on">
+    <header class="topbar">
+      <a class="icon-btn" href="index.html" aria-label="系列主頁"></a>
+      <div class="brand">數字</div>
+      <div id="home-stars" class="star-pill"></div>
+    </header>
+    <div class="home-mid">
+      <div id="home-dino" class="home-dino bob"></div>
+      <p class="home-line">數蛋認數字</p>
+      <div id="home-trail" class="trail"></div>
+      <button id="play" class="btn primary big" type="button">Play</button>
+    </div>
+  </section>
+  <section id="play" class="screen">
+    <header class="topbar">
+      <button id="to-home" class="icon-btn" type="button" aria-label="Home"></button>
+      <div id="trail" class="trail"></div>
+      <div id="stars" class="star-pill"></div>
+    </header>
+    <div class="ask-row" style="flex-direction:column;gap:8px">
+      <button id="bubble" class="bubble" type="button" aria-label="再說一次">
+        <span class="kicker" id="kicker">有幾多隻蛋？</span>
+        <span id="target" class="big-letter" style="font-size:clamp(64px,14vh,120px)">3</span>
+      </button>
+      <div id="count-row" class="count-row"></div>
+    </div>
+    <div id="choices" class="choices"></div>
+  </section>
+  <section id="hatch" class="screen">
+    <div class="hatch-wrap">
+      <div id="hatch-trail" class="trail"></div>
+      <div id="hatch-art" class="hatch-art"></div>
+      <p class="hatch-kicker">A new dinosaur</p>
+      <h2 id="hatch-name" class="hatch-name">Rex</h2>
+      <button id="again" class="btn primary big" type="button">Again</button>
+      <p class="parent-note">完成 5 題。可以休息，或者再玩一輪。</p>
+      <p><a class="btn" href="index.html">返系列</a></p>
+    </div>
+  </section>
+</div>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const S = window.DinoShared;
+  const SAY = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten" };
+  const ZH = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七", 8: "八", 9: "九", 10: "十" };
+
+  document.getElementById("world").innerHTML = S.worldSvg();
+  const shell = S.makeShell({
+    key: "dino-num-v1",
+    defaultState: () => ({ stars: 0, trail: 0, dino: 3, sound: true, played: 0, max: 5 })
+  });
+  const { state, audio } = shell;
+  let current = null;
+
+  function dino() { return S.DINOS[state.dino % S.DINOS.length]; }
+  function renderStars() {
+    document.getElementById("home-stars").innerHTML = S.starHtml(state.stars);
+    document.getElementById("stars").innerHTML = S.starHtml(state.stars);
+  }
+  function renderHome() {
+    document.getElementById("home-dino").innerHTML = S.drawDino(dino());
+    document.getElementById("home-trail").innerHTML = state.trail ? S.trailHtml(state.trail, true) : "";
+    document.querySelectorAll("a.icon-btn, #to-home").forEach((node) => { node.innerHTML = S.homeIcon(); });
+    renderStars();
+  }
+
+  function maxNum() {
+    if (state.played >= 12) return 10;
+    if (state.played >= 6) return 7;
+    return 5;
+  }
+
+  function startRound() {
+    if (state.trail >= 5) return hatch();
+    shell.clearTimers();
+    audio.clearSpeech();
+    const id = shell.bumpRound();
+    const max = maxNum();
+    const n = 1 + Math.floor(Math.random() * max);
+    const mode = state.played % 2 === 0 ? "count" : "find";
+    const distractors = S.shuffle(
+      Array.from({ length: max }, (_, i) => i + 1).filter((x) => x !== n)
+    ).slice(0, mode === "count" && state.played < 4 ? 1 : 2);
+    const options = S.shuffle([n].concat(distractors));
+    current = { n, mode, options, wrongs: 0, locked: false };
+
+    const kicker = document.getElementById("kicker");
+    const target = document.getElementById("target");
+    const countRow = document.getElementById("count-row");
+    if (mode === "count") {
+      kicker.textContent = "有幾多隻蛋？";
+      target.style.display = "none";
+      countRow.innerHTML = Array.from({ length: n }, () => `<span class="count-egg"></span>`).join("");
+      countRow.hidden = false;
+    } else {
+      kicker.textContent = "搵呢個數字";
+      target.style.display = "";
+      target.textContent = String(n);
+      countRow.innerHTML = "";
+      countRow.hidden = true;
+    }
+
+    document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+    renderStars();
+    const box = document.getElementById("choices");
+    box.style.setProperty("--n", String(options.length));
+    box.innerHTML = "";
+    options.forEach((num, index) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "egg";
+      btn.style.animationDelay = `${index * 0.1}s`;
+      btn.dataset.n = String(num);
+      btn.innerHTML = `<i class="spot s1"></i><i class="spot s2"></i><i class="spot s3"></i><span class="glyph">${num}</span>`;
+      btn.addEventListener("click", () => onPick(num, btn, id));
+      box.appendChild(btn);
+    });
+
+    const prompt = mode === "count"
+      ? `有幾多隻蛋？`
+      : `搵 ${ZH[n]}`;
+    document.getElementById("live") && null;
+    shell.later(() => {
+      if (!shell.isCurrent(id) || current.locked) return;
+      document.querySelector(`#choices [data-n="${n}"]`)?.classList.add("hint");
+      sayPrompt();
+    }, 12000);
+    sayPrompt();
+
+    function sayPrompt() {
+      audio.clearSpeech();
+      if (mode === "count") {
+        audio.speak("有幾多隻蛋？", "zh-HK");
+      } else {
+        audio.speak(`搵 ${ZH[n]}`, "zh-HK");
+        shell.later(() => audio.speak(`Find ${SAY[n]}`, "en-GB"), 700);
+      }
+    }
+    current.sayPrompt = sayPrompt;
+  }
+
+  function onPick(num, btn, id) {
+    if (!shell.isCurrent(id) || !current || current.locked) return;
+    audio.setup();
+    if (num === current.n) {
+      current.locked = true;
+      shell.clearTimers();
+      btn.classList.add("good");
+      audio.chime("ok");
+      state.stars += 1;
+      state.trail += 1;
+      state.played += 1;
+      shell.persist();
+      renderStars();
+      document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+      audio.clearSpeech();
+      audio.speak(`${ZH[num]}。${SAY[num]}`, "zh-HK");
+      shell.later(() => audio.speak(SAY[num], "en-GB"), 600);
+      shell.later(() => {
+        if (state.trail >= 5) hatch();
+        else startRound();
+      }, 1700);
+    } else {
+      current.wrongs += 1;
+      btn.classList.add("bad");
+      shell.later(() => btn.classList.remove("bad"), 400);
+      audio.chime("no");
+      current.sayPrompt();
+      if (current.wrongs >= 2) {
+        document.querySelector(`#choices [data-n="${current.n}"]`)?.classList.add("hint");
+      }
+    }
+  }
+
+  function hatch() {
+    const earned = dino();
+    state.dino = (state.dino + 1) % S.DINOS.length;
+    state.trail = 0;
+    shell.persist();
+    shell.clearTimers();
+    audio.clearSpeech();
+    document.getElementById("hatch-art").innerHTML = S.drawDino(earned);
+    document.getElementById("hatch-name").textContent = earned.name;
+    document.getElementById("hatch-trail").innerHTML = S.trailHtml(5, false);
+    shell.show("hatch");
+    audio.chime("hatch");
+    audio.speak(`This is ${earned.name}.`, "en-GB");
+  }
+
+  function goHome() {
+    shell.clearTimers();
+    audio.clearSpeech();
+    current = null;
+    renderHome();
+    shell.show("home");
+  }
+
+  S.bindPress(document);
+  renderHome();
+  document.getElementById("play").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("again").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("to-home").onclick = goHome;
+  document.getElementById("bubble").onclick = () => { if (current && !current.locked) current.sayPrompt(); };
+})();
+</script>
+</body>
+</html>

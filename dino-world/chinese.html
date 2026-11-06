@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dino 中文">
+<meta name="theme-color" content="#8ecae6">
+<title>Dino 中文 · 認漢字</title>
+<link rel="icon" href="icon-180.png">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div id="app">
+  <div id="world"></div>
+  <section id="home" class="screen on">
+    <header class="topbar">
+      <a class="icon-btn" href="index.html" aria-label="系列主頁"></a>
+      <div class="brand">中文</div>
+      <div id="home-stars" class="star-pill"></div>
+    </header>
+    <div class="home-mid">
+      <div id="home-dino" class="home-dino bob"></div>
+      <p class="home-line">搵個漢字</p>
+      <div id="home-trail" class="trail"></div>
+      <button id="play" class="btn primary big" type="button">Play</button>
+    </div>
+  </section>
+  <section id="play" class="screen">
+    <header class="topbar">
+      <button id="to-home" class="icon-btn" type="button" aria-label="Home"></button>
+      <div id="trail" class="trail"></div>
+      <div id="stars" class="star-pill"></div>
+    </header>
+    <div class="ask-row">
+      <button id="mascot" class="mascot bob" type="button" aria-label="再說一次"></button>
+      <button id="bubble" class="bubble" type="button" aria-label="再說一次">
+        <span class="kicker">搵</span>
+        <span id="target" class="big-letter">龍</span>
+      </button>
+    </div>
+    <div id="choices" class="choices"></div>
+  </section>
+  <section id="hatch" class="screen">
+    <div class="hatch-wrap">
+      <div id="hatch-trail" class="trail"></div>
+      <div id="hatch-art" class="hatch-art"></div>
+      <p class="hatch-kicker">A new dinosaur</p>
+      <h2 id="hatch-name" class="hatch-name">Rex</h2>
+      <button id="again" class="btn primary big" type="button">Again</button>
+      <p class="parent-note">完成 5 題。可以休息，或者再玩一輪。</p>
+      <p><a class="btn" href="index.html">返系列</a></p>
+    </div>
+  </section>
+  <p id="live" class="sr" aria-live="polite"></p>
+</div>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const S = window.DinoShared;
+  const WORDS = [
+    { ch: "龍", say: "龍", tip: "dinosaur" },
+    { ch: "蛋", say: "蛋", tip: "egg" },
+    { ch: "山", say: "山", tip: "mountain" },
+    { ch: "火", say: "火", tip: "fire" },
+    { ch: "水", say: "水", tip: "water" },
+    { ch: "大", say: "大", tip: "big" },
+    { ch: "小", say: "小", tip: "small" },
+    { ch: "日", say: "日", tip: "sun" },
+    { ch: "月", say: "月", tip: "moon" },
+    { ch: "木", say: "木", tip: "tree" },
+    { ch: "人", say: "人", tip: "person" },
+    { ch: "口", say: "口", tip: "mouth" },
+    { ch: "手", say: "手", tip: "hand" },
+    { ch: "上", say: "上", tip: "up" },
+    { ch: "下", say: "下", tip: "down" }
+  ];
+
+  document.getElementById("world").innerHTML = S.worldSvg();
+  const shell = S.makeShell({
+    key: "dino-hanzi-v1",
+    defaultState: () => ({ stars: 0, trail: 0, dino: 0, sound: true, played: 0, stats: {} })
+  });
+  const { state, audio } = shell;
+  let current = null;
+
+  function dino() { return S.DINOS[state.dino % S.DINOS.length]; }
+  function renderStars() {
+    document.getElementById("home-stars").innerHTML = S.starHtml(state.stars);
+    document.getElementById("stars").innerHTML = S.starHtml(state.stars);
+  }
+  function renderHome() {
+    document.getElementById("home-dino").innerHTML = S.drawDino(dino());
+    document.getElementById("home-trail").innerHTML = state.trail ? S.trailHtml(state.trail, true) : "";
+    document.querySelectorAll('a.icon-btn, #to-home').forEach((node) => { node.innerHTML = S.homeIcon(); });
+    renderStars();
+  }
+
+  function activePool() {
+    const known = Object.keys(state.stats || {}).filter((ch) => (state.stats[ch] || 0) >= 2);
+    const size = Math.min(WORDS.length, Math.max(4, known.length + 3));
+    return WORDS.slice(0, size);
+  }
+
+  function pickTarget(pool) {
+    const weighted = pool.map((item) => {
+      const ok = state.stats[item.ch] || 0;
+      return { item, w: ok < 2 ? 3 : 1 };
+    });
+    let total = weighted.reduce((sum, row) => sum + row.w, 0);
+    let roll = Math.random() * total;
+    for (const row of weighted) {
+      roll -= row.w;
+      if (roll <= 0) return row.item;
+    }
+    return pool[0];
+  }
+
+  function startRound() {
+    if (state.trail >= 5) return hatch();
+    shell.clearTimers();
+    audio.clearSpeech();
+    const id = shell.bumpRound();
+    const pool = activePool();
+    const target = state.played === 0 ? WORDS[0] : pickTarget(pool);
+    const extras = S.shuffle(pool.filter((item) => item.ch !== target.ch)).slice(0, 1);
+    const options = S.shuffle([target].concat(extras));
+    current = { target, options, wrongs: 0, locked: false };
+    document.getElementById("target").textContent = target.ch;
+    document.getElementById("live").textContent = `搵 ${target.say}`;
+    document.getElementById("mascot").innerHTML = S.drawDino(dino());
+    document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+    renderStars();
+    const box = document.getElementById("choices");
+    box.style.setProperty("--n", String(options.length));
+    box.innerHTML = "";
+    options.forEach((opt, index) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "egg";
+      btn.style.animationDelay = `${index * 0.1}s`;
+      btn.dataset.ch = opt.ch;
+      btn.innerHTML = `<i class="spot s1"></i><i class="spot s2"></i><i class="spot s3"></i><span class="glyph">${opt.ch}</span>`;
+      btn.addEventListener("click", () => onPick(opt, btn, id));
+      box.appendChild(btn);
+    });
+    shell.later(() => {
+      if (!shell.isCurrent(id) || current.wrongs) return;
+      // soft first-round hint
+      if (state.played === 0) box.querySelector(`[data-ch="${target.ch}"]`)?.classList.add("hint");
+    }, 700);
+    shell.later(() => {
+      if (!shell.isCurrent(id) || current.locked) return;
+      box.querySelector(`[data-ch="${target.ch}"]`)?.classList.add("hint");
+      audio.clearSpeech();
+      audio.speak(`搵 ${target.say}`, "zh-HK");
+    }, 12000);
+    audio.speak(`搵 ${target.say}`, "zh-HK");
+  }
+
+  function onPick(opt, btn, id) {
+    if (!shell.isCurrent(id) || !current || current.locked) return;
+    audio.setup();
+    if (opt.ch === current.target.ch) {
+      current.locked = true;
+      shell.clearTimers();
+      btn.classList.add("good");
+      audio.chime("ok");
+      state.stats[opt.ch] = (state.stats[opt.ch] || 0) + 1;
+      state.stars += 1;
+      state.trail += 1;
+      state.played += 1;
+      shell.persist();
+      renderStars();
+      document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+      audio.clearSpeech();
+      audio.speak(`${opt.say}。${opt.tip}`, "zh-HK");
+      shell.later(() => audio.speak(opt.tip, "en-GB"), 700);
+      shell.later(() => {
+        if (state.trail >= 5) hatch();
+        else startRound();
+      }, 1800);
+    } else {
+      current.wrongs += 1;
+      btn.classList.add("bad");
+      shell.later(() => btn.classList.remove("bad"), 400);
+      audio.chime("no");
+      audio.clearSpeech();
+      audio.speak(`搵 ${current.target.say}`, "zh-HK");
+      if (current.wrongs >= 2) {
+        document.querySelector(`#choices [data-ch="${current.target.ch}"]`)?.classList.add("hint");
+      }
+    }
+  }
+
+  function hatch() {
+    const earned = dino();
+    state.dino = (state.dino + 1) % S.DINOS.length;
+    state.trail = 0;
+    shell.persist();
+    shell.clearTimers();
+    audio.clearSpeech();
+    document.getElementById("hatch-art").innerHTML = S.drawDino(earned);
+    document.getElementById("hatch-name").textContent = earned.name;
+    document.getElementById("hatch-trail").innerHTML = S.trailHtml(5, false);
+    shell.show("hatch");
+    audio.chime("hatch");
+    audio.speak(`This is ${earned.name}.`, "en-GB");
+  }
+
+  function goHome() {
+    shell.clearTimers();
+    audio.clearSpeech();
+    current = null;
+    renderHome();
+    shell.show("home");
+  }
+
+  S.bindPress(document);
+  renderHome();
+  document.getElementById("play").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("again").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("to-home").onclick = goHome;
+  document.getElementById("mascot").onclick = replay;
+  document.getElementById("bubble").onclick = replay;
+  function replay() {
+    if (!current || current.locked) return;
+    audio.clearSpeech();
+    audio.speak(`搵 ${current.target.say}`, "zh-HK");
+  }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) audio.clearSpeech(); });
+})();
+</script>
+</body>
+</html>

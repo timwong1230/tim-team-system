@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dino 專注">
+<meta name="theme-color" content="#8ecae6">
+<title>Dino 專注 · 練專注力</title>
+<link rel="icon" href="icon-180.png">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div id="app">
+  <div id="world"></div>
+  <section id="home" class="screen on">
+    <header class="topbar">
+      <a class="icon-btn" href="index.html" aria-label="系列主頁"></a>
+      <div class="brand">專注</div>
+      <div id="home-stars" class="star-pill"></div>
+    </header>
+    <div class="home-mid">
+      <div id="home-dino" class="home-dino bob"></div>
+      <p class="home-line">搵一樣 · 等一等再撳</p>
+      <div id="home-trail" class="trail"></div>
+      <button id="play" class="btn primary big" type="button">Play</button>
+    </div>
+  </section>
+  <section id="play" class="screen">
+    <header class="topbar">
+      <button id="to-home" class="icon-btn" type="button" aria-label="Home"></button>
+      <div id="trail" class="trail"></div>
+      <div id="stars" class="star-pill"></div>
+    </header>
+    <div class="ask-row" style="flex-direction:column;gap:10px">
+      <button id="bubble" class="bubble" type="button" aria-label="再說一次">
+        <span class="kicker" id="kicker">搵一樣</span>
+        <div id="sample" class="focus-dino" style="width:min(28vh,220px)"></div>
+      </button>
+    </div>
+    <div id="choices" class="focus-row"></div>
+  </section>
+  <section id="hatch" class="screen">
+    <div class="hatch-wrap">
+      <div id="hatch-trail" class="trail"></div>
+      <div id="hatch-art" class="hatch-art"></div>
+      <p class="hatch-kicker">A new dinosaur</p>
+      <h2 id="hatch-name" class="hatch-name">Rex</h2>
+      <button id="again" class="btn primary big" type="button">Again</button>
+      <p class="parent-note">完成 5 題。可以休息，或者再玩一輪。</p>
+      <p><a class="btn" href="index.html">返系列</a></p>
+    </div>
+  </section>
+</div>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const S = window.DinoShared;
+  document.getElementById("world").innerHTML = S.worldSvg();
+  const shell = S.makeShell({
+    key: "dino-focus-v1",
+    defaultState: () => ({ stars: 0, trail: 0, dino: 4, sound: true, played: 0 })
+  });
+  const { state, audio } = shell;
+  let current = null;
+
+  function dino() { return S.DINOS[state.dino % S.DINOS.length]; }
+  function renderStars() {
+    document.getElementById("home-stars").innerHTML = S.starHtml(state.stars);
+    document.getElementById("stars").innerHTML = S.starHtml(state.stars);
+  }
+  function renderHome() {
+    document.getElementById("home-dino").innerHTML = S.drawDino(dino());
+    document.getElementById("home-trail").innerHTML = state.trail ? S.trailHtml(state.trail, true) : "";
+    document.querySelectorAll("a.icon-btn, #to-home").forEach((node) => { node.innerHTML = S.homeIcon(); });
+    renderStars();
+  }
+
+  function startRound() {
+    if (state.trail >= 5) return hatch();
+    shell.clearTimers();
+    audio.clearSpeech();
+    const id = shell.bumpRound();
+    const mode = state.played % 2 === 0 ? "match" : "wait";
+    const target = S.DINOS[Math.floor(Math.random() * S.DINOS.length)];
+    const others = S.shuffle(S.DINOS.filter((d) => d.id !== target.id)).slice(0, 2);
+    const options = S.shuffle([target].concat(others));
+    current = { mode, target, options, wrongs: 0, locked: false, ready: mode === "match" };
+
+    document.getElementById("kicker").textContent = mode === "match" ? "搵一樣" : "等佢跳先至撳";
+    document.getElementById("sample").innerHTML = S.drawDino(target);
+    document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+    renderStars();
+
+    const box = document.getElementById("choices");
+    box.innerHTML = "";
+    options.forEach((opt, index) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "focus-card" + (mode === "wait" ? " sleep" : "");
+      btn.style.animationDelay = `${index * 0.1}s`;
+      btn.dataset.id = opt.id;
+      btn.innerHTML = `<div class="focus-dino">${S.drawDino(opt)}</div>`;
+      btn.addEventListener("click", () => onPick(opt, btn, id));
+      box.appendChild(btn);
+    });
+
+    if (mode === "wait") {
+      const waitMs = 1600 + Math.floor(Math.random() * 1400);
+      shell.later(() => {
+        if (!shell.isCurrent(id) || current.locked) return;
+        current.ready = true;
+        const live = document.querySelector(`#choices [data-id="${target.id}"]`);
+        live?.classList.remove("sleep");
+        live?.classList.add("glow", "bob");
+        audio.speak("而家！", "zh-HK");
+      }, waitMs);
+      audio.speak("等一等，見到佢跳先至撳", "zh-HK");
+    } else {
+      audio.speak("搵一樣", "zh-HK");
+      shell.later(() => audio.speak("Find the same dinosaur", "en-GB"), 700);
+    }
+
+    shell.later(() => {
+      if (!shell.isCurrent(id) || current.locked) return;
+      if (mode === "match") {
+        document.querySelector(`#choices [data-id="${target.id}"]`)?.classList.add("hint");
+      }
+    }, 14000);
+  }
+
+  function onPick(opt, btn, id) {
+    if (!shell.isCurrent(id) || !current || current.locked) return;
+    audio.setup();
+
+    if (current.mode === "wait" && !current.ready) {
+      btn.classList.add("bad");
+      shell.later(() => btn.classList.remove("bad"), 400);
+      audio.chime("no");
+      audio.clearSpeech();
+      audio.speak("未得，再等陣", "zh-HK");
+      return;
+    }
+
+    if (opt.id === current.target.id) {
+      current.locked = true;
+      shell.clearTimers();
+      btn.classList.add("good");
+      audio.chime("ok");
+      state.stars += 1;
+      state.trail += 1;
+      state.played += 1;
+      shell.persist();
+      renderStars();
+      document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+      audio.clearSpeech();
+      audio.speak(current.mode === "wait" ? "好專心！" : `係 ${opt.name}`, "zh-HK");
+      shell.later(() => {
+        if (state.trail >= 5) hatch();
+        else startRound();
+      }, 1500);
+    } else {
+      current.wrongs += 1;
+      btn.classList.add("bad");
+      shell.later(() => btn.classList.remove("bad"), 400);
+      audio.chime("no");
+      audio.clearSpeech();
+      audio.speak(current.mode === "match" ? "搵一樣" : "撳會跳嗰隻", "zh-HK");
+      if (current.wrongs >= 2 && current.mode === "match") {
+        document.querySelector(`#choices [data-id="${current.target.id}"]`)?.classList.add("hint");
+      }
+    }
+  }
+
+  function hatch() {
+    const earned = dino();
+    state.dino = (state.dino + 1) % S.DINOS.length;
+    state.trail = 0;
+    shell.persist();
+    shell.clearTimers();
+    audio.clearSpeech();
+    document.getElementById("hatch-art").innerHTML = S.drawDino(earned);
+    document.getElementById("hatch-name").textContent = earned.name;
+    document.getElementById("hatch-trail").innerHTML = S.trailHtml(5, false);
+    shell.show("hatch");
+    audio.chime("hatch");
+    audio.speak(`This is ${earned.name}.`, "en-GB");
+  }
+
+  function goHome() {
+    shell.clearTimers();
+    audio.clearSpeech();
+    current = null;
+    renderHome();
+    shell.show("home");
+  }
+
+  S.bindPress(document);
+  renderHome();
+  document.getElementById("play").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("again").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("to-home").onclick = goHome;
+  document.getElementById("bubble").onclick = () => {
+    if (!current || current.locked) return;
+    audio.clearSpeech();
+    audio.speak(current.mode === "match" ? "搵一樣" : "等一等，見到佢跳先至撳", "zh-HK");
+  };
+})();
+</script>
+</body>
+</html>
