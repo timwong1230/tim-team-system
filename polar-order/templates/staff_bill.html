@@ -246,8 +246,8 @@
 
     <div id="paySplitBox" style="display:none">
       <p class="muted" style="margin-top:0">
-        Each person / tender on its own row. Amounts must add up to
-        <strong id="paySplitDueLabel">amount due</strong>.
+        Each person / tender on its own row. Split equal rounds <strong>up</strong> to whole HKD
+        (sum may be a little over <strong id="paySplitDueLabel">amount due</strong>).
       </p>
       <div id="paySplitRows" class="pay-split-rows"></div>
       <div class="pay-split-actions">
@@ -658,6 +658,12 @@
     return Math.round(Number(n) * 10) / 10;
   }
 
+  /** Staff collect whole HKD — any fraction rounds up. */
+  function ceilHkd(n) {
+    const v = Number(n) || 0;
+    return Math.ceil(v - 1e-9);
+  }
+
   function moneyLabel(n) {
     const v = roundMoney(n);
     return Number.isInteger(v) ? String(v) : v.toFixed(1);
@@ -713,15 +719,17 @@
     if (!paySplitRows) return [];
     return [...paySplitRows.querySelectorAll('.pay-split-row')].map((row) => ({
       method: row.querySelector('.pay-split-method')?.value || '',
-      amount: roundMoney(row.querySelector('.pay-split-amount')?.value || 0),
+      amount: ceilHkd(row.querySelector('.pay-split-amount')?.value || 0),
     })).filter((p) => p.method && p.amount > 0);
   }
 
   function updateSplitRemain() {
     if (!paySplitRemain) return;
     const due = amountDueNow();
-    const paid = roundMoney(readSplitPayments().reduce((s, p) => s + p.amount, 0));
+    const pays = readSplitPayments();
+    const paid = roundMoney(pays.reduce((s, p) => s + p.amount, 0));
     const left = roundMoney(due - paid);
+    const maxOver = Math.max(pays.length, 1);
     const dueEl = document.getElementById('paySplitDueLabel');
     if (dueEl) dueEl.textContent = `$${moneyLabel(due)}`;
     if (Math.abs(left) < 0.05) {
@@ -730,8 +738,11 @@
     } else if (left > 0) {
       paySplitRemain.textContent = `Still need $${moneyLabel(left)}`;
       paySplitRemain.style.color = '#f0c0c0';
+    } else if (-left <= maxOver + 0.05) {
+      paySplitRemain.textContent = `OK — round up, collect $${moneyLabel(paid)} ($${moneyLabel(-left)} over due)`;
+      paySplitRemain.style.color = '';
     } else {
-      paySplitRemain.textContent = `Over by $${moneyLabel(-left)}`;
+      paySplitRemain.textContent = `Over by $${moneyLabel(-left)} — too much`;
       paySplitRemain.style.color = '#f0c0c0';
     }
   }
@@ -741,11 +752,9 @@
     const rows = [...paySplitRows.querySelectorAll('.pay-split-row')];
     const n = rows.length;
     if (!n) return;
-    const dueCents = Math.round(amountDueNow() * 10);
-    const base = Math.floor(dueCents / n);
-    let rem = dueCents - base * n;
-    rows.forEach((row, i) => {
-      const share = (base + (i < rem ? 1 : 0)) / 10;
+    // Each person pays ceil(due / n) whole HKD (staff round up when collecting).
+    const share = ceilHkd(amountDueNow() / n);
+    rows.forEach((row) => {
       const inp = row.querySelector('.pay-split-amount');
       if (inp) inp.value = moneyLabel(share);
     });
@@ -795,21 +804,30 @@
       const pays = readSplitPayments();
       const due = amountDueNow();
       const paid = roundMoney(pays.reduce((s, p) => s + p.amount, 0));
+      const maxOver = Math.max(pays.length, 1);
       if (pays.length < 2) {
         alert('Split needs at least 2 payment rows');
         paySplitBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      if (Math.abs(paid - due) > 0.05) {
-        alert(`Split amounts ($${moneyLabel(paid)}) must equal amount due ($${moneyLabel(due)})`);
+      if (paid + 0.05 < due) {
+        alert(`Split amounts ($${moneyLabel(paid)}) are short of amount due ($${moneyLabel(due)})`);
+        paySplitBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (paid - due > maxOver + 0.05) {
+        alert(`Split amounts ($${moneyLabel(paid)}) are too far over amount due ($${moneyLabel(due)})`);
         paySplitBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
       if (paymentHidden) paymentHidden.value = '';
       if (paymentsJsonHidden) paymentsJsonHidden.value = JSON.stringify(pays);
+      const overNote = paid - due > 0.05
+        ? `\n(Round-up: collect $${moneyLabel(paid)}, due $${moneyLabel(due)})`
+        : '';
       const summary = pays.map((p) => `${p.method} $${moneyLabel(p.amount)}`).join('\n');
       const ok = confirm(
-        `Confirm party size: ${party} guest(s)?\nSplit payment:\n${summary}\n\nClose table after payment collected?`
+        `Confirm party size: ${party} guest(s)?\nSplit payment:\n${summary}${overNote}\n\nClose table after payment collected?`
       );
       if (!ok) return;
       await fetch('/api/staff/bill/{{ table.code }}/party', {

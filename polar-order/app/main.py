@@ -50,6 +50,7 @@ from .db import (
     replace_session_payments,
     reset_operational_data,
     session_is_ff_party,
+    update_session_payment_method,
     set_booking_status,
     set_cash_tilt,
     start_session,
@@ -1968,6 +1969,13 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
     }
 
 
+def _ceil_hkd(amount: float) -> float:
+    """Staff collect whole HKD — round any fraction up."""
+    import math
+
+    return float(math.ceil(float(amount) - 1e-9))
+
+
 def _parse_close_payments(
     *,
     is_boss: bool,
@@ -1975,7 +1983,11 @@ def _parse_close_payments(
     payments_json: str,
     amount_due: float,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Return (sessions.payment_method, payment rows) for close / receipt / Daily Sales."""
+    """Return (sessions.payment_method, payment rows) for close / receipt / Daily Sales.
+
+    Split rows are rounded **up** to whole HKD (how staff collect). Sum may be a
+    little over amount due because of that rounding — that is allowed.
+    """
     if is_boss:
         return BOSS_CREDIT_METHOD, []
 
@@ -2004,7 +2016,7 @@ def _parse_close_payments(
         if method not in PAYMENT_METHODS:
             raise HTTPException(400, f"Invalid payment method: {method or '—'}")
         try:
-            amount = round(float(raw.get("amount") or 0), 1)
+            amount = _ceil_hkd(float(raw.get("amount") or 0))
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, "Payment amount must be a number") from exc
         if amount <= 0:
@@ -2016,10 +2028,17 @@ def _parse_close_payments(
 
     paid = round(sum(float(p["amount"]) for p in cleaned), 1)
     due = round(float(amount_due), 1)
-    if abs(paid - due) > 0.05:
+    # Exact match OK; round-up may leave paid a little over due (≤ $1 per person).
+    max_over = float(max(len(cleaned), 1))
+    if paid + 0.05 < due:
         raise HTTPException(
             400,
-            f"Split payments ${paid:g} must equal amount due ${due:g}",
+            f"Split payments ${paid:g} are short of amount due ${due:g}",
+        )
+    if paid - due > max_over + 0.05:
+        raise HTTPException(
+            400,
+            f"Split payments ${paid:g} are too far over amount due ${due:g}",
         )
 
     if len(cleaned) == 1:
@@ -2163,6 +2182,12 @@ def close_bill(
 
 class StaffPaymentUpdateIn(BaseModel):
     pin: str
+    payment_method: str = Field(min_length=1, max_length=40)
+
+
+class StaffPaymentLineUpdateIn(BaseModel):
+    pin: str
+    payment_id: int
     payment_method: str = Field(min_length=1, max_length=40)
 
 
@@ -2316,6 +2341,96 @@ def staff_update_session_payment(session_id: int, body: StaffPaymentUpdateIn):
         "ok": True,
         "session_id": session_id,
         "payment_method": method,
+        "receipt_url": f"/staff/receipt/{session_id}?pin={body.pin}",
+    }
+
+
+@app.post("/api/staff/sessions/{session_id}/payment-line")
+def staff_update_session_payment_line(session_id: int, body: StaffPaymentLineUpdateIn):
+    """Correct one person's tender on a split bill (amount unchanged)."""
+    if body.pin != STAFF_PIN:
+        raise HTTPException(401, "Unauthorized")
+    method = (body.payment_method or "").strip()
+    if method not in PAYMENT_METHODS:
+        raise HTTPException(400, "Select a payment method")
+    conn = connect()
+    session = get_session(conn, session_id)
+    if not session or session["status"] != "closed":
+        conn.close()
+        raise HTTPException(404, "Closed bill not found")
+    table = conn.execute(
+        "SELECT * FROM tables WHERE id = ?", (session["table_id"],)
+    ).fetchone()
+    if not table:
+        conn.close()
+        raise HTTPException(404, "Table not found")
+    zone = (table["zone"] or "").strip().lower()
+    if zone in ("boss", "demo"):
+        conn.close()
+        raise HTTPException(400, "Cannot change payment on boss or demo seats")
+    if (session["payment_method"] or "") == BOSS_CREDIT_METHOD:
+        conn.close()
+        raise HTTPException(400, "Cannot change boss credit")
+
+    updated = update_session_payment_method(
+        conn,
+        session_id=int(session_id),
+        payment_id=int(body.payment_id),
+        method=method,
+    )
+    if not updated:
+        conn.close()
+        raise HTTPException(404, "Payment line not found")
+
+    pay_rows = list_session_payments(conn, int(session_id))
+    if len(pay_rows) <= 1:
+        session_method = pay_rows[0]["method"] if pay_rows else method
+    else:
+        session_method = SPLIT_PAYMENT_METHOD
+
+    meta = load_menu_meta()
+    lines = _session_lines(conn, session["id"])
+    bill = {
+        "subtotal": float(session["subtotal"] or 0),
+        "snack_charge": float(session["snack_charge"] or 0),
+        "service_charge": float(session["service_charge"] or 0),
+        "discount_amount": float(session["discount_amount"] or 0),
+        "discount_percent": float(session["discount_percent"] or 0),
+        "total": float(session["total"] or 0),
+        "party_size": int(session["party_size"] or 1),
+        "service_charge_rate": float(meta["service_charge_rate"]),
+    }
+    guest_name = session["guest_name"] if session["guest_name"] else None
+    receipt_rel = generate_receipt_pdf(
+        session_id=session["id"],
+        table_label=table["label"],
+        party_size=int(session["party_size"] or 1),
+        lines=lines,
+        bill=bill,
+        closed_at_iso=session["closed_at"] or utc_now(),
+        guest_name=guest_name,
+        payment_method=session_method,
+        payments=pay_rows,
+    )
+    conn.execute(
+        "UPDATE sessions SET payment_method = ?, receipt_path = ? WHERE id = ?",
+        (session_method, receipt_rel, session["id"]),
+    )
+    conn.commit()
+    biz_iso = session["business_date"]
+    if biz_iso:
+        try:
+            daily_sales_report(conn, date.fromisoformat(str(biz_iso)[:10]))
+        except Exception:
+            pass
+    conn.close()
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "payment_id": int(body.payment_id),
+        "payment_method": method,
+        "payment_label": format_payment_label(session_method, pay_rows),
+        "payments": pay_rows,
         "receipt_url": f"/staff/receipt/{session_id}?pin={body.pin}",
     }
 

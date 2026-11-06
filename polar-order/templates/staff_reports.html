@@ -47,9 +47,21 @@
         <strong>{{ s.table }}</strong>
         <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}</div>
         {% if s.payments and s.payments|length >= 2 %}
-        <div class="muted" style="margin-top:8px">Split payment</div>
-        <div style="margin-top:4px;font-weight:650">{{ s.payment_method }}</div>
-        <label class="muted" for="pay-{{ s.session_id }}" style="display:block;margin-top:8px">Change to one method</label>
+        <div class="muted" style="margin-top:8px">Split payment — change each person’s method</div>
+        {% for p in s.payments %}
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span style="font-weight:650;min-width:4.5rem">${{ '%.0f'|format(p.amount) }}</span>
+          <select class="field pay-line-edit"
+                  data-session="{{ s.session_id }}" data-payment="{{ p.id }}"
+                  data-prev="{{ p.method }}"
+                  style="margin:0;max-width:180px" aria-label="Payment method for ${{ '%.0f'|format(p.amount) }}">
+            {% for m in payment_methods %}
+            <option value="{{ m }}" {% if m == p.method %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endfor %}
+        <label class="muted" for="pay-{{ s.session_id }}" style="display:block;margin-top:10px">Or collapse to one method</label>
         <select class="field pay-method-edit" id="pay-{{ s.session_id }}"
                 data-session="{{ s.session_id }}" data-prev=""
                 style="margin:4px 0 0;max-width:220px">
@@ -338,6 +350,40 @@
         if (!res.ok) throw new Error(data.detail || 'Update failed');
         sel.dataset.prev = method;
         // Reload so payment breakdown totals stay correct
+        location.reload();
+      } catch (err) {
+        alert(err.message || 'Update failed');
+        sel.value = prev;
+        sel.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll('.pay-line-edit').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const sessionId = sel.dataset.session;
+      const paymentId = sel.dataset.payment;
+      const prev = sel.dataset.prev || '';
+      const method = sel.value;
+      if (!sessionId || !paymentId || !method || method === prev) return;
+      if (!confirm(`Change this person’s payment to ${method}?`)) {
+        sel.value = prev;
+        return;
+      }
+      sel.disabled = true;
+      try {
+        const res = await fetch(`/api/staff/sessions/${sessionId}/payment-line`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pin: PIN,
+            payment_id: Number(paymentId),
+            payment_method: method,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Update failed');
+        sel.dataset.prev = method;
         location.reload();
       } catch (err) {
         alert(err.message || 'Update failed');
