@@ -1,8 +1,10 @@
-"""Same-table split payment: multiple methods that sum to amount due."""
+"""Same-table split payment: round-up close + per-person method edit after bill."""
 
 from __future__ import annotations
 
+import math
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -13,8 +15,7 @@ if str(_POLAR) not in sys.path:
     sys.path.insert(0, str(_POLAR))
 
 
-def test_split_payments_on_close_and_daily_sales():
-    tmp = tempfile.mkdtemp(prefix="polar-split-pay-")
+def _reload_polar(tmp: str):
     os.environ["POLAR_DATA_DIR"] = tmp
     os.environ["POLAR_STAFF_PIN"] = "polar2026"
 
@@ -29,6 +30,12 @@ def test_split_payments_on_close_and_daily_sales():
     importlib.reload(db)
     importlib.reload(reports)
     importlib.reload(main)
+    return db, main, reports
+
+
+def test_split_payments_on_close_and_daily_sales():
+    tmp = tempfile.mkdtemp(prefix="polar-split-pay-")
+    db, main, reports = _reload_polar(tmp)
 
     from fastapi.testclient import TestClient
 
@@ -53,16 +60,11 @@ def test_split_payments_on_close_and_daily_sales():
         table = db.get_table_by_code(conn, "TABLE3")
         sess = db.get_open_session(conn, table["id"])
         assert sess is not None
-        # Force known total path via close with payments that match computed bill.
-        # Close once with a probe single payment to learn total, then reopen? Easier:
-        # compute from API by closing with exact split after reading amount due from page.
-        import re
 
         m = re.search(r'id="vTotal"[^>]*>\$([0-9.]+)', preview.text)
         assert m, preview.text[:500]
         total = float(m.group(1))
         half = round(total / 2, 1)
-        # Adjust so two parts sum exactly
         a = round(total - half, 1)
         b = half
         assert abs(a + b - total) < 0.05
@@ -89,6 +91,7 @@ def test_split_payments_on_close_and_daily_sales():
         assert len(pays) == 2
         assert {p["method"] for p in pays} == {"Cash", "Visa"}
         assert abs(sum(p["amount"] for p in pays) - float(row["total"])) < 0.05
+        assert all("id" in p for p in pays)
 
         daily = reports.daily_sales_report(conn, business_date())
         methods = {p["method"]: p["total"] for p in daily["by_payment_method"]}
@@ -141,6 +144,147 @@ def test_split_payments_on_close_and_daily_sales():
         conn.close()
 
 
+def test_split_round_up_allows_over_due():
+    """Equal split with ceil(HKD) may collect a little over amount due."""
+    tmp = tempfile.mkdtemp(prefix="polar-split-ceil-")
+    db, main, _reports = _reload_polar(tmp)
+
+    from fastapi.testclient import TestClient
+
+    from app.ops_constants import SPLIT_PAYMENT_METHOD
+
+    pin = "polar2026"
+    with TestClient(main.app) as client:
+        client.post(
+            "/api/t/TABLE3/welcome",
+            json={"guest_name": "CeilSplit", "party_size": 2},
+        )
+        client.post(
+            "/api/t/TABLE3/orders",
+            json={"items": [{"item_id": "coke", "qty": 1}]},
+        )
+        preview = client.get(f"/staff/bill/TABLE3?pin={pin}")
+        assert preview.status_code == 200
+        m = re.search(r'id="vTotal"[^>]*>\$([0-9.]+)', preview.text)
+        assert m, preview.text[:500]
+        total = float(m.group(1))
+        # 3-way split: each pays ceil(total/3) → sum may exceed due by < $3
+        share = float(math.ceil(total / 3 - 1e-9))
+        pays_json = (
+            f'[{{"method":"Cash","amount":{share}}},'
+            f'{{"method":"Visa","amount":{share}}},'
+            f'{{"method":"AlipayHK","amount":{share}}}]'
+        )
+        assert share * 3 >= total
+        assert share * 3 - total <= 3 + 0.05
+
+        closed = client.post(
+            "/api/staff/bill/TABLE3/close",
+            data={
+                "pin": pin,
+                "discount_percent": 0,
+                "party_size": 2,
+                "payments_json": pays_json,
+            },
+        )
+        assert closed.status_code == 200, closed.text
+        session_id = closed.json()["session_id"]
+        conn = db.connect()
+        row = db.get_session(conn, session_id)
+        assert row["payment_method"] == SPLIT_PAYMENT_METHOD
+        pays = db.list_session_payments(conn, session_id)
+        assert len(pays) == 3
+        assert all(p["amount"] == share for p in pays)
+        assert sum(p["amount"] for p in pays) >= float(row["total"])
+        conn.close()
+
+
+def test_edit_split_payment_line_method():
+    tmp = tempfile.mkdtemp(prefix="polar-split-line-")
+    db, main, reports = _reload_polar(tmp)
+
+    from fastapi.testclient import TestClient
+
+    from app.ops_constants import SPLIT_PAYMENT_METHOD
+    from app.pricing import business_date
+
+    pin = "polar2026"
+    with TestClient(main.app) as client:
+        client.post(
+            "/api/t/TABLE3/welcome",
+            json={"guest_name": "EditLine", "party_size": 2},
+        )
+        client.post(
+            "/api/t/TABLE3/orders",
+            json={"items": [{"item_id": "coke", "qty": 2}]},
+        )
+        preview = client.get(f"/staff/bill/TABLE3?pin={pin}")
+        m = re.search(r'id="vTotal"[^>]*>\$([0-9.]+)', preview.text)
+        assert m
+        total = float(m.group(1))
+        a = float(math.ceil(total / 2 - 1e-9))
+        b = a
+        closed = client.post(
+            "/api/staff/bill/TABLE3/close",
+            data={
+                "pin": pin,
+                "discount_percent": 0,
+                "party_size": 2,
+                "payments_json": (
+                    f'[{{"method":"Cash","amount":{a}}},'
+                    f'{{"method":"Visa","amount":{b}}}]'
+                ),
+            },
+        )
+        assert closed.status_code == 200, closed.text
+        session_id = closed.json()["session_id"]
+
+        conn = db.connect()
+        pays = db.list_session_payments(conn, session_id)
+        cash = next(p for p in pays if p["method"] == "Cash")
+        visa = next(p for p in pays if p["method"] == "Visa")
+
+        patched = client.post(
+            f"/api/staff/sessions/{session_id}/payment-line",
+            json={
+                "pin": pin,
+                "payment_id": cash["id"],
+                "payment_method": "WeChat pay",
+            },
+        )
+        assert patched.status_code == 200, patched.text
+        body = patched.json()
+        assert body["payment_method"] == "WeChat pay"
+        assert "WeChat pay" in body["payment_label"]
+        assert "Visa" in body["payment_label"]
+
+        pays2 = db.list_session_payments(conn, session_id)
+        methods = {p["id"]: p["method"] for p in pays2}
+        assert methods[cash["id"]] == "WeChat pay"
+        assert methods[visa["id"]] == "Visa"
+        row = db.get_session(conn, session_id)
+        assert row["payment_method"] == SPLIT_PAYMENT_METHOD
+
+        daily = reports.daily_sales_report(conn, business_date())
+        by_m = {p["method"]: p["total"] for p in daily["by_payment_method"]}
+        assert by_m.get("WeChat pay", 0) == a
+        assert by_m.get("Visa", 0) == b
+        assert by_m.get("Cash", 0) == 0
+
+        # Reports page exposes per-line editors
+        page = client.get(f"/staff/reports?pin={pin}")
+        assert page.status_code == 200
+        assert "pay-line-edit" in page.text
+        assert f'data-payment="{cash["id"]}"' in page.text
+
+        missing = client.post(
+            f"/api/staff/sessions/{session_id}/payment-line",
+            json={"pin": pin, "payment_id": 999999, "payment_method": "Cash"},
+        )
+        assert missing.status_code == 404
+        conn.close()
+
+
 def test_format_payment_label():
     from app.db import format_payment_label
 
@@ -152,3 +296,12 @@ def test_format_payment_label():
         )
         == "Cash $100 · Visa $50"
     )
+
+
+def test_ceil_hkd_helper():
+    from app.main import _ceil_hkd
+
+    assert _ceil_hkd(76.0) == 76.0
+    assert _ceil_hkd(76.1) == 77.0
+    assert _ceil_hkd(76.01) == 77.0
+    assert _ceil_hkd(0.1) == 1.0

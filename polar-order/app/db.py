@@ -603,7 +603,7 @@ def list_session_payments(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT method, amount, sort_order
+        SELECT id, method, amount, sort_order
         FROM session_payments
         WHERE session_id = ?
         ORDER BY sort_order ASC, id ASC
@@ -612,12 +612,43 @@ def list_session_payments(
     ).fetchall()
     return [
         {
+            "id": int(r["id"]),
             "method": str(r["method"] or ""),
             "amount": round(float(r["amount"] or 0), 1),
             "sort_order": int(r["sort_order"] or 0),
         }
         for r in rows
     ]
+
+
+def update_session_payment_method(
+    conn: sqlite3.Connection,
+    *,
+    session_id: int,
+    payment_id: int,
+    method: str,
+) -> dict[str, Any] | None:
+    """Change one tender's method on a closed split bill. Amount stays the same."""
+    row = conn.execute(
+        """
+        SELECT id, session_id, method, amount, sort_order
+        FROM session_payments
+        WHERE id = ? AND session_id = ?
+        """,
+        (int(payment_id), int(session_id)),
+    ).fetchone()
+    if not row:
+        return None
+    conn.execute(
+        "UPDATE session_payments SET method = ? WHERE id = ? AND session_id = ?",
+        (method, int(payment_id), int(session_id)),
+    )
+    return {
+        "id": int(row["id"]),
+        "method": method,
+        "amount": round(float(row["amount"] or 0), 1),
+        "sort_order": int(row["sort_order"] or 0),
+    }
 
 
 def replace_session_payments(
