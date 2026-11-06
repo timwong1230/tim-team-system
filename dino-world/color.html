@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dino 顏色">
+<meta name="theme-color" content="#8ecae6">
+<title>Dino 顏色 · 填色</title>
+<link rel="icon" href="icon-180.png">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div id="app">
+  <div id="world"></div>
+  <section id="home" class="screen on">
+    <header class="topbar">
+      <a class="icon-btn" href="index.html" aria-label="系列主頁"></a>
+      <div class="brand">顏色</div>
+      <div id="home-stars" class="star-pill"></div>
+    </header>
+    <div class="home-mid">
+      <div id="home-dino" class="home-dino bob"></div>
+      <p class="home-line">幫恐龍填色</p>
+      <div id="home-trail" class="trail"></div>
+      <button id="play" class="btn primary big" type="button">Play</button>
+    </div>
+  </section>
+  <section id="play" class="screen">
+    <header class="topbar">
+      <button id="to-home" class="icon-btn" type="button" aria-label="Home"></button>
+      <div id="trail" class="trail"></div>
+      <div id="stars" class="star-pill"></div>
+    </header>
+    <div class="paint-stage">
+      <button id="bubble" class="bubble" type="button" aria-label="再說一次" style="margin-bottom:8px">
+        <span class="kicker">用呢個顏色</span>
+        <span id="target" class="big-letter" style="font-size:clamp(42px,8vh,72px)">綠</span>
+      </button>
+      <div id="paint-dino" class="paint-dino bob"></div>
+    </div>
+    <div id="palette" class="palette"></div>
+  </section>
+  <section id="hatch" class="screen">
+    <div class="hatch-wrap">
+      <div id="hatch-trail" class="trail"></div>
+      <div id="hatch-art" class="hatch-art"></div>
+      <p class="hatch-kicker">A new dinosaur</p>
+      <h2 id="hatch-name" class="hatch-name">Rex</h2>
+      <button id="again" class="btn primary big" type="button">Again</button>
+      <p class="parent-note">完成 5 題。可以休息，或者再玩一輪。</p>
+      <p><a class="btn" href="index.html">返系列</a></p>
+    </div>
+  </section>
+</div>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const S = window.DinoShared;
+  const COLORS = [
+    { id: "green", zh: "綠", en: "green", body: "#6BBF59", belly: "#E7F6D4", spot: "#4E9E45" },
+    { id: "orange", zh: "橙", en: "orange", body: "#F4A261", belly: "#FFE3C4", spot: "#E08A3C" },
+    { id: "blue", zh: "藍", en: "blue", body: "#4C9BE8", belly: "#D9ECFF", spot: "#2E74C4" },
+    { id: "yellow", zh: "黃", en: "yellow", body: "#E9C46A", belly: "#FFF3CF", spot: "#D0A43E" },
+    { id: "red", zh: "紅", en: "red", body: "#E76F51", belly: "#FFD9CF", spot: "#C8523A" },
+    { id: "purple", zh: "紫", en: "purple", body: "#9B7EDE", belly: "#EDE4FF", spot: "#7354C4" }
+  ];
+
+  document.getElementById("world").innerHTML = S.worldSvg();
+  const shell = S.makeShell({
+    key: "dino-color-v1",
+    defaultState: () => ({ stars: 0, trail: 0, dino: 1, sound: true, played: 0 })
+  });
+  const { state, audio } = shell;
+  let current = null;
+  const outline = { body: "#dfe7e2", belly: "#f7faf8", spot: "#c5d0cb" };
+
+  function dino() { return S.DINOS[state.dino % S.DINOS.length]; }
+  function renderStars() {
+    document.getElementById("home-stars").innerHTML = S.starHtml(state.stars);
+    document.getElementById("stars").innerHTML = S.starHtml(state.stars);
+  }
+  function renderHome() {
+    document.getElementById("home-dino").innerHTML = S.drawDino(dino());
+    document.getElementById("home-trail").innerHTML = state.trail ? S.trailHtml(state.trail, true) : "";
+    document.querySelectorAll("a.icon-btn, #to-home").forEach((node) => { node.innerHTML = S.homeIcon(); });
+    renderStars();
+  }
+
+  function startRound() {
+    if (state.trail >= 5) return hatch();
+    shell.clearTimers();
+    audio.clearSpeech();
+    const id = shell.bumpRound();
+    const pool = state.played < 3 ? COLORS.slice(0, 4) : COLORS;
+    const target = pool[Math.floor(Math.random() * pool.length)];
+    const extras = S.shuffle(pool.filter((c) => c.id !== target.id)).slice(0, state.played < 4 ? 1 : 2);
+    const options = S.shuffle([target].concat(extras));
+    current = { target, options, wrongs: 0, locked: false };
+    document.getElementById("target").textContent = target.zh;
+    document.getElementById("target").style.color = target.body;
+    document.getElementById("paint-dino").innerHTML = S.drawDino(dino(), outline);
+    document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+    renderStars();
+    const box = document.getElementById("palette");
+    box.innerHTML = "";
+    options.forEach((opt, index) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pot";
+      btn.style.background = opt.body;
+      btn.style.animationDelay = `${index * 0.1}s`;
+      btn.dataset.id = opt.id;
+      btn.textContent = opt.zh;
+      btn.setAttribute("aria-label", opt.en);
+      btn.addEventListener("click", () => onPick(opt, btn, id));
+      box.appendChild(btn);
+    });
+    shell.later(() => {
+      if (!shell.isCurrent(id) || current.locked) return;
+      document.querySelector(`#palette [data-id="${target.id}"]`)?.classList.add("hint");
+      audio.clearSpeech();
+      audio.speak(target.zh, "zh-HK");
+    }, 12000);
+    audio.speak(`${target.zh}`, "zh-HK");
+    shell.later(() => audio.speak(target.en, "en-GB"), 650);
+  }
+
+  function onPick(opt, btn, id) {
+    if (!shell.isCurrent(id) || !current || current.locked) return;
+    audio.setup();
+    if (opt.id === current.target.id) {
+      current.locked = true;
+      shell.clearTimers();
+      btn.classList.add("good");
+      document.getElementById("paint-dino").innerHTML = S.drawDino(dino(), {
+        body: opt.body,
+        belly: opt.belly,
+        spot: opt.spot
+      });
+      audio.chime("ok");
+      state.stars += 1;
+      state.trail += 1;
+      state.played += 1;
+      shell.persist();
+      renderStars();
+      document.getElementById("trail").innerHTML = S.trailHtml(state.trail, true);
+      audio.clearSpeech();
+      audio.speak(`${opt.zh}。${opt.en}`, "zh-HK");
+      shell.later(() => {
+        if (state.trail >= 5) hatch();
+        else startRound();
+      }, 1700);
+    } else {
+      current.wrongs += 1;
+      btn.classList.add("bad");
+      shell.later(() => btn.classList.remove("bad"), 400);
+      audio.chime("no");
+      audio.clearSpeech();
+      audio.speak(current.target.zh, "zh-HK");
+      if (current.wrongs >= 2) {
+        document.querySelector(`#palette [data-id="${current.target.id}"]`)?.classList.add("hint");
+      }
+    }
+  }
+
+  function hatch() {
+    const earned = dino();
+    state.dino = (state.dino + 1) % S.DINOS.length;
+    state.trail = 0;
+    shell.persist();
+    shell.clearTimers();
+    audio.clearSpeech();
+    document.getElementById("hatch-art").innerHTML = S.drawDino(earned);
+    document.getElementById("hatch-name").textContent = earned.name;
+    document.getElementById("hatch-trail").innerHTML = S.trailHtml(5, false);
+    shell.show("hatch");
+    audio.chime("hatch");
+    audio.speak(`This is ${earned.name}.`, "en-GB");
+  }
+
+  function goHome() {
+    shell.clearTimers();
+    audio.clearSpeech();
+    current = null;
+    renderHome();
+    shell.show("home");
+  }
+
+  S.bindPress(document);
+  renderHome();
+  document.getElementById("play").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("again").onclick = () => { shell.show("play"); startRound(); };
+  document.getElementById("to-home").onclick = goHome;
+  document.getElementById("bubble").onclick = () => {
+    if (!current || current.locked) return;
+    audio.clearSpeech();
+    audio.speak(current.target.zh, "zh-HK");
+  };
+})();
+</script>
+</body>
+</html>

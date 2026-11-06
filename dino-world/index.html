@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dino World">
+<meta name="theme-color" content="#8ecae6">
+<title>Dino World 恐龍世界</title>
+<link rel="icon" href="icon-180.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="shared.css">
+<style>
+.hub-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(14px + env(safe-area-inset-top)) 18px 0;
+}
+.hub-title { margin: 0; font-size: clamp(34px, 6vw, 52px); font-weight: 700; line-height: 1; }
+.hub-sub { margin: 4px 18px 8px; color: var(--soft); font-weight: 700; font-size: 18px; }
+.hub-hero {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+.hub-hero .art { width: min(28vh, 220px); }
+.hub-hero .art svg { width: 100%; height: auto; display: block; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="world"></div>
+  <section class="screen on" id="hub">
+    <div class="hub-top">
+      <div>
+        <p class="eyebrow">iPad · 3 歲+</p>
+        <h1 class="hub-title">Dino World</h1>
+      </div>
+      <div id="stars" class="star-pill"></div>
+    </div>
+    <p class="hub-sub">恐龍系列 · 揀一隻嚟玩</p>
+    <div class="hub-hero"><div id="hero" class="art bob"></div></div>
+    <div class="hub-grid" id="grid"></div>
+  </section>
+</div>
+<script src="shared.js"></script>
+<script>
+(function () {
+  const S = window.DinoShared;
+  document.getElementById("world").innerHTML = S.worldSvg();
+  document.getElementById("hero").innerHTML = S.drawDino(S.DINOS[0]);
+
+  const keys = ["dino-abc-v1", "dino-hanzi-v1", "dino-color-v1", "dino-num-v1", "dino-focus-v1"];
+  let stars = 0;
+  keys.forEach((key) => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || "null");
+      if (saved && typeof saved.stars === "number") stars += saved.stars;
+    } catch (err) { /* ignore */ }
+  });
+  document.getElementById("stars").innerHTML = S.starHtml(stars);
+
+  const games = [
+    { href: "abc.html", title: "ABC", sub: "認英文字母", dino: 0 },
+    { href: "chinese.html", title: "中文", sub: "認簡單漢字", dino: 2 },
+    { href: "color.html", title: "顏色", sub: "幫恐龍填色", dino: 1 },
+    { href: "numbers.html", title: "數字", sub: "數蛋認數字", dino: 3 },
+    { href: "focus.html", title: "專注", sub: "搵一樣 / 等一等", dino: 4 }
+  ];
+
+  document.getElementById("grid").innerHTML = games.map((game) => `
+    <a class="game-card" href="${game.href}">
+      <div class="art">${S.drawDino(S.DINOS[game.dino])}</div>
+      <b>${game.title}</b>
+      <span>${game.sub}</span>
+    </a>
+  `).join("");
+
+  S.bindPress(document);
+  document.addEventListener("touchmove", (event) => {
+    if (!event.target.closest(".hub-grid")) event.preventDefault();
+  }, { passive: false });
+})();
+</script>
+</body>
+</html>
