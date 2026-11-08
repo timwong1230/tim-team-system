@@ -153,11 +153,12 @@ def test_evidence_endpoint_on_reports_page():
     with TestClient(main.app) as client:
         page = client.get("/staff/reports?pin=polar2026")
         assert page.status_code == 200
-        assert "Upload 截圖".encode() in page.content or b"import-bank-evidence" in page.content
-        assert b"Bank" in page.content
-        # Staff must not see thumbnails / browse company bank screenshots.
+        assert b"Upload" in page.content and b"import-bank-evidence" in page.content
+        # No gallery, no staff-facing copy about company accounts / sheet tabs.
         assert b"Recent uploads" not in page.content
         assert b"/api/staff/bank-evidence/" not in page.content
+        assert "員工睇唔到".encode() not in page.content
+        assert b"Bank_Evidence" not in page.content
 
         res = client.post(
             "/api/staff/import-bank-evidence",
