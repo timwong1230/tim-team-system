@@ -155,6 +155,9 @@ def test_evidence_endpoint_on_reports_page():
         assert page.status_code == 200
         assert "Upload 截圖".encode() in page.content or b"import-bank-evidence" in page.content
         assert b"Bank" in page.content
+        # Staff must not see thumbnails / browse company bank screenshots.
+        assert b"Recent uploads" not in page.content
+        assert b"/api/staff/bank-evidence/" not in page.content
 
         res = client.post(
             "/api/staff/import-bank-evidence",
@@ -171,6 +174,10 @@ def test_evidence_endpoint_on_reports_page():
         assert data["uploaded"] == 1
         eid = data["files"][0]["evidence_id"]
 
+        # File stays on disk / sheet / Drive — not served back to staff PIN.
         get_res = client.get(f"/api/staff/bank-evidence/{eid}?pin=polar2026")
-        assert get_res.status_code == 200
-        assert get_res.content.startswith(b"\x89PNG")
+        assert get_res.status_code == 404
+        page2 = client.get("/staff/reports?pin=polar2026")
+        assert page2.status_code == 200
+        assert b"Recent uploads" not in page2.content
+        assert eid.encode() not in page2.content

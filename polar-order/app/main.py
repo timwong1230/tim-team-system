@@ -85,11 +85,7 @@ from .reports import (
     monthly_boss_report,
     monthly_sales_report,
 )
-from .bank_evidence import (
-    list_recent_evidence,
-    resolve_evidence_path,
-    save_and_register,
-)
+from .bank_evidence import save_and_register
 from .bank_import import parse_bank_csv
 from .sheets_sync import (
     SheetsNotConfigured,
@@ -2587,7 +2583,6 @@ def staff_reports(request: Request, pin: str = "", day: str = "", month: str = "
             "month": f"{year}-{mon:02d}",
             "sheets_sync_ready": sheets_configured(),
             "sheets_sync_gap": sheets_config_gap(),
-            "bank_evidence_recent": list_recent_evidence(12),
         },
     )
 
@@ -3135,24 +3130,6 @@ async def staff_import_bank_evidence(
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Evidence upload failed: {exc}") from exc
-
-
-@app.get("/api/staff/bank-evidence/{evidence_id}")
-def staff_get_bank_evidence(evidence_id: str, pin: str = ""):
-    """Serve a stored bank evidence file (staff PIN required)."""
-    if pin != STAFF_PIN:
-        raise HTTPException(401, "Unauthorized")
-    path = resolve_evidence_path(evidence_id)
-    if path is None or not path.is_file():
-        raise HTTPException(404, "Evidence not found")
-    import mimetypes
-
-    mime, _ = mimetypes.guess_type(path.name)
-    return FileResponse(
-        path,
-        media_type=mime or "application/octet-stream",
-        filename=path.name.partition("_")[2] or path.name,
-    )
 
 
 @app.post("/api/staff/reset-sales")
