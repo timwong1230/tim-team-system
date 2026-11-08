@@ -210,21 +210,16 @@
     <p class="muted" id="bankImportMsg" style="margin-top:10px;margin-bottom:0"></p>
 
     <hr class="claim-sep" />
-    <h3>Bank 截圖 / transaction evidence（Tim）</h3>
-    <p class="muted" style="margin-top:0">
-      經私人戶口中轉、FPS、多段轉賬等：upload 銀行／Apps 截圖（可多張）+ 簡短 note。
-      會寫入 Finance sheet 嘅 <code>Bank_Evidence</code>（同 Drive），方便對 Nature。
-      上傳後唔會喺呢度顯示 — 員工睇唔到公司戶口 transaction。
-    </p>
-    <label class="muted" for="evidenceNote">Note（用途／去邊度）</label>
-    <input class="field" id="evidenceNote" type="text" placeholder="例：公司→私人→XX供應商租金" />
-    <label class="muted" for="evidenceTxnDate">交易日期（可選）</label>
+    <h3>Upload 截圖（Tim）</h3>
+    <label class="muted" for="evidenceNote">Note</label>
+    <input class="field" id="evidenceNote" type="text" placeholder="Optional note" />
+    <label class="muted" for="evidenceTxnDate">Date</label>
     <input class="field" id="evidenceTxnDate" type="date" />
-    <label class="muted" for="evidenceAmount">金額提示（可選）</label>
-    <input class="field" id="evidenceAmount" type="text" placeholder="例：8500" />
-    <label class="muted" for="evidenceFiles">截圖 / PDF</label>
+    <label class="muted" for="evidenceAmount">Amount</label>
+    <input class="field" id="evidenceAmount" type="text" placeholder="Optional" />
+    <label class="muted" for="evidenceFiles">Files</label>
     <input class="field" id="evidenceFiles" type="file" accept="image/*,.pdf,application/pdf" multiple />
-    <button class="primary" type="button" id="evidenceUploadBtn" style="width:auto">Upload 截圖</button>
+    <button class="primary" type="button" id="evidenceUploadBtn" style="width:auto">Upload</button>
     <p class="muted" id="evidenceUploadMsg" style="margin-top:10px;margin-bottom:0"></p>
   </div>
 
@@ -593,13 +588,9 @@
       const res = await fetch('/api/staff/import-bank-evidence', { method: 'POST', body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Upload failed');
-      const sheetBit = data.sheet?.ok
-        ? `Sheet +${data.sheet.added || 0}`
-        : (data.sheet?.error ? `Sheet note: ${data.sheet.error}` : 'Saved locally');
-      const driveBit = (data.drive_errors && data.drive_errors.length)
-        ? ` · Drive: ${data.drive_errors.length} warn`
-        : (data.drive_folder_id ? ' · Drive mirrored' : '');
-      msg.textContent = `Uploaded ${data.uploaded || 0}. ${sheetBit}${driveBit}. Saved privately (not shown here).`;
+      msg.textContent = data.ok === false
+        ? (data.detail || 'Upload failed')
+        : `Uploaded ${data.uploaded || 0}.`;
       input.value = '';
     } catch (err) {
       msg.textContent = err.message || 'Upload failed';
