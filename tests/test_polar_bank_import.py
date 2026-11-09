@@ -52,6 +52,47 @@ def test_parse_debit_credit_csv():
     assert rows[1]["hsbc_sa"] == 50000.0
 
 
+def test_parse_hsbc_business_withdraw_deposit_csv():
+    """HSBC Business export: title row + Withdraw(HKD)/Deposit(HKD)."""
+    from app.bank_import import parse_bank_csv
+
+    csv_text = (
+        "\ufeffBusiness Integrated HKD Savings 652-825423-838,,,,\n"
+        "Date,Description,Withdraw(HKD),Deposit(HKD),Ledger Balance(HKD)\n"
+        '12 Oct 2026\t,"Opening Balance", \t,,321415.13\n'
+        '12 Oct 2026\t,"SUN LIFE T C L - R65     2160104",-250.00, \t,321165.13\n'
+        '12 Oct 2026\t,"AILE TECHNOLOGY LIMI     HC126A1226695726   12OCT", \t,44348.85,364925.98\n'
+        '28 Oct 2026\t,"CREDIT INTEREST", \t,0.29,431690.67\n'
+        '09 Nov 2026\t,"Closing Balance", \t,,428246.60\n'
+    )
+    rows = parse_bank_csv(csv_text, account="hsbc_sa")
+    assert len(rows) == 3
+    assert rows[0]["date"] == "2026-10-12"
+    assert rows[0]["hsbc_sa"] == -250.0
+    assert rows[0]["hsbc_ca"] == ""
+    assert "SUN LIFE" in rows[0]["memo"]
+    assert rows[1]["hsbc_sa"] == 44348.85
+    assert rows[2]["hsbc_sa"] == 0.29
+
+
+def test_parse_uploaded_hsbc_savings_file():
+    from pathlib import Path
+
+    from app.bank_import import parse_bank_csv
+
+    uploads = Path(
+        "/home/ubuntu/.cursor/projects/agent-repos-tim-team-system/uploads"
+    )
+    matches = sorted(uploads.glob("652825423838*.csv"))
+    if not matches:
+        return  # cloud upload not present in CI
+    text = matches[-1].read_text(encoding="utf-8")
+    rows = parse_bank_csv(text, account="hsbc_sa")
+    assert len(rows) >= 40
+    assert all(r["hsbc_sa"] != "" for r in rows)
+    assert all(r["date"] >= "2026-10-12" for r in rows)
+
+
 def test_append_bank_entries_skips_duplicates():
     import os
     from app.sheets_sync import append_bank_entries
