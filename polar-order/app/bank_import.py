@@ -116,12 +116,46 @@ def _norm_header(h: str) -> str:
 
 
 def _pick_col(headers: list[str], *candidates: str) -> int | None:
+    """Match header by normalized equality or startswith (Withdraw(HKD) → withdraw)."""
     norms = [_norm_header(h) for h in headers]
-    for cand in candidates:
-        c = _norm_header(cand)
+    cand_norms = [_norm_header(c) for c in candidates]
+    # Exact match first (ignore empty norms — Chinese-only labels strip to "").
+    for c in cand_norms:
+        if not c:
+            continue
         if c in norms:
             return norms.index(c)
+    # Prefix / contains — HSBC uses Withdraw(HKD), Deposit(HKD).
+    for c in cand_norms:
+        if not c or len(c) < 4:
+            continue
+        for i, n in enumerate(norms):
+            if not n:
+                continue
+            if n.startswith(c) or c.startswith(n) or c in n:
+                return i
     return None
+
+
+def _looks_like_header_row(cells: list[str]) -> bool:
+    norms = {_norm_header(c) for c in cells if _norm_header(c)}
+    has_date = any(n == "date" or n.startswith("date") or n.endswith("date") for n in norms)
+    has_memo = bool(
+        norms
+        & {
+            "memo",
+            "description",
+            "narrative",
+            "details",
+            "particulars",
+        }
+    ) or any("desc" in n for n in norms)
+    return has_date and has_memo
+
+
+def _skip_balance_memo(memo: str) -> bool:
+    m = re.sub(r"\s+", " ", (memo or "").strip().lower())
+    return m in {"opening balance", "closing balance", "brought forward", "carried forward"}
 
 
 def parse_bank_csv(
@@ -132,7 +166,8 @@ def parse_bank_csv(
     """Parse a flexible bank CSV into Bank_Entries rows.
 
     ``account``: ``hsbc_sa`` or ``hsbc_ca`` — which amount column to fill.
-    Accepts columns like Date/Description/Amount or Date/Debit/Credit.
+    Accepts Date/Description/Amount, Date/Debit/Credit, or HSBC
+    Date/Description/Withdraw(HKD)/Deposit(HKD) (with a title row above headers).
     """
     if account not in {"hsbc_sa", "hsbc_ca"}:
         raise ValueError("account must be hsbc_sa or hsbc_ca")
@@ -142,11 +177,23 @@ def parse_bank_csv(
         dialect = csv.Sniffer().sniff(sample[:4096], delimiters=",\t;")
     except csv.Error:
         dialect = csv.excel
-    reader = csv.DictReader(io.StringIO(sample), dialect=dialect)
-    if not reader.fieldnames:
+
+    # Use list reader so duplicate/blank header names (HSBC title row) don't collapse.
+    all_rows = list(csv.reader(io.StringIO(sample), dialect=dialect))
+    if not all_rows:
         return []
 
-    headers = list(reader.fieldnames)
+    header_idx = next(
+        (i for i, row in enumerate(all_rows) if _looks_like_header_row(row)),
+        None,
+    )
+    if header_idx is None:
+        raise ValueError(
+            "CSV needs a Date + Description header row "
+            "(HSBC: Date, Description, Withdraw(HKD), Deposit(HKD))"
+        )
+
+    headers = all_rows[header_idx]
     date_i = _pick_col(headers, "date", "txn date", "transaction date", "value date", "交易日期")
     memo_i = _pick_col(
         headers,
@@ -159,8 +206,23 @@ def parse_bank_csv(
         "摘要",
     )
     amount_i = _pick_col(headers, "amount", "amt", "交易金額", "金額")
-    debit_i = _pick_col(headers, "debit", "withdrawal", "money out", "支帳")
-    credit_i = _pick_col(headers, "credit", "deposit", "money in", "入帳")
+    debit_i = _pick_col(
+        headers,
+        "withdraw",
+        "withdrawal",
+        "debit",
+        "money out",
+        "支帳",
+        "提款",
+    )
+    credit_i = _pick_col(
+        headers,
+        "deposit",
+        "credit",
+        "money in",
+        "入帳",
+        "存入",
+    )
     chq_i = _pick_col(headers, "chq", "cheque", "chq no", "cheque no", "cheque number")
 
     if date_i is None or memo_i is None:
@@ -170,34 +232,40 @@ def parse_bank_csv(
         )
     if amount_i is None and debit_i is None and credit_i is None:
         raise ValueError(
-            "CSV needs Amount or Debit/Credit columns. Got: " + ", ".join(headers)
+            "CSV needs Amount or Debit/Credit/Withdraw/Deposit columns. Got: "
+            + ", ".join(headers)
         )
 
     rows: list[dict[str, Any]] = []
-    for raw in reader:
-        vals = list(raw.values())
+    for vals in all_rows[header_idx + 1 :]:
+        if not vals or all(not str(v).strip() for v in vals):
+            continue
         d = _parse_date(vals[date_i] if date_i < len(vals) else "")
         memo = (vals[memo_i] if memo_i < len(vals) else "") or ""
         memo = str(memo).strip()
-        if not d or not memo:
+        if not d or not memo or _skip_balance_memo(memo):
             continue
 
         amount = None
         if amount_i is not None:
             amount = _parse_amount(vals[amount_i] if amount_i < len(vals) else "")
         else:
-            debit = _parse_amount(vals[debit_i] if debit_i is not None and debit_i < len(vals) else "")
-            credit = _parse_amount(vals[credit_i] if credit_i is not None and credit_i < len(vals) else "")
-            if credit:
+            debit = _parse_amount(
+                vals[debit_i] if debit_i is not None and debit_i < len(vals) else ""
+            )
+            credit = _parse_amount(
+                vals[credit_i] if credit_i is not None and credit_i < len(vals) else ""
+            )
+            # HSBC Withdraw may already be signed (-250.00); Deposit is positive.
+            if credit is not None and credit != 0:
                 amount = abs(credit)
-            elif debit:
+            elif debit is not None and debit != 0:
                 amount = -abs(debit)
 
         if amount is None or amount == 0:
             continue
 
         nature = infer_nature(memo)
-        # Outflows for expense natures should be negative if CSV gave absolute debit already handled.
         entry = {
             "date": d,
             "memo": memo,
