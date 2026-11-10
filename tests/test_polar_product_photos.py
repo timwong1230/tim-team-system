@@ -56,6 +56,7 @@ def test_key_product_photos_and_renames():
         "vcp.jpg",
         "moet.jpg",
         "baileys.jpg",
+        "tea-orange.jpg",
     ):
         path = menu_dir / name
         assert path.is_file(), name
