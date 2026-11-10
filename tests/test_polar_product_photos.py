@@ -10,8 +10,14 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 _POLAR = _ROOT / "polar-order"
-if str(_POLAR) not in sys.path:
-    sys.path.insert(0, str(_POLAR))
+sys.path = [
+    p
+    for p in sys.path
+    if Path(p or ".").resolve() not in {_ROOT.resolve(), _POLAR.resolve()}
+]
+sys.path.insert(0, str(_POLAR))
+if "app" in sys.modules and not getattr(sys.modules["app"], "__path__", None):
+    del sys.modules["app"]
 
 
 def test_key_product_photos_and_renames():
@@ -45,6 +51,11 @@ def test_key_product_photos_and_renames():
         "lfe-cab.jpg",
         "bella.jpg",
         "rose-b.jpg",
+        "asahi.jpg",
+        "draft-tower.jpg",
+        "vcp.jpg",
+        "moet.jpg",
+        "baileys.jpg",
     ):
         path = menu_dir / name
         assert path.is_file(), name
