@@ -274,10 +274,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" data-act="dec" data-id="${line.id}" aria-label="Decrease qty">−</button>
             <input
               class="qty-input"
-              type="number"
+              type="text"
               inputmode="numeric"
-              min="1"
-              step="1"
+              pattern="[0-9]*"
+              enterkeyhint="done"
               data-qty="${line.id}"
               value="${line.qty}"
               aria-label="Quantity"
@@ -420,30 +420,50 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === drawer) drawer.classList.remove("open");
   });
 
+  function parseQtyRaw(raw, { emptyAs = null, min = 1, max = 99 } = {}) {
+    const trimmed = String(raw ?? "").trim();
+    if (trimmed === "") return emptyAs;
+    const n = Math.floor(Number(trimmed));
+    if (!Number.isFinite(n)) return emptyAs;
+    if (n <= 0) return 0;
+    return Math.min(max, Math.max(min, n));
+  }
+
   function applyCartQty(lineId, raw) {
     const line = cart.get(lineId);
     if (!line) return;
-    const trimmed = String(raw ?? "").trim();
-    // Empty blur → keep at least 1; explicit 0 removes the line.
-    if (trimmed === "") {
-      line.qty = Math.max(1, line.qty || 1);
-      renderCartLines();
-      renderCartBar();
-      return;
-    }
-    const n = Math.floor(Number(trimmed));
-    if (!Number.isFinite(n) || n <= 0) {
+    // Empty → keep at least 1; explicit 0 removes the line.
+    const n = parseQtyRaw(raw, { emptyAs: Math.max(1, line.qty || 1), min: 1, max: 99 });
+    if (n === 0) {
       cart.delete(lineId);
     } else {
-      line.qty = Math.min(99, n);
+      line.qty = n;
     }
     renderCartLines();
     renderCartBar();
   }
 
+  function commitQtyInput(qtyInput) {
+    if (!qtyInput) return;
+    applyCartQty(qtyInput.dataset.qty, qtyInput.value);
+  }
+
+  function isCommitKey(e) {
+    return e.key === "Enter" || e.key === "Go" || e.key === "Done" || e.keyCode === 13;
+  }
+
   cartLines.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
+    // Sync typed value before +/- so iPad Enter-miss doesn't lose the number.
+    const typing = btn.closest(".cart-line")?.querySelector("input[data-qty]");
+    if (typing) {
+      const typed = parseQtyRaw(typing.value, { emptyAs: null, min: 1, max: 99 });
+      if (typed != null && typed > 0) {
+        const line = cart.get(btn.dataset.id);
+        if (line) line.qty = typed;
+      }
+    }
     const line = cart.get(btn.dataset.id);
     if (!line) return;
     if (btn.dataset.act === "inc") line.qty = Math.min(99, line.qty + 1);
@@ -464,14 +484,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const qtyInput = e.target.closest("input[data-qty]");
     if (!qtyInput) return;
+    // Digits only (text + numeric keypad on iOS/iPad).
+    const cleaned = qtyInput.value.replace(/[^\d]/g, "");
+    if (cleaned !== qtyInput.value) qtyInput.value = cleaned;
     const line = cart.get(qtyInput.dataset.qty);
     if (!line) return;
     const raw = qtyInput.value.trim();
-    // Allow clearing while typing; commit on change/blur.
+    // Allow clearing while typing; commit on Enter/blur.
     if (raw === "") return;
-    const n = Math.floor(Number(raw));
-    if (!Number.isFinite(n) || n < 1) return;
-    line.qty = Math.min(99, n);
+    const n = parseQtyRaw(raw, { emptyAs: null, min: 1, max: 99 });
+    if (n == null || n < 1) return;
+    line.qty = n;
     renderCartBar();
     const totalEl = qtyInput.closest(".cart-line")?.querySelector(":scope > div:last-child");
     if (totalEl) {
@@ -480,16 +503,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // blur does not bubble — use capture so iPhone Done / iPad dismiss commits.
+  cartLines.addEventListener(
+    "blur",
+    (e) => {
+      const qtyInput = e.target?.matches?.("input[data-qty]") ? e.target : null;
+      if (!qtyInput) return;
+      commitQtyInput(qtyInput);
+    },
+    true
+  );
+
   cartLines.addEventListener("change", (e) => {
     const qtyInput = e.target.closest("input[data-qty]");
     if (!qtyInput) return;
-    applyCartQty(qtyInput.dataset.qty, qtyInput.value);
+    commitQtyInput(qtyInput);
   });
 
+  // Commit on Enter immediately — iPad often does not fire change after Return.
   cartLines.addEventListener("keydown", (e) => {
     const qtyInput = e.target.closest("input[data-qty]");
-    if (!qtyInput || e.key !== "Enter") return;
+    if (!qtyInput || !isCommitKey(e)) return;
     e.preventDefault();
+    commitQtyInput(qtyInput);
     qtyInput.blur();
   });
 
