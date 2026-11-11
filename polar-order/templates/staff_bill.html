@@ -150,7 +150,17 @@
           {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
           <div class="qty" style="margin-top:8px">
             <button type="button" data-bill-act="dec" data-id="{{ line.id }}" aria-label="Decrease qty">−</button>
-            <span class="bill-item-qty-label">{{ line.qty }}</span>
+            <input
+              class="qty-input bill-item-qty-label"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="50"
+              step="1"
+              data-bill-qty="{{ line.id }}"
+              value="{{ line.qty }}"
+              aria-label="Quantity"
+            />
             <button type="button" data-bill-act="inc" data-id="{{ line.id }}" aria-label="Increase qty">+</button>
             <button type="button" class="ghost" data-bill-act="rm" data-id="{{ line.id }}"
                     style="width:auto;height:auto;padding:4px 10px;margin-left:4px">Remove</button>
@@ -459,10 +469,36 @@
       }
       return;
     }
-    const qEls = row.querySelectorAll('.bill-item-qty, .bill-item-qty-label');
-    qEls.forEach((el) => { el.textContent = String(qty); });
+    const titleQty = row.querySelector('.bill-item-qty');
+    if (titleQty) titleQty.textContent = String(qty);
+    const qtyInput = row.querySelector('input[data-bill-qty]');
+    if (qtyInput) qtyInput.value = String(qty);
     const tot = row.querySelector('.bill-item-total');
     if (tot) tot.textContent = money(lineTotal);
+  }
+
+  async function setBillItemQty(itemId, next, triggerEl) {
+    const row = document.querySelector(`.bill-item-row[data-item-id="${itemId}"]`);
+    if (!row || !itemId) return;
+    const cur = Number(row.querySelector('input[data-bill-qty]')?.value
+      || row.querySelector('.bill-item-qty')?.textContent || 1);
+    if (next === cur) return;
+    if (triggerEl) triggerEl.disabled = true;
+    try {
+      const data = await editBillItem(itemId, next);
+      const line = (data.lines || []).find((x) => Number(x.id) === itemId);
+      patchBillItemRow(itemId, data.qty, line ? line.line_total : 0);
+      applyBill(data.bill);
+    } catch (err) {
+      alert(err.message || 'Failed to update item');
+      // Restore input to current displayed qty on failure.
+      const qtyInput = row.querySelector('input[data-bill-qty]');
+      if (qtyInput) {
+        qtyInput.value = String(row.querySelector('.bill-item-qty')?.textContent || cur);
+      }
+    } finally {
+      if (triggerEl) triggerEl.disabled = false;
+    }
   }
 
   document.getElementById('billItemsList')?.addEventListener('click', async (e) => {
@@ -472,7 +508,8 @@
     const act = btn.dataset.billAct;
     const row = document.querySelector(`.bill-item-row[data-item-id="${itemId}"]`);
     if (!row || !itemId) return;
-    const cur = Number(row.querySelector('.bill-item-qty')?.textContent || 1);
+    const cur = Number(row.querySelector('input[data-bill-qty]')?.value
+      || row.querySelector('.bill-item-qty')?.textContent || 1);
     let next = cur;
     if (act === 'inc') next = Math.min(50, cur + 1);
     else if (act === 'dec') next = Math.max(0, cur - 1);
@@ -480,18 +517,28 @@
       if (!confirm('Remove this item from the bill?')) return;
       next = 0;
     } else return;
-    if (next === cur && act !== 'rm') return;
-    btn.disabled = true;
-    try {
-      const data = await editBillItem(itemId, next);
-      const line = (data.lines || []).find((x) => Number(x.id) === itemId);
-      patchBillItemRow(itemId, data.qty, line ? line.line_total : 0);
-      applyBill(data.bill);
-    } catch (err) {
-      alert(err.message || 'Failed to update item');
-    } finally {
-      btn.disabled = false;
+    await setBillItemQty(itemId, next, btn);
+  });
+
+  document.getElementById('billItemsList')?.addEventListener('change', async (e) => {
+    const qtyInput = e.target.closest('input[data-bill-qty]');
+    if (!qtyInput) return;
+    const itemId = Number(qtyInput.dataset.billQty);
+    if (!itemId) return;
+    let next = Math.floor(Number(qtyInput.value));
+    if (!Number.isFinite(next) || next < 1) {
+      next = 1;
+      qtyInput.value = '1';
     }
+    next = Math.min(50, next);
+    await setBillItemQty(itemId, next, qtyInput);
+  });
+
+  document.getElementById('billItemsList')?.addEventListener('keydown', (e) => {
+    const qtyInput = e.target.closest('input[data-bill-qty]');
+    if (!qtyInput || e.key !== 'Enter') return;
+    e.preventDefault();
+    qtyInput.blur();
   });
   input?.addEventListener('input', recalc);
   partyInput?.addEventListener('input', recalc);

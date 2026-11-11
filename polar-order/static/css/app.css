@@ -693,6 +693,30 @@ button.pill-action:active {
   color: var(--text);
   cursor: pointer;
 }
+.qty .qty-input {
+  width: 52px;
+  height: 28px;
+  margin: 0;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  text-align: center;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.qty .qty-input::-webkit-outer-spin-button,
+.qty .qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.bill-item-row .qty .qty-input {
+  width: 56px;
+  height: 36px;
+  font-size: 16px;
+}
 /* Bill page: larger tap targets for staff phones */
 .bill-item-row .qty button {
   width: 36px;
