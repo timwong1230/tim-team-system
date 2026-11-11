@@ -54,7 +54,11 @@ def test_staff_place_order_api_and_page():
         assert 'cartBar.style.display = "none"' not in js
         assert 'data-qty="' in js
         assert "applyCartQty" in js
+        assert "commitQtyInput" in js
         assert 'class="qty-input"' in js
+        assert 'type="text"' in js
+        assert 'enterkeyhint="done"' in js
+        assert '"blur"' in js
         css = (_POLAR / "static/css/app.css").read_text(encoding="utf-8")
         assert ".guest-cat-rail" in css
         assert ".qty .qty-input" in css

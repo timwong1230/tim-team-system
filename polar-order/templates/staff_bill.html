@@ -152,11 +152,10 @@
             <button type="button" data-bill-act="dec" data-id="{{ line.id }}" aria-label="Decrease qty">−</button>
             <input
               class="qty-input bill-item-qty-label"
-              type="number"
+              type="text"
               inputmode="numeric"
-              min="1"
-              max="50"
-              step="1"
+              pattern="[0-9]*"
+              enterkeyhint="done"
               data-bill-qty="{{ line.id }}"
               value="{{ line.qty }}"
               aria-label="Quantity"
@@ -477,12 +476,29 @@
     if (tot) tot.textContent = money(lineTotal);
   }
 
+  function committedBillQty(row) {
+    // Prefer the title qty (last saved), not the input — input already holds the typed value.
+    return Number(row.querySelector('.bill-item-qty')?.textContent || 1);
+  }
+
+  function parseBillQtyInput(raw) {
+    const trimmed = String(raw ?? '').trim();
+    if (trimmed === '') return 1;
+    const n = Math.floor(Number(trimmed));
+    if (!Number.isFinite(n) || n < 1) return 1;
+    return Math.min(50, n);
+  }
+
   async function setBillItemQty(itemId, next, triggerEl) {
     const row = document.querySelector(`.bill-item-row[data-item-id="${itemId}"]`);
     if (!row || !itemId) return;
-    const cur = Number(row.querySelector('input[data-bill-qty]')?.value
-      || row.querySelector('.bill-item-qty')?.textContent || 1);
-    if (next === cur) return;
+    const cur = committedBillQty(row);
+    if (next === cur) {
+      // Still sync the input display if user typed the same number.
+      const qtyInput = row.querySelector('input[data-bill-qty]');
+      if (qtyInput) qtyInput.value = String(cur);
+      return;
+    }
     if (triggerEl) triggerEl.disabled = true;
     try {
       const data = await editBillItem(itemId, next);
@@ -491,14 +507,29 @@
       applyBill(data.bill);
     } catch (err) {
       alert(err.message || 'Failed to update item');
-      // Restore input to current displayed qty on failure.
       const qtyInput = row.querySelector('input[data-bill-qty]');
-      if (qtyInput) {
-        qtyInput.value = String(row.querySelector('.bill-item-qty')?.textContent || cur);
-      }
+      if (qtyInput) qtyInput.value = String(committedBillQty(row));
     } finally {
       if (triggerEl) triggerEl.disabled = false;
     }
+  }
+
+  async function commitBillQtyInput(qtyInput) {
+    if (!qtyInput || qtyInput.dataset.committing === '1') return;
+    const itemId = Number(qtyInput.dataset.billQty);
+    if (!itemId) return;
+    const next = parseBillQtyInput(qtyInput.value);
+    qtyInput.value = String(next === 0 ? 1 : next);
+    qtyInput.dataset.committing = '1';
+    try {
+      await setBillItemQty(itemId, next < 1 ? 1 : next, qtyInput);
+    } finally {
+      delete qtyInput.dataset.committing;
+    }
+  }
+
+  function isQtyCommitKey(e) {
+    return e.key === 'Enter' || e.key === 'Go' || e.key === 'Done' || e.keyCode === 13;
   }
 
   document.getElementById('billItemsList')?.addEventListener('click', async (e) => {
@@ -508,8 +539,11 @@
     const act = btn.dataset.billAct;
     const row = document.querySelector(`.bill-item-row[data-item-id="${itemId}"]`);
     if (!row || !itemId) return;
-    const cur = Number(row.querySelector('input[data-bill-qty]')?.value
-      || row.querySelector('.bill-item-qty')?.textContent || 1);
+    // Prefer typed input value when present so a pending edit is not lost.
+    const typed = row.querySelector('input[data-bill-qty]')?.value;
+    const cur = typed != null && String(typed).trim() !== ''
+      ? parseBillQtyInput(typed)
+      : committedBillQty(row);
     let next = cur;
     if (act === 'inc') next = Math.min(50, cur + 1);
     else if (act === 'dec') next = Math.max(0, cur - 1);
@@ -520,25 +554,31 @@
     await setBillItemQty(itemId, next, btn);
   });
 
+  document.getElementById('billItemsList')?.addEventListener('input', (e) => {
+    const qtyInput = e.target.closest('input[data-bill-qty]');
+    if (!qtyInput) return;
+    const cleaned = qtyInput.value.replace(/[^\d]/g, '');
+    if (cleaned !== qtyInput.value) qtyInput.value = cleaned;
+  });
+
   document.getElementById('billItemsList')?.addEventListener('change', async (e) => {
     const qtyInput = e.target.closest('input[data-bill-qty]');
     if (!qtyInput) return;
-    const itemId = Number(qtyInput.dataset.billQty);
-    if (!itemId) return;
-    let next = Math.floor(Number(qtyInput.value));
-    if (!Number.isFinite(next) || next < 1) {
-      next = 1;
-      qtyInput.value = '1';
-    }
-    next = Math.min(50, next);
-    await setBillItemQty(itemId, next, qtyInput);
+    await commitBillQtyInput(qtyInput);
   });
+
+  // blur does not bubble — capture so Done/tick and tap-away always save.
+  document.getElementById('billItemsList')?.addEventListener('blur', (e) => {
+    const qtyInput = e.target?.matches?.('input[data-bill-qty]') ? e.target : null;
+    if (!qtyInput) return;
+    commitBillQtyInput(qtyInput);
+  }, true);
 
   document.getElementById('billItemsList')?.addEventListener('keydown', (e) => {
     const qtyInput = e.target.closest('input[data-bill-qty]');
-    if (!qtyInput || e.key !== 'Enter') return;
+    if (!qtyInput || !isQtyCommitKey(e)) return;
     e.preventDefault();
-    qtyInput.blur();
+    commitBillQtyInput(qtyInput).then(() => qtyInput.blur());
   });
   input?.addEventListener('input', recalc);
   partyInput?.addEventListener('input', recalc);

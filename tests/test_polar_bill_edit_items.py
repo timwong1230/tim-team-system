@@ -55,6 +55,10 @@ def test_bill_edit_item_qty_and_remove():
         assert b'data-bill-act="rm"' in bill_page.content
         assert b"data-bill-qty=" in bill_page.content
         assert b'class="qty-input bill-item-qty-label"' in bill_page.content
+        assert b'type="text"' in bill_page.content
+        assert b'enterkeyhint="done"' in bill_page.content
+        assert b"commitBillQtyInput" in bill_page.content
+        assert b"committedBillQty" in bill_page.content
         assert b"Change qty or remove" in bill_page.content
 
         conn = db.connect()
