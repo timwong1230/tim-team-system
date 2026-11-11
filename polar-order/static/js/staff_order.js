@@ -271,9 +271,18 @@ document.addEventListener("DOMContentLoaded", () => {
           ${serveNote}
           ${comboNote}
           <div class="qty">
-            <button type="button" data-act="dec" data-id="${line.id}">−</button>
-            <span>${line.qty}</span>
-            <button type="button" data-act="inc" data-id="${line.id}">+</button>
+            <button type="button" data-act="dec" data-id="${line.id}" aria-label="Decrease qty">−</button>
+            <input
+              class="qty-input"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              step="1"
+              data-qty="${line.id}"
+              value="${line.qty}"
+              aria-label="Quantity"
+            />
+            <button type="button" data-act="inc" data-id="${line.id}" aria-label="Increase qty">+</button>
           </div>
           ${
             line.allowNote
@@ -411,12 +420,33 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === drawer) drawer.classList.remove("open");
   });
 
+  function applyCartQty(lineId, raw) {
+    const line = cart.get(lineId);
+    if (!line) return;
+    const trimmed = String(raw ?? "").trim();
+    // Empty blur → keep at least 1; explicit 0 removes the line.
+    if (trimmed === "") {
+      line.qty = Math.max(1, line.qty || 1);
+      renderCartLines();
+      renderCartBar();
+      return;
+    }
+    const n = Math.floor(Number(trimmed));
+    if (!Number.isFinite(n) || n <= 0) {
+      cart.delete(lineId);
+    } else {
+      line.qty = Math.min(99, n);
+    }
+    renderCartLines();
+    renderCartBar();
+  }
+
   cartLines.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const line = cart.get(btn.dataset.id);
     if (!line) return;
-    if (btn.dataset.act === "inc") line.qty += 1;
+    if (btn.dataset.act === "inc") line.qty = Math.min(99, line.qty + 1);
     if (btn.dataset.act === "dec") {
       line.qty -= 1;
       if (line.qty <= 0) cart.delete(line.id);
@@ -426,10 +456,41 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   cartLines.addEventListener("input", (e) => {
-    const input = e.target.closest("input[data-note]");
-    if (!input) return;
-    const line = cart.get(input.dataset.note);
-    if (line) line.note = input.value;
+    const noteInput = e.target.closest("input[data-note]");
+    if (noteInput) {
+      const line = cart.get(noteInput.dataset.note);
+      if (line) line.note = noteInput.value;
+      return;
+    }
+    const qtyInput = e.target.closest("input[data-qty]");
+    if (!qtyInput) return;
+    const line = cart.get(qtyInput.dataset.qty);
+    if (!line) return;
+    const raw = qtyInput.value.trim();
+    // Allow clearing while typing; commit on change/blur.
+    if (raw === "") return;
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 1) return;
+    line.qty = Math.min(99, n);
+    renderCartBar();
+    const totalEl = qtyInput.closest(".cart-line")?.querySelector(":scope > div:last-child");
+    if (totalEl) {
+      const priced = pricedCart().find((l) => l.id === line.id);
+      if (priced) totalEl.textContent = money(priced.lineTotal);
+    }
+  });
+
+  cartLines.addEventListener("change", (e) => {
+    const qtyInput = e.target.closest("input[data-qty]");
+    if (!qtyInput) return;
+    applyCartQty(qtyInput.dataset.qty, qtyInput.value);
+  });
+
+  cartLines.addEventListener("keydown", (e) => {
+    const qtyInput = e.target.closest("input[data-qty]");
+    if (!qtyInput || e.key !== "Enter") return;
+    e.preventDefault();
+    qtyInput.blur();
   });
 
   document.getElementById("submitOrder").addEventListener("click", async () => {

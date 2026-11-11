@@ -52,8 +52,12 @@ def test_staff_place_order_api_and_page():
         assert "back to tables" in js
         assert "openStaffCategory" in js
         assert 'cartBar.style.display = "none"' not in js
+        assert 'data-qty="' in js
+        assert "applyCartQty" in js
+        assert 'class="qty-input"' in js
         css = (_POLAR / "static/css/app.css").read_text(encoding="utf-8")
         assert ".guest-cat-rail" in css
+        assert ".qty .qty-input" in css
 
         bad = client.post(
             "/api/staff/bill/TABLE1/orders",
