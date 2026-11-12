@@ -254,21 +254,30 @@
 
   <div class="card">
     <h3 style="margin-top:0">Monthly Boss Report</h3>
-    <p class="muted">{{ bosses.label }} · not included in guest sales above</p>
+    <p class="muted">{{ bosses.label }} · Polar credit (BOSS tabs) · not guest sales</p>
     <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(bosses.gross_total) }}</div>
     {% for b in bosses.bosses %}
     <div class="cart-line" style="align-items:flex-start">
-      <div>
+      <div style="flex:1;min-width:0">
         <strong>{{ b.boss_name }}</strong>
-        <div class="muted">{{ b.order_count }} orders · {{ b.item_qty }} items</div>
-        {% for i in b.item_rows[:6] %}
-        <div class="muted">{{ i.qty }}× {{ i.item_name }} · ${{ '%.0f'|format(i.revenue) }}</div>
+        <div class="muted">{{ b.session_count }} credit · {{ b.order_count }} orders · {{ b.item_qty }} items</div>
+        {% if b.by_day %}
+        <div class="muted" style="margin-top:6px">Daily credit</div>
+        {% for d in b.by_day %}
+        <div class="muted">{{ d.business_date }} · ${{ '%.1f'|format(d.total) }}{% if d.session_count > 1 %} · {{ d.session_count }} tabs{% endif %}</div>
         {% endfor %}
+        {% endif %}
+        {% if b.item_rows %}
+        <div class="muted" style="margin-top:6px">Items</div>
+        {% for i in b.item_rows %}
+        <div class="muted">{{ i.qty }}× {{ i.item_name }} · ${{ '%.1f'|format(i.revenue) }}</div>
+        {% endfor %}
+        {% endif %}
       </div>
-      <div>${{ '%.0f'|format(b.total) }}</div>
+      <div>${{ '%.1f'|format(b.total) }}</div>
     </div>
     {% else %}
-    <p class="muted">No boss orders this month.</p>
+    <p class="muted">No boss credit this month.</p>
     {% endfor %}
   </div>
 
