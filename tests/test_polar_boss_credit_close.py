@@ -37,7 +37,7 @@ def test_boss_tab_closes_as_credit_not_sales():
 
     from fastapi.testclient import TestClient
 
-    from app.ops_constants import BOSS_CREDIT_METHOD, PAYMENT_METHODS
+    from app.ops_constants import BOSS_CREDIT_METHOD
     from app.pricing import business_date
     from app.seats import BOSSES, boss_seat_code
 
@@ -67,8 +67,8 @@ def test_boss_tab_closes_as_credit_not_sales():
         # Guest payment picker must not appear on boss bills
         assert b"pay-method-card" not in page.content
         assert b"Required before closing the table" not in page.content
-        for m in PAYMENT_METHODS:
-            assert m.encode() not in page.content
+        assert b'id="payMethod"' not in page.content
+        assert b'id="paySplitRows"' not in page.content
 
         # Close without payment_method — should succeed as Credit
         closed = client.post(
@@ -93,12 +93,25 @@ def test_boss_tab_closes_as_credit_not_sales():
 
         day = business_date(datetime.now(ZoneInfo("Asia/Hong_Kong")))
         daily = reports.daily_sales_report(conn, day)
-        conn.close()
 
         # Boss credit must not inflate guest sales / payment tender breakdown
         assert daily["gross_sales"] == 0
         assert daily["session_count"] == 0
+        assert daily["boss_session_count"] == 1
         assert all(p["method"] != BOSS_CREDIT_METHOD for p in daily["by_payment_method"])
+        # But the closed boss bill must still appear on the daily list
+        boss_rows = [s for s in daily["sessions"] if s.get("is_boss")]
+        assert len(boss_rows) == 1
+        assert boss_rows[0]["session_id"] == sid
+        assert boss_rows[0]["payment_method"] == BOSS_CREDIT_METHOD
+        assert float(boss_rows[0]["total"]) == credit_total
+
+        page = client.get(f"/staff/reports?pin={pin}&day={day.isoformat()}")
+        assert page.status_code == 200
+        assert boss["name"].encode() in page.content or b"Boss" in page.content
+        assert b"not in sales" in page.content
+        assert b"boss credit" in page.content
+        conn.close()
 
         # Sending a fake tender on boss close is ignored — still Credit
         placed2 = client.post(
@@ -120,3 +133,6 @@ def test_boss_tab_closes_as_credit_not_sales():
         daily2 = reports.daily_sales_report(conn, day)
         conn.close()
         assert daily2["gross_sales"] == 0
+        assert daily2["session_count"] == 0
+        assert daily2["boss_session_count"] == 2
+        assert len([s for s in daily2["sessions"] if s.get("is_boss")]) == 2
