@@ -99,7 +99,7 @@
         {% if s.receipt_path %}
         <div><a class="session-pdf-link" href="/staff/receipt/{{ s.session_id }}?pin={{ pin }}">PDF</a></div>
         {% endif %}
-        {% if not s.is_boss and s.payment_method != 'Credit' and s.table_code %}
+        {% if s.table_code and (s.is_boss or s.payment_method != 'Credit') %}
         <div style="margin-top:6px">
           <button type="button" class="ghost bill-edit-reopen-btn"
                   data-session="{{ s.session_id }}" data-table="{{ s.table_code }}"

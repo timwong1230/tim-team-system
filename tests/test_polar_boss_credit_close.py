@@ -17,6 +17,7 @@ def test_boss_tab_closes_as_credit_not_sales():
     tmp = tempfile.mkdtemp(prefix="polar-boss-credit-")
     os.environ["POLAR_DATA_DIR"] = tmp
     os.environ["POLAR_STAFF_PIN"] = "polar2026"
+    os.environ["POLAR_BILL_EDIT_PASSWORD"] = "polar2019"
 
     import importlib
 
@@ -111,7 +112,31 @@ def test_boss_tab_closes_as_credit_not_sales():
         assert boss["name"].encode() in page.content or b"Boss" in page.content
         assert b"not in sales" in page.content
         assert b"boss credit" in page.content
+        # Boss credit rows also get Edit (password-gated reopen)
+        assert (
+            f'data-session="{sid}"'.encode() in page.content
+            and b"bill-edit-reopen-btn" in page.content
+        )
+        assert f'data-table="{seat}"'.encode() in page.content
         conn.close()
+
+        reopen = client.post(
+            f"/api/staff/sessions/{sid}/reopen-edit",
+            json={"pin": pin, "edit_password": "polar2019"},
+        )
+        assert reopen.status_code == 200, reopen.text
+        assert reopen.json()["table_code"] == seat
+        bill_edit = client.get(reopen.json()["redirect"])
+        assert bill_edit.status_code == 200
+        assert b"Credit used" in bill_edit.content or b"Polar credit" in bill_edit.content
+
+        # Re-close as Credit after edit unlock
+        closed_again = client.post(
+            f"/api/staff/bill/{seat}/close",
+            data={"pin": pin, "discount_percent": 0},
+        )
+        assert closed_again.status_code == 200, closed_again.text
+        sid = closed_again.json()["session_id"]
 
         # Sending a fake tender on boss close is ignored — still Credit
         placed2 = client.post(
