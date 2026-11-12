@@ -37,10 +37,20 @@ def _persist_daily_snapshot(
 ) -> None:
     """Save live day totals so Reports still work after sessions are wiped."""
     if not force:
-        if int(report.get("session_count") or 0) <= 0 and float(report.get("gross_sales") or 0) <= 0:
-            # Still persist if claims / cash tilt were recorded for the night.
-            if float(report.get("claims_total") or 0) <= 0 and float(report.get("cash_tilt") or 0) <= 0:
-                return
+        has_guest = (
+            int(report.get("session_count") or 0) > 0
+            or float(report.get("gross_sales") or 0) > 0
+        )
+        has_boss = int(report.get("boss_session_count") or 0) > 0 or any(
+            s.get("is_boss") for s in (report.get("sessions") or [])
+        )
+        has_ops = (
+            float(report.get("claims_total") or 0) > 0
+            or float(report.get("cash_tilt") or 0) > 0
+        )
+        # Persist when guest sales, boss credit bills, claims, or cash tilt exist.
+        if not (has_guest or has_boss or has_ops):
+            return
     upsert_daily_report_snapshot(
         conn,
         business_date=str(report["business_date"]),
@@ -58,12 +68,15 @@ def _report_from_snapshot(biz: date, snap: dict, *, start: datetime, end: dateti
     claims = list(snap.get("claims") or [])
     claims_total = round(float(snap.get("claims_total") or 0), 1)
     total = round(float(snap.get("gross_sales") or 0), 1)
+    sessions = list(snap.get("sessions") or [])
+    boss_session_count = sum(1 for s in sessions if s.get("is_boss"))
     return {
         "business_date": biz.isoformat(),
         "window": f"{start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')} (HK)",
         "session_count": int(snap.get("session_count") or 0),
+        "boss_session_count": boss_session_count,
         "gross_sales": total,
-        "sessions": list(snap.get("sessions") or []),
+        "sessions": sessions,
         "by_payment_method": list(snap.get("by_payment_method") or []),
         "claims": claims,
         "claims_total": claims_total,
@@ -82,18 +95,22 @@ def daily_sales_report(
     force_snapshot: bool = False,
 ) -> dict:
     start, end = business_day_window(biz)
+    # Include boss Credit bills in the list; still exclude demo practice seats.
+    # Guest sales totals ignore boss rows below.
     sessions = conn.execute(
         """
         SELECT s.*, t.label AS table_label, t.code AS table_code, t.zone AS zone
         FROM sessions s
         JOIN tables t ON t.id = s.table_id
         WHERE s.status = 'closed' AND s.closed_at IS NOT NULL
-          AND COALESCE(t.zone, '') NOT IN ('boss', 'demo')
+          AND COALESCE(t.zone, '') != 'demo'
         ORDER BY s.closed_at ASC
         """
     ).fetchall()
     rows = []
     total = 0.0
+    guest_count = 0
+    boss_count = 0
     by_method: dict[str, float] = {}
     for s in sessions:
         closed = _parse_iso(s["closed_at"])
@@ -102,19 +119,29 @@ def daily_sales_report(
         if bd != biz.isoformat():
             continue
         amt = float(s["total"] or 0)
-        total += amt
+        is_boss = _is_boss_session(s)
         method = (s["payment_method"] if "payment_method" in s.keys() else None) or "—"
         pays = list_session_payments(conn, int(s["id"]))
         if pays:
-            for p in pays:
-                m = p["method"] or "—"
-                by_method[m] = round(by_method.get(m, 0) + float(p["amount"]), 1)
             method_label = format_payment_label(method, pays)
         else:
-            # Legacy single-tender rows (no session_payments yet).
-            if method != SPLIT_PAYMENT_METHOD:
-                by_method[method] = round(by_method.get(method, 0) + amt, 1)
             method_label = method if method != "—" else None
+        if is_boss:
+            boss_count += 1
+            # Boss Polar credit — list for ops visibility, never count as sales.
+            pays = []
+            method_label = method_label or method
+        else:
+            guest_count += 1
+            total += amt
+            if pays:
+                for p in pays:
+                    m = p["method"] or "—"
+                    by_method[m] = round(by_method.get(m, 0) + float(p["amount"]), 1)
+            else:
+                # Legacy single-tender rows (no session_payments yet).
+                if method != SPLIT_PAYMENT_METHOD:
+                    by_method[method] = round(by_method.get(method, 0) + amt, 1)
         rows.append(
             {
                 "session_id": s["id"],
@@ -128,6 +155,7 @@ def daily_sales_report(
                 "total": amt,
                 "closed_at": closed.strftime("%H:%M"),
                 "receipt_path": s["receipt_path"],
+                "is_boss": is_boss,
             }
         )
 
@@ -154,7 +182,8 @@ def daily_sales_report(
     live = {
         "business_date": biz.isoformat(),
         "window": f"{start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')} (HK)",
-        "session_count": len(rows),
+        "session_count": guest_count,
+        "boss_session_count": boss_count,
         "gross_sales": round(total, 1),
         "sessions": rows,
         "by_payment_method": [
@@ -172,6 +201,7 @@ def daily_sales_report(
     # Live night still open / recorded — keep a durable snapshot.
     if (
         live["session_count"]
+        or live["boss_session_count"]
         or live["claims_total"]
         or live["cash_tilt"]
         or live["gross_sales"]
@@ -188,6 +218,7 @@ def daily_sales_report(
             or float(snap.get("gross_sales") or 0)
             or float(snap.get("claims_total") or 0)
             or float(snap.get("cash_tilt") or 0)
+            or any(s.get("is_boss") for s in (snap.get("sessions") or []))
         ):
             return _report_from_snapshot(biz, snap, start=start, end=end)
     return live

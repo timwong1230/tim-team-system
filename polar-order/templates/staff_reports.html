@@ -20,7 +20,13 @@
     </form>
     <p class="muted">{{ daily.window }}</p>
     <div class="bill-total" style="font-size:1.8rem">${{ '%.0f'|format(daily.gross_sales) }}</div>
-    <div class="muted">{{ daily.session_count }} closed tables</div>
+    <div class="muted">
+      {{ daily.session_count }} closed tables
+      {% if daily.boss_session_count %}
+      · {{ daily.boss_session_count }} boss credit
+      {% endif %}
+      <span style="display:block;margin-top:4px">Guest sales only — boss credit is listed below, not counted</span>
+    </div>
     {% if daily.from_snapshot %}
     <p class="muted" style="margin:8px 0 0;color:var(--gold)">
       呢日 live sessions 已唔喺庫 — 顯示已存檔嘅 Daily report snapshot
@@ -42,11 +48,16 @@
       打錯單？撳 <strong>Edit</strong> 再入密碼，開返 Bill 改嘢，然後重新 Mark paid。
     </p>
     {% for s in daily.sessions %}
-    <div class="cart-line session-pay-row" data-session="{{ s.session_id }}">
+    <div class="cart-line session-pay-row{% if s.is_boss %} session-boss-row{% endif %}" data-session="{{ s.session_id }}">
       <div style="flex:1;min-width:0">
         <strong>{{ s.table }}</strong>
+        {% if s.is_boss %}
+        <span class="muted" style="margin-left:6px;color:var(--gold)">Boss</span>
+        {% endif %}
         <div class="muted">{{ s.closed_at }} · party {{ s.party_size }}{% if s.discount_percent %} · {{ s.discount_percent|int }}% off{% endif %}</div>
-        {% if s.payments and s.payments|length >= 2 %}
+        {% if s.is_boss %}
+        <div class="muted" style="margin-top:6px">{{ s.payment_method or 'Credit' }} · not in sales</div>
+        {% elif s.payments and s.payments|length >= 2 %}
         <div class="muted" style="margin-top:8px">Split payment — change each person’s method</div>
         {% for p in s.payments %}
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
@@ -88,7 +99,7 @@
         {% if s.receipt_path %}
         <div><a class="session-pdf-link" href="/staff/receipt/{{ s.session_id }}?pin={{ pin }}">PDF</a></div>
         {% endif %}
-        {% if s.payment_method != 'Credit' and s.table_code %}
+        {% if not s.is_boss and s.payment_method != 'Credit' and s.table_code %}
         <div style="margin-top:6px">
           <button type="button" class="ghost bill-edit-reopen-btn"
                   data-session="{{ s.session_id }}" data-table="{{ s.table_code }}"
