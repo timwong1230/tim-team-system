@@ -1972,6 +1972,10 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
             conn.close()
             raise HTTPException(400, "Birthday Free cocktail already on this bill")
 
+    # Boss tabs: tag with boss name so kitchen/board match the seat ledger
+    # (Monthly Boss Report itself sums closed Credit sessions, not this tag).
+    order_by = boss["name"] if is_boss else "Staff"
+
     try:
         order_id, payload = _create_order(
             conn,
@@ -1979,7 +1983,7 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
             session=session,
             items=body.items,
             note=body.note,
-            created_by="Staff",
+            created_by=order_by,
         )
     except HTTPException:
         conn.close()
@@ -1989,7 +1993,7 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
     return {
         "ok": True,
         "order_id": order_id,
-        "created_by": "Staff",
+        "created_by": order_by,
         "guest_name": session["guest_name"],
         "party_size": session["party_size"],
     }

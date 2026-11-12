@@ -440,106 +440,160 @@ def item_purchase_report(
     }
 
 
-def monthly_boss_report(conn: sqlite3.Connection, year: int, month: int) -> dict:
-    """Per-boss order totals for a calendar month (not guest sales).
+def _boss_from_seat_code(table_code: str | None) -> dict | None:
+    """Map BOSSJON / bossjon → boss dict."""
+    code = (table_code or "").strip().upper()
+    if not code.startswith("BOSS"):
+        return None
+    suffix = code[4:].lower()
+    for b in BOSSES:
+        if b["id"] == suffix:
+            return b
+    return None
 
-    Counts non-cancelled order lines tagged created_by = boss name,
-    classified by business_date of the order timestamp.
+
+def monthly_boss_report(conn: sqlite3.Connection, year: int, month: int) -> dict:
+    """Per-boss Polar credit for a calendar month (not guest sales).
+
+    Uses closed boss-tab Credit sessions — same ledger as daily Reports —
+    so staff-placed BOSS* orders count even when ``created_by='Staff'``.
+    Classified by the session ``business_date`` (Polar night).
     """
     last = monthrange(year, month)[1]
     start_biz = date(year, month, 1)
     end_biz = date(year, month, last)
-    start_dt, _ = business_day_window(start_biz)
-    _, end_dt = business_day_window(end_biz)
 
-    boss_names = {b["name"]: b for b in BOSSES}
     by_boss: dict[str, dict] = {
         b["name"]: {
             "boss_id": b["id"],
             "boss_name": b["name"],
+            "session_count": 0,
             "order_count": 0,
             "item_qty": 0,
             "total": 0.0,
             "items": {},  # item_id -> row
-            "orders": [],
+            "sessions": [],
+            "by_day": {},  # business_date -> {total, session_count, item_qty}
         }
         for b in BOSSES
     }
 
-    orders = conn.execute(
+    sessions = conn.execute(
         """
-        SELECT o.id, o.created_by, o.created_at, o.status, o.note,
-               t.label AS table_label
-        FROM orders o
-        JOIN tables t ON t.id = o.table_id
-        WHERE o.status != 'cancelled'
-          AND o.created_by IS NOT NULL
-        ORDER BY o.id ASC
+        SELECT s.id, s.total, s.closed_at, s.business_date, s.payment_method,
+               s.receipt_path, t.label AS table_label, t.code AS table_code,
+               t.zone AS zone
+        FROM sessions s
+        JOIN tables t ON t.id = s.table_id
+        WHERE s.status = 'closed'
+          AND COALESCE(t.zone, '') = 'boss'
+        ORDER BY s.closed_at ASC
         """
     ).fetchall()
 
-    order_ids_in_month: list[int] = []
-    order_meta: dict[int, sqlite3.Row] = {}
-    for o in orders:
-        if o["created_by"] not in boss_names:
+    month_sessions: list[sqlite3.Row] = []
+    for s in sessions:
+        boss = _boss_from_seat_code(s["table_code"])
+        if not boss:
             continue
-        created = _parse_iso(o["created_at"])
-        bd = business_date(created)
+        closed = _parse_iso(s["closed_at"]) if s["closed_at"] else None
+        bd_str = s["business_date"] or (
+            business_date(closed).isoformat() if closed else None
+        )
+        if not bd_str:
+            continue
+        try:
+            bd = date.fromisoformat(bd_str)
+        except ValueError:
+            continue
         if not (start_biz <= bd <= end_biz):
-            # also allow if within window spanning month edges
-            if not (start_dt <= created < end_dt):
-                continue
-        order_ids_in_month.append(o["id"])
-        order_meta[o["id"]] = o
+            continue
+        month_sessions.append(s)
 
-    if order_ids_in_month:
-        placeholders = ",".join("?" * len(order_ids_in_month))
-        lines = conn.execute(
+    session_ids = [int(s["id"]) for s in month_sessions]
+    lines_by_session: dict[int, list] = {}
+    orders_by_session: dict[int, int] = {}
+    if session_ids:
+        placeholders = ",".join("?" * len(session_ids))
+        order_rows = conn.execute(
             f"""
-            SELECT oi.order_id, oi.item_id, oi.item_name, oi.qty, oi.line_total
-            FROM order_items oi
-            WHERE oi.order_id IN ({placeholders})
+            SELECT id, session_id
+            FROM orders
+            WHERE session_id IN ({placeholders})
+              AND status != 'cancelled'
             """,
-            order_ids_in_month,
+            session_ids,
         ).fetchall()
-        lines_by_order: dict[int, list] = {}
-        for row in lines:
-            lines_by_order.setdefault(row["order_id"], []).append(row)
+        order_to_session = {int(o["id"]): int(o["session_id"]) for o in order_rows}
+        for o in order_rows:
+            sid = int(o["session_id"])
+            orders_by_session[sid] = orders_by_session.get(sid, 0) + 1
+        if order_to_session:
+            oids = list(order_to_session.keys())
+            oph = ",".join("?" * len(oids))
+            for row in conn.execute(
+                f"""
+                SELECT oi.order_id, oi.item_id, oi.item_name, oi.qty, oi.line_total
+                FROM order_items oi
+                WHERE oi.order_id IN ({oph})
+                """,
+                oids,
+            ).fetchall():
+                sid = order_to_session[int(row["order_id"])]
+                lines_by_session.setdefault(sid, []).append(row)
 
-        for oid in order_ids_in_month:
-            o = order_meta[oid]
-            bucket = by_boss[o["created_by"]]
-            o_lines = lines_by_order.get(oid, [])
-            o_total = sum(float(x["line_total"]) for x in o_lines)
-            o_qty = sum(int(x["qty"]) for x in o_lines)
-            bucket["order_count"] += 1
-            bucket["item_qty"] += o_qty
-            bucket["total"] += o_total
-            created = _parse_iso(o["created_at"])
-            bucket["orders"].append(
+    for s in month_sessions:
+        boss = _boss_from_seat_code(s["table_code"])
+        assert boss is not None
+        bucket = by_boss[boss["name"]]
+        closed = _parse_iso(s["closed_at"]) if s["closed_at"] else None
+        bd_str = s["business_date"] or (
+            business_date(closed).isoformat() if closed else ""
+        )
+        lines = lines_by_session.get(int(s["id"]), [])
+        # Prefer billed session total (matches daily Reports / PDF credit used).
+        sess_total = float(s["total"] or 0)
+        if sess_total <= 0 and lines:
+            sess_total = sum(float(x["line_total"]) for x in lines)
+        sess_qty = sum(int(x["qty"]) for x in lines)
+        order_count = orders_by_session.get(int(s["id"]), 0)
+
+        bucket["session_count"] += 1
+        bucket["order_count"] += order_count
+        bucket["item_qty"] += sess_qty
+        bucket["total"] += sess_total
+        bucket["sessions"].append(
+            {
+                "session_id": int(s["id"]),
+                "business_date": bd_str,
+                "closed_at": closed.strftime("%Y-%m-%d %H:%M") if closed else None,
+                "table": s["table_label"],
+                "total": round(sess_total, 1),
+                "qty": sess_qty,
+                "order_count": order_count,
+            }
+        )
+        day_bucket = bucket["by_day"].setdefault(
+            bd_str, {"business_date": bd_str, "total": 0.0, "session_count": 0, "item_qty": 0}
+        )
+        day_bucket["total"] += sess_total
+        day_bucket["session_count"] += 1
+        day_bucket["item_qty"] += sess_qty
+
+        for row in lines:
+            iid = row["item_id"]
+            items = bucket["items"]
+            items.setdefault(
+                iid,
                 {
-                    "order_id": oid,
-                    "created_at": created.strftime("%Y-%m-%d %H:%M"),
-                    "table": o["table_label"],
-                    "total": round(o_total, 1),
-                    "qty": o_qty,
-                    "note": o["note"],
-                }
+                    "item_id": iid,
+                    "item_name": row["item_name"],
+                    "qty": 0,
+                    "revenue": 0.0,
+                },
             )
-            for row in o_lines:
-                iid = row["item_id"]
-                items = bucket["items"]
-                items.setdefault(
-                    iid,
-                    {
-                        "item_id": iid,
-                        "item_name": row["item_name"],
-                        "qty": 0,
-                        "revenue": 0.0,
-                    },
-                )
-                items[iid]["qty"] += int(row["qty"])
-                items[iid]["revenue"] += float(row["line_total"])
+            items[iid]["qty"] += int(row["qty"])
+            items[iid]["revenue"] += float(row["line_total"])
 
     bosses_out = []
     grand = 0.0
@@ -551,17 +605,31 @@ def monthly_boss_report(conn: sqlite3.Connection, year: int, month: int) -> dict
         )
         for x in item_list:
             x["revenue"] = round(x["revenue"], 1)
+        day_list = sorted(
+            (
+                {
+                    "business_date": d["business_date"],
+                    "total": round(d["total"], 1),
+                    "session_count": d["session_count"],
+                    "item_qty": d["item_qty"],
+                }
+                for d in bucket["by_day"].values()
+            ),
+            key=lambda x: x["business_date"],
+        )
         total = round(bucket["total"], 1)
         grand += total
         bosses_out.append(
             {
                 "boss_id": bucket["boss_id"],
                 "boss_name": bucket["boss_name"],
+                "session_count": bucket["session_count"],
                 "order_count": bucket["order_count"],
                 "item_qty": bucket["item_qty"],
                 "total": total,
                 "item_rows": item_list,
-                "orders": list(reversed(bucket["orders"]))[:40],
+                "by_day": day_list,
+                "sessions": list(reversed(bucket["sessions"]))[:60],
             }
         )
 
