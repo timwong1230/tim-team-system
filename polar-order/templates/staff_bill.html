@@ -16,7 +16,14 @@
   {% if bill_reopened and session %}
   <div class="card" style="margin-bottom:16px;border-color:rgba(212,192,140,0.7)">
     <p style="margin:0">
+      {% if edit_session %}
+      <strong>改緊舊單 #{{ session.id }}</strong>
+      {% if session.business_date %}（{{ session.business_date }}）{% endif %}
+      — 而家開住嘅 party 唔會郁。改完再
+      <strong>{% if is_boss %}Record credit{% else %}Mark paid{% endif %}</strong>。
+      {% else %}
       <strong>Editing paid bill</strong> — 改完 qty／加單之後，記得再 <strong>Mark paid</strong> 出新 PDF。
+      {% endif %}
     </p>
   </div>
   {% endif %}
@@ -105,7 +112,7 @@
 
   <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
     <a class="primary" style="display:inline-block;width:auto;text-align:center"
-       href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for this table</a>
+       href="/staff/order/{{ table.code }}?pin={{ pin }}{% if edit_session %}&edit_session={{ edit_session }}{% endif %}">＋ Order for this table</a>
     <button class="ghost" type="button" id="ffPartyRevealBtn" style="width:auto">Free Flow party</button>
     {% if can_split %}
     <button class="ghost" type="button" id="splitPartyBtn" style="width:auto">
@@ -132,7 +139,7 @@
   {% if is_boss %}
   <div class="actions" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px">
     <a class="primary" style="display:inline-block;width:auto;text-align:center"
-       href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for boss</a>
+       href="/staff/order/{{ table.code }}?pin={{ pin }}{% if edit_session %}&edit_session={{ edit_session }}{% endif %}">＋ Order for boss</a>
   </div>
   {% if last_credit %}
   <div class="card" style="margin-bottom:16px;border-color:rgba(212,192,140,0.55)">
@@ -298,11 +305,13 @@
     <input type="hidden" name="party_size" id="partyHidden" value="{{ bill.party_size }}" />
     <input type="hidden" name="payment_method" id="paymentHidden" value="{% if is_boss %}Credit{% endif %}" />
     <input type="hidden" name="payments_json" id="paymentsJsonHidden" value="" />
+    {% if edit_session %}<input type="hidden" name="edit_session" value="{{ edit_session }}" />{% endif %}
     <button class="primary" type="submit">
       {% if is_boss %}Record credit & open PDF{% else %}Mark paid & open PDF receipt{% endif %}
     </button>
   </form>
 
+  {% if not edit_session %}
   <div class="card" id="clearTableBox" style="margin-top:16px;border-color:#8a4a4a">
     <h3 style="margin-top:0;color:#f0c0c0">Clear table</h3>
     <p class="muted" style="margin-top:0">
@@ -312,6 +321,7 @@
     <button class="ghost" type="button" id="clearTableBtn"
             style="width:auto;border-color:#8a4a4a;color:#f0c0c0">Clear table</button>
   </div>
+  {% endif %}
 
   {% endif %}
 
@@ -340,7 +350,7 @@
     <button class="ghost" type="button" id="staffNomAdd">Add to bill</button>
   </div>
 
-  {% if bill and not is_boss and transfer_targets %}
+  {% if bill and not is_boss and transfer_targets and not edit_session %}
   <div class="card transfer-box" id="transferBox" style="margin-top:16px">
     <h3 style="margin-top:0">Move to another table</h3>
     <p class="muted" style="margin-top:0">
@@ -470,7 +480,7 @@
     const res = await fetch(`/api/staff/bill/{{ table.code }}/items/${itemId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: {{ pin|tojson }}, qty }),
+      body: JSON.stringify({ pin: {{ pin|tojson }}, qty{% if edit_session %}, edit_session: {{ edit_session }}{% endif %} }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'Failed to update item');
@@ -616,7 +626,7 @@
       const res = await fetch('/api/staff/bill/{{ table.code }}/snack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: {{ pin|tojson }}, waived }),
+        body: JSON.stringify({ pin: {{ pin|tojson }}, waived{% if edit_session %}, edit_session: {{ edit_session }}{% endif %} }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Failed to update snacks');
@@ -708,6 +718,7 @@
       payload.party_size = Math.floor(partySize);
       payload.guest_name = 'Walk-in';
     }
+    {% if edit_session %}payload.edit_session = {{ edit_session }};{% endif %}
     const res = await fetch('/api/staff/bill/{{ table.code }}/custom', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -944,7 +955,7 @@
       await fetch('/api/staff/bill/{{ table.code }}/party', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party }),
+        body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party{% if edit_session %}, edit_session: {{ edit_session }}{% endif %} }),
       });
     } else {
       const chosen = document.querySelector('input[name="payment_method_ui"]:checked');
@@ -962,7 +973,7 @@
       await fetch('/api/staff/bill/{{ table.code }}/party', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party }),
+        body: JSON.stringify({ pin: {{ pin|tojson }}, party_size: party{% if edit_session %}, edit_session: {{ edit_session }}{% endif %} }),
       });
     }
     const fd = new FormData(e.target);
