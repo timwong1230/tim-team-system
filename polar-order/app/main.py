@@ -207,6 +207,7 @@ class StaffCustomIn(BaseModel):
     # Used when the table has no open session yet (NOM as first item)
     guest_name: str | None = Field(default=None, max_length=40)
     party_size: int | None = Field(default=None, ge=1, le=30)
+    edit_session: int | None = None
 
 
 class StaffOrderIn(BaseModel):
@@ -218,6 +219,8 @@ class StaffOrderIn(BaseModel):
     # Used when the table has no open session yet
     guest_name: str | None = Field(default=None, max_length=40)
     party_size: int | None = Field(default=None, ge=1, le=30)
+    # Edit a reopened historical bill without touching the live open party.
+    edit_session: int | None = None
 
 
 class WelcomeIn(BaseModel):
@@ -228,16 +231,20 @@ class WelcomeIn(BaseModel):
 class StaffPartyIn(BaseModel):
     pin: str
     party_size: int = Field(ge=1, le=30)
+    # When editing a closed bill while another party is open on the same seat.
+    edit_session: int | None = None
 
 
 class StaffSnackIn(BaseModel):
     pin: str
     waived: bool = False
+    edit_session: int | None = None
 
 
 class StaffItemEditIn(BaseModel):
     pin: str
     qty: int = Field(..., ge=0, le=50)  # 0 = remove line
+    edit_session: int | None = None
 
 
 class StaffTransferIn(BaseModel):
@@ -1148,8 +1155,28 @@ def _boss_for_table_code(table_code: str) -> dict | None:
     return boss_by_id(raw[4:])
 
 
+def _session_for_staff_bill(
+    conn,
+    table,
+    edit_session: int | None,
+):
+    """Live open party, or a historical bill unlocked for edit (status=editing)."""
+    if edit_session:
+        session = get_session(conn, int(edit_session))
+        if (
+            not session
+            or int(session["table_id"]) != int(table["id"])
+            or (session["status"] or "") not in ("open", "editing")
+        ):
+            return None
+        return session
+    return get_open_session(conn, table["id"])
+
+
 @app.get("/staff/order/{table_code}", response_class=HTMLResponse)
-def staff_order_page(request: Request, table_code: str, pin: str = ""):
+def staff_order_page(
+    request: Request, table_code: str, pin: str = "", edit_session: int = 0
+):
     """Staff menu — order for a guest table (not the guest QR phone)."""
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
@@ -1159,7 +1186,10 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         conn.close()
         raise HTTPException(404, "Table not found")
     is_boss = (table["zone"] or "") == "boss"
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, edit_session or None)
+    if edit_session and not session:
+        conn.close()
+        raise HTTPException(404, "Bill to edit not found")
     boss = None
     if is_boss:
         boss = _boss_for_table_code(table["code"])
@@ -1193,6 +1223,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
             "ff_party": (not is_boss) and session_is_ff_party(session),
             "is_boss": is_boss,
             "boss_name": (boss or {}).get("name") if boss else None,
+            "edit_session": int(session["id"]) if edit_session and session else 0,
         },
     )
 
@@ -1204,6 +1235,7 @@ def staff_bill(
     pin: str = "",
     discount: float = 0,
     edited: str = "",
+    edit_session: int = 0,
 ):
     if pin != STAFF_PIN:
         return HTMLResponse("Unauthorized", status_code=401)
@@ -1212,7 +1244,10 @@ def staff_bill(
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, edit_session or None)
+    if edit_session and not session:
+        conn.close()
+        raise HTTPException(404, "Bill to edit not found")
     meta = load_menu_meta()
     lines: list[dict] = []
     bill = None
@@ -1253,7 +1288,8 @@ def staff_bill(
                 transfer_targets.append(t)
     # Boss Credit tabs: surface the last closed credit so staff can still see
     # items that already posted (open tab alone looked like those items vanished).
-    if is_boss:
+    # Skip while editing a specific old bill — that bill is the page itself.
+    if is_boss and not edit_session:
         closed = get_latest_closed_session(conn, table["id"])
         if (
             closed
@@ -1311,6 +1347,7 @@ def staff_bill(
                 else 450.0
             ),
             "bill_reopened": (edited or "").strip() in ("1", "true", "yes"),
+            "edit_session": int(session["id"]) if edit_session and session else 0,
         },
     )
 
@@ -1542,17 +1579,17 @@ def staff_update_party(table_code: str, body: StaffPartyIn):
     if (table["zone"] or "") == "boss":
         conn.close()
         return {"ok": True, "party_size": 1, "bill": None}
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, body.edit_session)
     if not session:
         conn.close()
-        raise HTTPException(400, "No open session")
+        raise HTTPException(400, "No open session" if not body.edit_session else "Bill to edit not found")
     size = max(1, min(30, int(body.party_size)))
     conn.execute(
         "UPDATE sessions SET party_size = ? WHERE id = ?",
         (size, session["id"]),
     )
     conn.commit()
-    session = get_open_session(conn, table["id"])
+    session = get_session(conn, int(session["id"]))
     meta = load_menu_meta()
     lines = _session_lines(conn, session["id"])
     bill = compute_bill(
@@ -1586,17 +1623,17 @@ def staff_update_snack(table_code: str, body: StaffSnackIn):
     if (table["zone"] or "") == "boss":
         conn.close()
         return {"ok": True, "snack_waived": True, "bill": None}
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, body.edit_session)
     if not session:
         conn.close()
-        raise HTTPException(400, "No open session")
+        raise HTTPException(400, "No open session" if not body.edit_session else "Bill to edit not found")
     waived = 1 if body.waived else 0
     conn.execute(
         "UPDATE sessions SET snack_waived = ? WHERE id = ?",
         (waived, session["id"]),
     )
     conn.commit()
-    session = get_open_session(conn, table["id"])
+    session = get_session(conn, int(session["id"]))
     meta = load_menu_meta()
     lines = _session_lines(conn, session["id"])
     bill = compute_bill(
@@ -1753,8 +1790,14 @@ async def staff_add_custom(table_code: str, body: StaffCustomIn):
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, body.edit_session)
+    if body.edit_session and not session:
+        conn.close()
+        raise HTTPException(404, "Bill to edit not found")
     if not session or not session["guest_name"]:
+        if body.edit_session:
+            conn.close()
+            raise HTTPException(404, "Bill to edit not found")
         if (table["zone"] or "") == "boss":
             boss = _boss_for_table_code(table["code"])
             if not boss:
@@ -1810,10 +1853,10 @@ async def staff_edit_bill_item(table_code: str, item_row_id: int, body: StaffIte
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, body.edit_session)
     if not session:
         conn.close()
-        raise HTTPException(400, "No open session")
+        raise HTTPException(400, "No open session" if not body.edit_session else "Bill to edit not found")
 
     row = conn.execute(
         """
@@ -1918,13 +1961,16 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
         conn.close()
         raise HTTPException(404, "Table not found")
     is_boss = (table["zone"] or "") == "boss"
+    boss = _boss_for_table_code(table["code"]) if is_boss else None
+    if is_boss and not boss:
+        conn.close()
+        raise HTTPException(404, "Boss not found")
 
-    session = get_open_session(conn, table["id"])
-    if is_boss:
-        boss = _boss_for_table_code(table["code"])
-        if not boss:
-            conn.close()
-            raise HTTPException(404, "Boss not found")
+    session = _session_for_staff_bill(conn, table, body.edit_session)
+    if body.edit_session and not session:
+        conn.close()
+        raise HTTPException(404, "Bill to edit not found")
+    if is_boss and not body.edit_session:
         try:
             session = start_session(conn, table["id"], boss["name"], party_size=1)
         except ValueError as e:
@@ -1953,7 +1999,7 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
 
     # Re-read after start_session commit — refuse if another device already closed it.
     session = get_session(conn, int(session["id"]))
-    if not session or session["status"] != "open":
+    if not session or session["status"] not in ("open", "editing"):
         conn.close()
         raise HTTPException(409, "Table session closed — open the bill again and retry")
 
@@ -2084,6 +2130,7 @@ def close_bill(
     party_size: int | None = Form(None),
     payment_method: str = Form(""),
     payments_json: str = Form(""),
+    edit_session: int = Form(0),
 ):
     if pin != STAFF_PIN:
         raise HTTPException(401, "Unauthorized")
@@ -2092,9 +2139,11 @@ def close_bill(
     if not table:
         conn.close()
         raise HTTPException(404, "Table not found")
-    session = get_open_session(conn, table["id"])
+    session = _session_for_staff_bill(conn, table, edit_session or None)
     if not session:
         conn.close()
+        if edit_session:
+            raise HTTPException(404, "Bill to edit not found")
         return {"ok": True, "message": "No open session"}
 
     is_boss = (table["zone"] or "") == "boss"
@@ -2105,7 +2154,7 @@ def close_bill(
             (size, session["id"]),
         )
         conn.commit()
-        session = get_open_session(conn, table["id"])
+        session = get_session(conn, int(session["id"]))
 
     meta = load_menu_meta()
     lines = _session_lines(conn, session["id"])
@@ -2245,17 +2294,15 @@ def staff_reopen_session_for_edit(session_id: int, body: StaffReopenEditIn):
         conn.close()
         raise HTTPException(404, "Table not found")
     open_sess = get_open_session(conn, table["id"])
-    if open_sess and int(open_sess["id"]) != int(session_id):
-        conn.close()
-        raise HTTPException(
-            400,
-            f"{table['label']} already has an open party — finish or clear it first",
-        )
+    # Another party is already open — edit this old bill beside it (status=editing)
+    # so the live tab stays open and staff can still change the historical credit.
+    alongside = bool(open_sess and int(open_sess["id"]) != int(session_id))
+    edit_status = "editing" if alongside else "open"
     # Keep business_date so re-close stays on the original night.
     conn.execute(
         """
         UPDATE sessions SET
-          status = 'open',
+          status = ?,
           closed_at = NULL,
           receipt_path = NULL,
           payment_method = NULL,
@@ -2267,7 +2314,7 @@ def staff_reopen_session_for_edit(session_id: int, body: StaffReopenEditIn):
           total = NULL
         WHERE id = ?
         """,
-        (session_id,),
+        (edit_status, session_id),
     )
     conn.execute("DELETE FROM session_payments WHERE session_id = ?", (session_id,))
     # Orders stay non-cancelled so staff can edit qty / add items, then Mark paid again.
@@ -2292,12 +2339,16 @@ def staff_reopen_session_for_edit(session_id: int, body: StaffReopenEditIn):
         except Exception:
             pass
     conn.close()
+    redirect = f"/staff/bill/{table['code']}?pin={body.pin}&edited=1"
+    if alongside:
+        redirect += f"&edit_session={session_id}"
     return {
         "ok": True,
         "session_id": session_id,
         "table_code": table["code"],
         "table_label": table["label"],
-        "redirect": f"/staff/bill/{table['code']}?pin={body.pin}&edited=1",
+        "edit_session": session_id if alongside else None,
+        "redirect": redirect,
     }
 
 

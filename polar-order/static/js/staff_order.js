@@ -572,6 +572,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       payload.party_size = Math.floor(partySize);
     }
+    if (cfg.editSession) payload.edit_session = cfg.editSession;
     const btn = document.getElementById("submitOrder");
     btn.disabled = true;
     btn.textContent = "Sending…";
@@ -594,9 +595,14 @@ document.addEventListener("DOMContentLoaded", () => {
       cart.clear();
       renderCartBar();
       drawer.classList.remove("open");
-      showToast("Order sent — back to tables");
-      // Return to Open seats so staff can pick the next table quickly
+      showToast(cfg.editSession ? "Added to the old bill" : "Order sent — back to tables");
+      // Return to Open seats so staff can pick the next table quickly.
+      // Historical edit stays on that bill.
       setTimeout(() => {
+        if (cfg.editSession) {
+          location.href = `/staff/bill/${table}?pin=${encodeURIComponent(pin)}&edited=1&edit_session=${encodeURIComponent(cfg.editSession)}`;
+          return;
+        }
         location.href = `/staff/tables?pin=${encodeURIComponent(pin)}`;
       }, 450);
     } catch (err) {

@@ -175,6 +175,7 @@
     table: {{ table.code|tojson }},
     pin: {{ pin|tojson }},
     needsCheckin: {{ needs_checkin|tojson }},
+    editSession: {{ edit_session|default(0)|tojson }},
   };
   window.POLAR_SINGLE_MIX_SPIRITS = {{ (single_mix_spirits or [])|tojson }};
 </script>
