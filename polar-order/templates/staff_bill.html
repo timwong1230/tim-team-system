@@ -134,6 +134,30 @@
     <a class="primary" style="display:inline-block;width:auto;text-align:center"
        href="/staff/order/{{ table.code }}?pin={{ pin }}">＋ Order for boss</a>
   </div>
+  {% if last_credit %}
+  <div class="card" style="margin-bottom:16px;border-color:rgba(212,192,140,0.55)">
+    <h3 style="margin-top:0">Last Credit (recorded)</h3>
+    <p class="muted" style="margin-top:0">
+      呢啲 item 已 Record credit，唔喺而家開住嘅 open tab。
+      要改呢張 → Reports 撳 Edit。再落單會開新一張 credit tab。
+    </p>
+    <div class="muted" style="margin-bottom:8px">
+      Total ${{ '%.0f'|format(last_credit.total) }}
+      {% if last_credit.receipt_path %}
+      · <a href="/staff/receipt/{{ last_credit.session_id }}?pin={{ pin }}">PDF</a>
+      {% endif %}
+    </div>
+    {% for line in last_credit.lines %}
+    <div class="cart-line">
+      <div>
+        <strong>{{ line.qty }}× {{ line.item_name }}</strong>
+        {% if line.note %}<div class="muted">{{ line.note }}</div>{% endif %}
+      </div>
+      <div>${{ '%.0f'|format(line.line_total) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if bill %}
@@ -168,7 +192,7 @@
         <div class="bill-item-total">${{ '%.0f'|format(line.line_total) }}</div>
       </div>
       {% else %}
-      <p class="muted" id="billItemsEmpty">No items yet.</p>
+      <p class="muted" id="billItemsEmpty">No items yet{% if is_boss and last_credit %} — open tab empty; last Credit listed above{% endif %}.</p>
       {% endfor %}
     </div>
   </div>

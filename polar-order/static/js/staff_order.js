@@ -159,8 +159,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function addCartLine(item) {
     const itemId = item.itemId || item.id;
     const serveChoice = item.serveChoice || "";
-    const id = serveChoice ? `${itemId}__${serveSlug(serveChoice)}` : itemId;
-    const existing = cart.get(id);
+    // Note items (e.g. Regular Shisha): never merge — flavour is typed after add,
+    // and merging used to drop the second flavour / look like a missing item.
+    const id = item.allowNote
+      ? `${itemId}__n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      : serveChoice
+        ? `${itemId}__${serveSlug(serveChoice)}`
+        : itemId;
+    const existing = !item.allowNote ? cart.get(id) : null;
     if (existing) {
       existing.qty += item.qty || 1;
     } else {
@@ -538,15 +544,18 @@ document.addEventListener("DOMContentLoaded", () => {
         if (l.custom) {
           return {
             item_id: "not-on-menu",
-            qty: l.qty,
+            qty: Math.min(50, Math.max(1, Number(l.qty) || 1)),
             note: l.note || null,
             custom_name: l.customName || l.name,
             custom_price: l.customPrice != null ? l.customPrice : l.price,
           };
         }
+        // Never send compound cart keys (id may include __serve / __note).
+        const menuId = l.itemId;
+        if (!menuId) throw new Error(`Missing item id for ${l.name || "item"}`);
         return {
-          item_id: l.itemId || l.id,
-          qty: l.qty,
+          item_id: menuId,
+          qty: Math.min(50, Math.max(1, Number(l.qty) || 1)),
           note: lineNotePayload(l),
         };
       }),

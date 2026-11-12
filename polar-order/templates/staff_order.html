@@ -8,7 +8,7 @@
   <div class="hero">
     <h1>{{ table.label }}</h1>
     {% if is_boss %}
-    <p>Personal tab · not guest sales. Staff can add items for <strong>{{ session.guest_name }}</strong>.</p>
+    <p>Personal tab · not guest sales. Staff can add items for <strong>{{ session.guest_name if session and session.guest_name else boss_name or table.label }}</strong>. New orders join the open credit tab (or start one after Record credit).</p>
     {% elif session and session.guest_name %}
     <p>Ordering for <strong>{{ session.guest_name }}</strong> · party {{ session.party_size }}. Staff can send menu items for this table.</p>
     {% else %}
