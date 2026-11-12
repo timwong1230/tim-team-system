@@ -449,6 +449,21 @@ def get_open_session(conn: sqlite3.Connection, table_id: int) -> sqlite3.Row | N
     ).fetchone()
 
 
+def get_latest_closed_session(
+    conn: sqlite3.Connection, table_id: int
+) -> sqlite3.Row | None:
+    """Most recently closed session on this seat (e.g. last boss Credit)."""
+    return conn.execute(
+        """
+        SELECT * FROM sessions
+        WHERE table_id = ? AND status = 'closed' AND closed_at IS NOT NULL
+        ORDER BY closed_at DESC, id DESC
+        LIMIT 1
+        """,
+        (table_id,),
+    ).fetchone()
+
+
 def transfer_open_session(
     conn: sqlite3.Connection,
     from_table_id: int,

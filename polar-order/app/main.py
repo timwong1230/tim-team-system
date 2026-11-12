@@ -33,6 +33,7 @@ from .db import (
     find_next_open_split,
     format_payment_label,
     get_ff_party_guest,
+    get_latest_closed_session,
     get_open_session,
     get_session,
     get_table_by_code,
@@ -1159,13 +1160,15 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
         raise HTTPException(404, "Table not found")
     is_boss = (table["zone"] or "") == "boss"
     session = get_open_session(conn, table["id"])
+    boss = None
     if is_boss:
         boss = _boss_for_table_code(table["code"])
         if not boss:
             conn.close()
             raise HTTPException(404, "Boss not found")
-        # Keep personal tab open so staff can order without guest check-in
-        session = start_session(conn, table["id"], boss["name"], party_size=1)
+        # Do NOT auto-open a new empty session on page view — that made prior
+        # Credit items look like they vanished from the open bill. Session is
+        # created/refreshed only when staff actually sends an order.
     menu = _menu_payload(
         conn,
         include_staff_only=True,
@@ -1189,6 +1192,7 @@ def staff_order_page(request: Request, table_code: str, pin: str = ""):
             "single_mix_spirits": single_mix_spirits,
             "ff_party": (not is_boss) and session_is_ff_party(session),
             "is_boss": is_boss,
+            "boss_name": (boss or {}).get("name") if boss else None,
         },
     )
 
@@ -1214,6 +1218,7 @@ def staff_bill(
     bill = None
     is_boss = (table["zone"] or "") == "boss"
     transfer_targets: list[sqlite3.Row] = []
+    last_credit = None
     if session:
         lines = _session_lines(conn, session["id"])
         if is_boss:
@@ -1246,6 +1251,24 @@ def staff_bill(
                 if get_open_session(conn, t["id"]):
                     continue
                 transfer_targets.append(t)
+    # Boss Credit tabs: surface the last closed credit so staff can still see
+    # items that already posted (open tab alone looked like those items vanished).
+    if is_boss:
+        closed = get_latest_closed_session(conn, table["id"])
+        if (
+            closed
+            and (closed["payment_method"] or "") == BOSS_CREDIT_METHOD
+            and (not session or int(closed["id"]) != int(session["id"]))
+        ):
+            closed_lines = _session_lines(conn, closed["id"])
+            if closed_lines:
+                last_credit = {
+                    "session_id": closed["id"],
+                    "total": float(closed["total"] or 0),
+                    "closed_at": closed["closed_at"],
+                    "receipt_path": closed["receipt_path"],
+                    "lines": closed_lines,
+                }
     zone = (table["zone"] or "").strip().lower()
     can_split = zone in ("table", "table_split")
     split_parent = (
@@ -1272,6 +1295,7 @@ def staff_bill(
             "pin": pin,
             "discount": discount or 0,
             "is_boss": is_boss,
+            "last_credit": last_credit,
             "snack_per_head": meta["snack_charge_per_head"],
             "snack_waived": _session_snack_waived(session),
             "transfer_targets": transfer_targets,
@@ -1926,6 +1950,12 @@ async def staff_place_order(table_code: str, body: StaffOrderIn):
             party_size=body.party_size,
             guest_name=session["guest_name"],
         )
+
+    # Re-read after start_session commit — refuse if another device already closed it.
+    session = get_session(conn, int(session["id"]))
+    if not session or session["status"] != "open":
+        conn.close()
+        raise HTTPException(409, "Table session closed — open the bill again and retry")
 
     # Birthday Free: one complimentary Celestial cocktail per open session.
     birthday_qty = sum(
