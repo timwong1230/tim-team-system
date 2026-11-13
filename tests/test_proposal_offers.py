@@ -47,3 +47,34 @@ def test_zizhubao_percent_discount():
 def test_life_accident_no_force_match():
     # 人身意外附約唔喺 Q4 客戶優惠表；唔好亂掛全意守護
     assert find_customer_offer("life_accident_rider", annual_hkd=1208, quarter="Q4") is None
+
+
+def test_allsupporter_q4_100pct_promo():
+    offer = find_customer_offer(
+        "ci_essential", annual_hkd=30000, pay_term=20, quarter="Q4"
+    )
+    assert offer
+    assert "全應援" in (offer.get("product_label") or "")
+    assert "100%" in offer["detail"] or "100％" in offer["detail"]
+    assert "第2年20%" in offer["detail"] or "第2年20％" in offer["detail"]
+    assert "台北" in offer["detail"]
+    assert offer.get("first_year_hkd") is None  # 折扣由第2年起，首年唔減
+    assert "20 年供" in (offer.get("first_year_display") or "")
+    assert "100%" in (offer.get("first_year_display") or "")
+
+
+def test_allsupporter_5pay_band():
+    offer = find_customer_offer(
+        "ci_premier", annual_hkd=40000, pay_term=5, quarter="Q4"
+    )
+    assert offer and "全應援" in (offer.get("product_label") or "")
+    assert "5 年供" in (offer.get("first_year_display") or "")
+    assert "10%" in (offer.get("first_year_display") or "")
+
+
+def test_yingyuan_still_matches_double18_not_allsupporter():
+    offer = find_customer_offer("ci_yingyuan", annual_hkd=20000, quarter="Q4")
+    assert offer
+    assert "應援保" in (offer.get("product_label") or "")
+    assert "全應援" not in (offer.get("product_label") or "")
+    assert "雙 18" in offer["detail"] or "18%" in offer["detail"]

@@ -25,6 +25,11 @@ def test_quarters_complete():
     assert cat["sections"][0]["columns"]
     assert cat["sections"][0]["rows"]
     assert any("醫家保" in str(row[0]) for sec in cat["sections"] for row in sec["rows"])
+    assert any(
+        "危疾全應援" in str(row[0]) and "100%" in str(row[1])
+        for sec in cat["sections"]
+        for row in sec["rows"]
+    )
 
     agent = default_catalog("Q4", "agent")
     assert any("盈聚" in (sec.get("title") or "") for sec in agent["sections"])

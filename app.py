@@ -3821,7 +3821,9 @@ def page_quarterly_offers():
     st.markdown("## 季度優惠 & 獎賞")
     st.caption(
         "表格一覽 · Q4 來自 FWD Flash Report（客戶優惠 PDM76/2026、"
+        "危疾全應援「100%應援您旅程」客戶優惠單張、"
         "理財顧問獎賞 TA261048）。僅供內部參考，條款以官方文件為準。"
+        "出計劃書時會自動掛上對應產品嘅客戶優惠。"
     )
 
     quarters = _quarters_map()
