@@ -16,6 +16,10 @@ PRODUCT_OFFER_TOKENS: dict[str, list[str]] = {
     "veasy": ["易衛您"],
     "vsmartstaff": ["智員善", "智．升", "智.升"],
     "gba_op": ["大灣區"],
+    # 危疾全應援 series — match「危疾全應援…」row (not 應援保「雙18」)
+    "ci_essential": ["全應援", "所需全"],
+    "ci_advanced": ["全應援", "更周全"],
+    "ci_premier": ["全應援", "摯齊全"],
     "ci_yingyuan": ["應援保"],
     "ci_yingyuan_plus": ["應援保"],
     "ci_zhishang": ["緻尚保"],
@@ -66,31 +70,6 @@ def _match_score(product_cell: str, tokens: list[str]) -> int:
         if t and t in cell:
             score += len(t)
     return score
-
-
-def _prefer_row(
-    product_id: str,
-    rows: list[tuple[int, dict[str, str]]],
-) -> dict[str, str] | None:
-    if not rows:
-        return None
-    rows = sorted(rows, key=lambda x: -x[0])
-    best_score = rows[0][0]
-    top = [r for s, r in rows if s == best_score]
-    if product_id == "vfamily":
-        # Prefer 無子女／基本；避開「+ 子女之家…」加購列
-        no_child = [
-            r
-            for r in top
-            if "子女之家" not in (r.get("產品") or "")
-            and "+ 子女" not in (r.get("產品") or "")
-        ]
-        if no_child:
-            return no_child[0]
-    if product_id in {"vprime", "vbooster"}:
-        # Shared 倍衛您／尊衛您 row — keep as-is; deductible line picked later
-        return top[0]
-    return top[0]
 
 
 def _pick_deductible_lines(detail: str, deductible: int | None) -> str:
@@ -144,11 +123,59 @@ def _first_year_net_hkd(annual: float, detail: str) -> tuple[float | None, str]:
     return None, ""
 
 
+def _allsupporter_pay_band(pay_term: int | None) -> str:
+    """Highlight the discount band that matches the proposal pay term."""
+    if pay_term is None:
+        return ""
+    try:
+        years = int(pay_term)
+    except Exception:
+        return ""
+    if years == 5:
+        return "依你揀嘅 5 年供：第2年10%／第3年15%／第4年15% 保費折扣"
+    if years in (10, 15, 20, 25, 30):
+        return (
+            f"依你揀嘅 {years} 年供：第2年20%／第3年30%／第4年50%"
+            "（合共高達100%）保費折扣"
+        )
+    return ""
+
+
+def _prefer_row(
+    product_id: str,
+    rows: list[tuple[int, dict[str, str]]],
+) -> dict[str, str] | None:
+    if not rows:
+        return None
+    rows = sorted(rows, key=lambda x: -x[0])
+    best_score = rows[0][0]
+    top = [r for s, r in rows if s == best_score]
+    if product_id == "vfamily":
+        # Prefer 無子女／基本；避開「+ 子女之家…」加購列
+        no_child = [
+            r
+            for r in top
+            if "子女之家" not in (r.get("產品") or "")
+            and "+ 子女" not in (r.get("產品") or "")
+        ]
+        if no_child:
+            return no_child[0]
+    if product_id in {"ci_essential", "ci_advanced", "ci_premier"}:
+        allsupporter = [r for r in top if "全應援" in (r.get("產品") or "")]
+        if allsupporter:
+            return allsupporter[0]
+    if product_id in {"vprime", "vbooster"}:
+        # Shared 倍衛您／尊衛您 row — keep as-is; deductible line picked later
+        return top[0]
+    return top[0]
+
+
 def find_customer_offer(
     product_id: str,
     *,
     deductible: int | None = None,
     annual_hkd: float | None = None,
+    pay_term: int | None = None,
     quarter: str | None = None,
 ) -> dict[str, Any] | None:
     """Look up current-quarter customer offer for a proposal product."""
@@ -187,6 +214,10 @@ def find_customer_offer(
     if net is not None:
         out["first_year_hkd"] = net
         out["first_year_display"] = f"推廣期首年約 HK${net:,.0f}（{reason}）"
+    elif str(product_id) in {"ci_essential", "ci_advanced", "ci_premier"}:
+        band = _allsupporter_pay_band(pay_term)
+        if band:
+            out["first_year_display"] = band
     return out
 
 
@@ -199,10 +230,17 @@ def attach_offer_to_section(section: dict[str, Any]) -> dict[str, Any]:
             ded = int(ded)
         except Exception:
             ded = None
+    pay_term = opts.get("pay_term")
+    if pay_term is not None:
+        try:
+            pay_term = int(pay_term)
+        except Exception:
+            pay_term = None
     promo = find_customer_offer(
         str(section.get("product_id") or ""),
         deductible=ded,
         annual_hkd=float(section.get("premium_annual_hkd") or 0),
+        pay_term=pay_term,
     )
     if promo:
         section["promo"] = promo
