@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import tempfile
@@ -54,7 +55,7 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"$300" in staff.content or b">300<" in staff.content
         assert b'id="cat-free-flow"' in staff.content
 
-        # Demo practice: Free Flow available (staff order + guest Demo QR)
+        # Staff can still ring Free Flow on the Demo practice seat.
         demo = client.get(f"/staff/order/DEMO?pin={pin}")
         assert demo.status_code == 200
         assert b"Free Flow" in demo.content
@@ -70,6 +71,7 @@ def test_free_flow_staff_only_not_on_guest_menu():
         )
         assert demo_order.status_code == 200, demo_order.text
 
+        # Demo guest QR is still the guest ordering screen — no Free Flow.
         demo_welcome = client.post(
             "/api/t/DEMO/welcome",
             json={"guest_name": "Practice", "party_size": 2},
@@ -77,9 +79,14 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert demo_welcome.status_code == 200, demo_welcome.text
         demo_guest = client.get("/t/DEMO")
         assert demo_guest.status_code == 200
-        assert b"Free Flow" in demo_guest.content
-        assert b"free-flow-with-shisha" in demo_guest.content
-        assert b"leaf-free-flow" in demo_guest.content
+        assert b"Free Flow" not in demo_guest.content
+        assert b"free-flow-with-shisha" not in demo_guest.content
+        assert b"leaf-free-flow" not in demo_guest.content
+        demo_blocked = client.post(
+            "/api/t/DEMO/orders",
+            json={"items": [{"item_id": "free-flow-with-shisha", "qty": 1}]},
+        )
+        assert demo_blocked.status_code == 400, demo_blocked.text
 
         # Real guest table — Free Flow must not appear
         welcome = client.post(
@@ -94,6 +101,11 @@ def test_free_flow_staff_only_not_on_guest_menu():
         assert b"Without Shisha" not in guest.content
         assert b'id="cat-free-flow"' not in guest.content
         assert b"leaf-free-flow" not in guest.content
+        guest_blocked = client.post(
+            "/api/t/TABLE1/orders",
+            json={"items": [{"item_id": "free-flow-without-shisha", "qty": 1}]},
+        )
+        assert guest_blocked.status_code == 400, guest_blocked.text
 
         # Staff can actually order Free Flow onto the bill
         ordered = client.post(
@@ -169,11 +181,22 @@ def test_free_flow_staff_only_not_on_guest_menu():
         ]
         calc3 = compute_bill(lines3, party_size=2, snack_waived=False)
         conn.close()
-        assert calc3["subtotal"] == 509.0  # 450 + 59
-        assert calc3["serviceable_subtotal"] == 59.0
+        # Free Flow stays out of the service base even when Coke is on promo.
+        coke_total = float(next(x["line_total"] for x in lines3 if x["item_id"] == "coke"))
+        ff_total = float(
+            next(x["line_total"] for x in lines3 if x["item_id"] == "free-flow-with-shisha")
+        )
+        assert ff_total == 450.0
+        assert calc3["subtotal"] == round(ff_total + coke_total, 1)
+        assert calc3["serviceable_subtotal"] == coke_total
         assert calc3["snack_charge"] == 20.0
-        assert calc3["service_charge"] == 8.0  # ceil((59+20)*10%)
-        assert calc3["total"] == 537.0
+        expected_service = float(math.ceil((coke_total + 20.0) * 0.1 - 1e-9))
+        assert calc3["service_charge"] == expected_service
+        from app.pricing import round_hkd_whole
+
+        assert calc3["total"] == round_hkd_whole(
+            round(calc3["subtotal"] + 20.0 + expected_service, 1)
+        )
 
     # Guest nav tree must not reference free-flow
     tree_src = (_POLAR / "app" / "guest_nav.py").read_text(encoding="utf-8")
