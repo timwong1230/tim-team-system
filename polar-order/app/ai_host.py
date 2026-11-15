@@ -71,12 +71,19 @@ def bestsellers(conn: sqlite3.Connection, limit: int = 8) -> list[dict[str, Any]
     ]
 
 
-def menu_catalog(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def menu_catalog(
+    conn: sqlite3.Connection,
+    *,
+    exclude_category_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    skip = exclude_category_ids or set()
     cats = conn.execute(
         "SELECT id, name FROM menu_categories ORDER BY sort_order ASC"
     ).fetchall()
     out = []
     for cat in cats:
+        if cat["id"] in skip:
+            continue
         items = conn.execute(
             """
             SELECT id, name, price, note, unit
@@ -458,9 +465,11 @@ def ask_ai(
     message: str,
     history: list[dict[str, str]] | None = None,
     guest_name: str | None = None,
+    exclude_category_ids: set[str] | None = None,
 ) -> dict[str, Any]:
-    catalog = menu_catalog(conn)
-    hot = bestsellers(conn)
+    skip = exclude_category_ids or set()
+    catalog = menu_catalog(conn, exclude_category_ids=skip)
+    hot = [row for row in bestsellers(conn) if row.get("category_id") not in skip]
     promo = current_promo()
     history = history or []
     # Mood chips use the deterministic playbook (no OpenAI drift).
