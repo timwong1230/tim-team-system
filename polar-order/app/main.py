@@ -363,6 +363,22 @@ def _staff_only_category_ids() -> set[str]:
     }
 
 
+def _staff_only_item_ids() -> set[str]:
+    """Menu item ids guests must not order themselves."""
+    try:
+        meta = load_menu_meta()
+    except Exception:
+        return set()
+    ids: set[str] = set()
+    for cat in meta.get("categories") or []:
+        if not cat.get("staff_only"):
+            continue
+        for item in cat.get("items") or []:
+            if item.get("id"):
+                ids.add(str(item["id"]))
+    return ids
+
+
 def _menu_payload(
     conn: sqlite3.Connection,
     *,
@@ -635,9 +651,9 @@ def guest_table(request: Request, table_code: str):
         return RedirectResponse(url=f"/boss/{boss_id}", status_code=302)
     session = get_open_session(conn, table["id"])
     ready = bool(session and session["guest_name"])
-    # Demo practice seat: include staff-only Free Flow so staff can rehearse it.
-    is_demo = (table["zone"] or "") == "demo"
-    menu = _menu_payload(conn, include_staff_only=is_demo) if ready else []
+    # Guest QR, including the Demo practice seat, never shows staff-only
+    # categories. Staff add Free Flow from the staff order screen.
+    menu = _menu_payload(conn, include_staff_only=False) if ready else []
     guest_nav = build_guest_nav(menu) if ready else {"roots": [], "leaves": []}
     single_mix_spirits = list_spirit_glass_options(conn) if ready else []
     promo = current_promo()
@@ -783,6 +799,12 @@ async def place_order(table_code: str, body: OrderIn):
             conn.close()
             raise HTTPException(400, "Add a short message for them")
 
+    blocked = _staff_only_item_ids() | {"ff-party-head"}
+    for entry in body.items:
+        if (entry.item_id or "") in blocked:
+            conn.close()
+            raise HTTPException(400, "Ask staff to add Free Flow")
+
     try:
         order_id, payload = _create_order(
             conn,
@@ -816,6 +838,7 @@ def guest_ask_ai(table_code: str, body: AskAIIn):
         message=body.message.strip(),
         history=body.history,
         guest_name=guest_name,
+        exclude_category_ids=_staff_only_category_ids(),
     )
     conn.close()
     return {"ok": True, **result}
