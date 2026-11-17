@@ -925,20 +925,22 @@ def sync_pl_expense_totals_and_kpi(pl_worksheet, kpi_worksheet=None) -> list[str
     return notes
 
 
-BS_LOAN_SECTION_LABEL = "Liabilities (Polar loans — 結欠 = 剩期×月供)"
+BS_LOAN_SECTION_LABEL = (
+    "Liabilities (Polar loans — 剩期跟 As-of 自動減，結欠=剩期×月供)"
+)
 BS_LOAN_TOTAL_LABEL = "Total loans outstanding"
 # Kept for tests / older sheets that still show the single-cell placeholder.
 BS_LOAN_PRINCIPAL_LABEL = "Loan principal (大數 — 黃色格人手填)"
 
-# Polar Lounge installment schedule (Tim 2026-11). Outstanding = remaining × monthly.
+# Polar Lounge installment schedule. Remaining months =
+# max(0, until_ym − as_of_ym) from Balance Sheet yellow As-of date (B4).
+# Verified vs Tim 2026-11 snapshot: 33 / 31 / 68 left.
 # Monthly Loan Nature bank outflows still go to P&L; these rows are BS 大數 only.
 POLAR_LOAN_SCHEDULE: tuple[dict[str, Any], ...] = (
     {
         "name": "Loan 1",
         "account_suffix": "165",
         "term_months": 96,
-        "remaining": 33,
-        "paid": 63,
         "monthly": 11664.6,
         "until": "2029-08",
     },
@@ -946,8 +948,6 @@ POLAR_LOAN_SCHEDULE: tuple[dict[str, Any], ...] = (
         "name": "Loan 2",
         "account_suffix": "034",
         "term_months": 60,
-        "remaining": 31,
-        "paid": 29,
         "monthly": 7000.0,
         "until": "2029-06",
     },
@@ -955,16 +955,43 @@ POLAR_LOAN_SCHEDULE: tuple[dict[str, Any], ...] = (
         "name": "Loan 3",
         "account_suffix": "165",
         "term_months": 120,
-        "remaining": 68,
-        "paid": 52,
         "monthly": 10616.5,
         "until": "2032-07",
     },
 )
 
 
-def polar_loan_outstanding(loan: dict[str, Any]) -> float:
-    return round(float(loan["remaining"]) * float(loan["monthly"]), 2)
+def _polar_loan_until_ym(loan: dict[str, Any]) -> tuple[int, int]:
+    raw = str(loan["until"])
+    year_s, month_s = raw.split("-", 1)
+    return int(year_s), int(month_s)
+
+
+def polar_loan_remaining(
+    loan: dict[str, Any], *, as_of_year: int, as_of_month: int
+) -> int:
+    """Periods left from as-of calendar month through final payment month."""
+    until_y, until_m = _polar_loan_until_ym(loan)
+    return max(0, (until_y * 12 + until_m) - (int(as_of_year) * 12 + int(as_of_month)))
+
+
+def polar_loan_outstanding(
+    loan: dict[str, Any], *, as_of_year: int, as_of_month: int
+) -> float:
+    rem = polar_loan_remaining(
+        loan, as_of_year=as_of_year, as_of_month=as_of_month
+    )
+    return round(rem * float(loan["monthly"]), 2)
+
+
+def polar_loan_outstanding_formula(loan: dict[str, Any]) -> str:
+    """Sheets formula: remaining from As-of B4 × monthly installment."""
+    until_y, until_m = _polar_loan_until_ym(loan)
+    monthly = float(loan["monthly"])
+    return (
+        f"=MAX(0,({until_y}*12+{until_m})"
+        f"-(YEAR($B$4)*12+MONTH($B$4)))*{monthly:g}"
+    )
 
 
 def polar_loan_row_label(loan: dict[str, Any]) -> str:
@@ -972,13 +999,12 @@ def polar_loan_row_label(loan: dict[str, Any]) -> str:
     monthly_txt = f"{monthly:,.2f}".rstrip("0").rstrip(".")
     return (
         f"{loan['name']} (…{loan['account_suffix']}) "
-        f"{loan['remaining']} left / {loan['term_months']} · "
-        f"${monthly_txt}/mo → {loan['until']}"
+        f"{loan['term_months']}期 · ${monthly_txt}/mo → {loan['until']}"
     )
 
 
 def ensure_bs_loan_principal(bs_worksheet) -> str:
-    """Write Polar's 3 loan 大數 on Balance Sheet (never SUMIFS of monthly Loan)."""
+    """Write Polar's 3 loan 大數; remaining auto-drops as As-of month advances."""
     col_a = bs_worksheet.col_values(1)
     total_assets = _pl_row_for_label(col_a, "Total assets")
     equity = _pl_row_for_label(col_a, "Equity")
@@ -997,7 +1023,7 @@ def ensure_bs_loan_principal(bs_worksheet) -> str:
         )
 
     loan_rows = [
-        [polar_loan_row_label(loan), polar_loan_outstanding(loan)]
+        [polar_loan_row_label(loan), polar_loan_outstanding_formula(loan)]
         for loan in POLAR_LOAN_SCHEDULE
     ]
     first_amt = start + 1
@@ -1012,10 +1038,9 @@ def ensure_bs_loan_principal(bs_worksheet) -> str:
         block,
         value_input_option="USER_ENTERED",
     )
-    total = sum(polar_loan_outstanding(loan) for loan in POLAR_LOAN_SCHEDULE)
     return (
         f"Balance_Sheet Polar loans ×{len(POLAR_LOAN_SCHEDULE)} "
-        f"(outstanding total {total:,.2f}) at rows {start}–{start + block_len - 1}"
+        f"(remaining auto from As-of B4) at rows {start}–{start + block_len - 1}"
     )
 
 
