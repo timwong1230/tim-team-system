@@ -925,60 +925,98 @@ def sync_pl_expense_totals_and_kpi(pl_worksheet, kpi_worksheet=None) -> list[str
     return notes
 
 
+BS_LOAN_SECTION_LABEL = "Liabilities (Polar loans — 結欠 = 剩期×月供)"
+BS_LOAN_TOTAL_LABEL = "Total loans outstanding"
+# Kept for tests / older sheets that still show the single-cell placeholder.
 BS_LOAN_PRINCIPAL_LABEL = "Loan principal (大數 — 黃色格人手填)"
-_BS_LOAN_LEGACY_LABELS = (
-    "Loans payable (bank Nature Loan)",
-    "Loans payable",
-    "Loan principal",
-    BS_LOAN_PRINCIPAL_LABEL,
+
+# Polar Lounge installment schedule (Tim 2026-11). Outstanding = remaining × monthly.
+# Monthly Loan Nature bank outflows still go to P&L; these rows are BS 大數 only.
+POLAR_LOAN_SCHEDULE: tuple[dict[str, Any], ...] = (
+    {
+        "name": "Loan 1",
+        "account_suffix": "165",
+        "term_months": 96,
+        "remaining": 33,
+        "paid": 63,
+        "monthly": 11664.6,
+        "until": "2029-08",
+    },
+    {
+        "name": "Loan 2",
+        "account_suffix": "034",
+        "term_months": 60,
+        "remaining": 31,
+        "paid": 29,
+        "monthly": 7000.0,
+        "until": "2029-06",
+    },
+    {
+        "name": "Loan 3",
+        "account_suffix": "165",
+        "term_months": 120,
+        "remaining": 68,
+        "paid": 52,
+        "monthly": 10616.5,
+        "until": "2032-07",
+    },
 )
 
 
-def ensure_bs_loan_principal(bs_worksheet) -> str:
-    """Show Loan principal as a manual yellow cell — never SUMIFS of monthly Loan rows.
+def polar_loan_outstanding(loan: dict[str, Any]) -> float:
+    return round(float(loan["remaining"]) * float(loan["monthly"]), 2)
 
-    Monthly Loan Nature bank outflows belong on P&L. Balance Sheet keeps the
-    outstanding / original big amount Tim types in.
-    """
+
+def polar_loan_row_label(loan: dict[str, Any]) -> str:
+    monthly = float(loan["monthly"])
+    monthly_txt = f"{monthly:,.2f}".rstrip("0").rstrip(".")
+    return (
+        f"{loan['name']} (…{loan['account_suffix']}) "
+        f"{loan['remaining']} left / {loan['term_months']} · "
+        f"${monthly_txt}/mo → {loan['until']}"
+    )
+
+
+def ensure_bs_loan_principal(bs_worksheet) -> str:
+    """Write Polar's 3 loan 大數 on Balance Sheet (never SUMIFS of monthly Loan)."""
     col_a = bs_worksheet.col_values(1)
-    row = None
-    for label in _BS_LOAN_LEGACY_LABELS:
-        row = _pl_row_for_label(col_a, label)
-        if row:
-            break
-    if row is None:
-        # Prefer slot between Total assets and Equity (template A12).
-        total_assets = _pl_row_for_label(col_a, "Total assets")
-        equity = _pl_row_for_label(col_a, "Equity")
-        if total_assets and equity and equity == total_assets + 2:
-            row = total_assets + 1
-        else:
-            row = 12
-        bs_worksheet.update(
-            f"A{row}",
-            [[BS_LOAN_PRINCIPAL_LABEL]],
+    total_assets = _pl_row_for_label(col_a, "Total assets")
+    equity = _pl_row_for_label(col_a, "Equity")
+    if total_assets is None or equity is None:
+        return "Balance_Sheet missing Total assets / Equity — skip loans"
+
+    start = total_assets + 1
+    block_len = 2 + len(POLAR_LOAN_SCHEDULE)  # header + loans + total
+    gap = equity - start
+    if gap < block_len:
+        # gspread 6: insert_rows(values, row=…)
+        bs_worksheet.insert_rows(
+            [[""] for _ in range(block_len - gap)],
+            row=equity,
             value_input_option="RAW",
         )
-        bs_worksheet.update(f"B{row}", [[""]], value_input_option="RAW")
-        return f"Balance_Sheet added {BS_LOAN_PRINCIPAL_LABEL} at B{row} (manual)"
 
+    loan_rows = [
+        [polar_loan_row_label(loan), polar_loan_outstanding(loan)]
+        for loan in POLAR_LOAN_SCHEDULE
+    ]
+    first_amt = start + 1
+    last_amt = start + len(POLAR_LOAN_SCHEDULE)
+    block = [
+        [BS_LOAN_SECTION_LABEL, ""],
+        *loan_rows,
+        [BS_LOAN_TOTAL_LABEL, f"=SUM(B{first_amt}:B{last_amt})"],
+    ]
     bs_worksheet.update(
-        f"A{row}",
-        [[BS_LOAN_PRINCIPAL_LABEL]],
-        value_input_option="RAW",
+        f"A{start}",
+        block,
+        value_input_option="USER_ENTERED",
     )
-    # Drop auto SUMIFS of Nature Loan (monthly repayments) — keep a typed number.
-    try:
-        b_val = bs_worksheet.acell(f"B{row}", value_render_option="FORMULA").value
-    except Exception:
-        b_val = bs_worksheet.acell(f"B{row}").value
-    formula = str(b_val or "")
-    if "SUMIFS" in formula.upper() and "Loan" in formula:
-        bs_worksheet.update(f"B{row}", [[""]], value_input_option="RAW")
-        return (
-            f"Balance_Sheet B{row} cleared SUMIFS(Loan) → yellow principal cell"
-        )
-    return f"Balance_Sheet Loan principal ready at B{row} (manual, not monthly repayments)"
+    total = sum(polar_loan_outstanding(loan) for loan in POLAR_LOAN_SCHEDULE)
+    return (
+        f"Balance_Sheet Polar loans ×{len(POLAR_LOAN_SCHEDULE)} "
+        f"(outstanding total {total:,.2f}) at rows {start}–{start + block_len - 1}"
+    )
 
 
 def ensure_pl_expense_nature(pl_worksheet, nature: str) -> str:
