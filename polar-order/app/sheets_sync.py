@@ -828,7 +828,8 @@ KPI_FORMULAS: dict[str, str] = {
     "B5": "='P&L_Monthly'!B5",
     "B7": "='P&L_Monthly'!B10",
     "B8": "='P&L_Monthly'!B20",
-    "B9": "='P&L_Monthly'!B38",
+    # Row map with Barry Smokiebear above Total opex (template / post-repair).
+    "B9": "='P&L_Monthly'!B39",
     "B10": "='P&L_Monthly'!B35",
     "B11": (
         '=IF(B7=0,0,ABS(SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Wages",'
@@ -836,7 +837,7 @@ KPI_FORMULAS: dict[str, str] = {
         'SUMIFS(Bank_Entries!E:E,Bank_Entries!F:F,"Wages",'
         "Bank_Entries!A:A,\">=\"&'P&L_Monthly'!D4,Bank_Entries!A:A,\"<=\"&'P&L_Monthly'!D5))/B7)"
     ),
-    "B12": "=IF(B7=0,0,'P&L_Monthly'!B36/B7)",
+    "B12": "=IF(B7=0,0,'P&L_Monthly'!B37/B7)",
 }
 
 
@@ -850,49 +851,96 @@ def _pl_bank_nature_expense_formula(row: int) -> str:
     )
 
 
+def _pl_row_for_label(col_a: list[str], label: str) -> int | None:
+    for i, raw in enumerate(col_a):
+        if (raw or "").strip() == label:
+            return i + 1
+    return None
+
+
+def sync_pl_expense_totals_and_kpi(pl_worksheet, kpi_worksheet=None) -> list[str]:
+    """Rebind Total / Net profit / ratio formulas and KPI absolute row refs."""
+    notes: list[str] = []
+    col_a = pl_worksheet.col_values(1)
+    rent_row = _pl_row_for_label(col_a, "Rent") or 23
+    total_row = _pl_row_for_label(col_a, "Total operating expenses")
+    net_row = _pl_row_for_label(col_a, "Net profit / (loss)")
+    claims_row = _pl_row_for_label(col_a, "Claims recorded in Order (Daily_Sales)")
+    if total_row:
+        pl_worksheet.update(
+            f"B{total_row}",
+            [[f"=SUM(B{rent_row}:B{total_row - 1})"]],
+            value_input_option="USER_ENTERED",
+        )
+        notes.append(f"P&L Total opex → SUM(B{rent_row}:B{total_row - 1})")
+    if net_row and total_row:
+        pl_worksheet.update(
+            f"B{net_row}",
+            [[f"=B20-B{total_row}"]],
+            value_input_option="USER_ENTERED",
+        )
+        notes.append(f"P&L Net profit → B20-B{total_row}")
+    # Ratio block sits under Net profit; update by label when present.
+    ratio_expense_row = _pl_row_for_label(col_a, "Total expenses / Net sales")
+    ratio_margin_row = _pl_row_for_label(col_a, "Net margin")
+    if ratio_expense_row and total_row:
+        pl_worksheet.update(
+            f"B{ratio_expense_row}",
+            [[f"=IF(B10=0,0,B{total_row}/B10)"]],
+            value_input_option="USER_ENTERED",
+        )
+    if ratio_margin_row and net_row:
+        pl_worksheet.update(
+            f"B{ratio_margin_row}",
+            [[f"=IF(B10=0,0,B{net_row}/B10)"]],
+            value_input_option="USER_ENTERED",
+        )
+    if kpi_worksheet is not None:
+        if net_row:
+            kpi_worksheet.update(
+                "B9",
+                [[f"='P&L_Monthly'!B{net_row}"]],
+                value_input_option="USER_ENTERED",
+            )
+        if claims_row:
+            kpi_worksheet.update(
+                "B10",
+                [[f"='P&L_Monthly'!B{claims_row}"]],
+                value_input_option="USER_ENTERED",
+            )
+        if total_row:
+            kpi_worksheet.update(
+                "B12",
+                [[f"=IF(B7=0,0,'P&L_Monthly'!B{total_row}/B7)"]],
+                value_input_option="USER_ENTERED",
+            )
+        notes.append("KPI Net profit / Claims / Expense% row refs synced")
+    return notes
+
+
 def ensure_pl_expense_nature(pl_worksheet, nature: str) -> str:
     """Insert a P&L operating-expense line for ``nature`` if missing.
 
     Inserts just above ``Total operating expenses`` so KPI refs to Claims
     (Daily_Sales) stay on their existing row when possible.
+
+    Uses gspread 6 ``insert_rows(values, row=…)`` — passing a bare int as the
+    first arg raises ``TypeError: object of type 'int' has no len()``.
     """
     col_a = pl_worksheet.col_values(1)
-    for raw in col_a:
-        if (raw or "").strip() == nature:
-            return f"P&L already has {nature}"
+    if _pl_row_for_label(col_a, nature) is not None:
+        return f"P&L already has {nature}"
 
-    total_idx = None  # 0-based
-    for i, raw in enumerate(col_a):
-        if (raw or "").strip() == "Total operating expenses":
-            total_idx = i
-            break
-    if total_idx is None:
+    total_row = _pl_row_for_label(col_a, "Total operating expenses")
+    if total_row is None:
         return f"P&L missing Total operating expenses — skip {nature}"
 
-    insert_at = total_idx + 1  # 1-based row to insert before Total
-    pl_worksheet.insert_rows(insert_at)
-    pl_worksheet.update(
-        f"A{insert_at}",
-        [[nature, _pl_bank_nature_expense_formula(insert_at)]],
-        value_input_option="USER_ENTERED",
-    )
-    # Refresh Total SUM to include the new row (Sheets may auto-adjust; be explicit).
-    col_a2 = pl_worksheet.col_values(1)
-    rent_row = next(
-        (i + 1 for i, v in enumerate(col_a2) if (v or "").strip() == "Rent"),
-        23,
-    )
-    total_row = next(
-        (
-            i + 1
-            for i, v in enumerate(col_a2)
-            if (v or "").strip() == "Total operating expenses"
-        ),
-        insert_at + 1,
-    )
-    pl_worksheet.update(
-        f"B{total_row}",
-        [[f"=SUM(B{rent_row}:B{total_row - 1})"]],
+    insert_at = total_row  # 1-based: new row lands where Total currently is
+    formula = _pl_bank_nature_expense_formula(insert_at)
+    # gspread 6.x: first argument is values (list of rows), not the row index.
+    pl_worksheet.insert_rows(
+        [[nature, formula]],
+        row=insert_at,
         value_input_option="USER_ENTERED",
     )
     return f"P&L added expense {nature} at row {insert_at}"
@@ -1053,6 +1101,7 @@ def repair_finance_workbook(
     _apply_year_month_dropdowns(pl, year=today.year, month=month)
     actions.append("P&L_Monthly Year/Month dropdowns (pick, don't type)")
     actions.append(ensure_pl_expense_nature(pl, "Barry Smokiebear"))
+    actions.extend(sync_pl_expense_totals_and_kpi(pl, kpi))
     pl.update(
         "B8",
         [[
@@ -1062,13 +1111,8 @@ def repair_finance_workbook(
         value_input_option="USER_ENTERED",
     )
     # Claims-from-Order row label may have shifted after expense inserts.
-    claims_row = next(
-        (
-            i + 1
-            for i, v in enumerate(pl.col_values(1))
-            if (v or "").strip() == "Claims recorded in Order (Daily_Sales)"
-        ),
-        None,
+    claims_row = _pl_row_for_label(
+        pl.col_values(1), "Claims recorded in Order (Daily_Sales)"
     )
     if claims_row:
         pl.update(
@@ -1079,7 +1123,6 @@ def repair_finance_workbook(
             ]],
             value_input_option="USER_ENTERED",
         )
-        # Keep KPI Claims pointer in sync when possible.
         try:
             kpi.update("B10", [[f"='P&L_Monthly'!B{claims_row}"]], value_input_option="USER_ENTERED")
         except Exception:
