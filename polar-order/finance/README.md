@@ -57,7 +57,8 @@ https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9c
 - 銀行登入／download CSV（系統 access 唔到銀行）  
 - 經私人戶口中轉嘅截圖／note（CSV memo 唔夠分類）  
 - Nature 估錯時人手改一行（改完 `account_code` 會跟住自動變）  
-- `Loan` = 貸款本金／還款（code `2000`）；**唔入** P&L expense，Balance Sheet 有 Loans payable  
+- `Loan` = 每月還款（code `2000`，**Expense**，入 P&L）；**唔好**用銀行每月還款合計去填 Balance Sheet  
+- `Balance_Sheet` → **Loan principal（大數）** 黃色格人手填未還本金／貸款總額  
 - `Barry Smokiebear` = Polar 代收再付返（code `6310`，**Expense**，入 P&L）  
 - `Balance_Sheet` 黃色 **As of date** 要設到你想對嘅日（銀行結餘 = 當日或之前 Bank_Entries 累計）  
 - 交會計／報稅／核數（正式帳仍交會計師）

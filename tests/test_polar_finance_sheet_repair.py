@@ -49,7 +49,8 @@ def test_chart_of_accounts_rows_cover_natures():
         assert need in natures
     loan = next(r for r in CHART_OF_ACCOUNTS_ROWS if r[1] == "Loan")
     assert loan[0] == "2000"
-    assert loan[2] == "Liability"
+    assert loan[2] == "Expense"
+    assert loan[3] == "Operating expenses"
 
 
 def test_ensure_pl_expense_nature_uses_gspread6_insert_rows():
@@ -83,6 +84,29 @@ def test_ensure_pl_expense_nature_skips_when_present():
     pl.insert_rows.assert_not_called()
 
 
+def test_ensure_bs_loan_principal_clears_monthly_sumifs():
+    from app.sheets_sync import BS_LOAN_PRINCIPAL_LABEL, ensure_bs_loan_principal
+
+    bs = MagicMock()
+    labels = [""] * 15
+    labels[10] = "Total assets"
+    labels[11] = "Loans payable (bank Nature Loan)"
+    labels[12] = "Equity"
+    bs.col_values.return_value = labels
+    bs.acell.return_value = MagicMock(
+        value=(
+            '=SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Loan",'
+            'Bank_Entries!A:A,"<="&$B$4)'
+        )
+    )
+    msg = ensure_bs_loan_principal(bs)
+    assert "cleared SUMIFS(Loan)" in msg
+    bs.update.assert_any_call(
+        "A12", [[BS_LOAN_PRINCIPAL_LABEL]], value_input_option="RAW"
+    )
+    bs.update.assert_any_call("B12", [[""]], value_input_option="RAW")
+
+
 def test_repair_finance_workbook_updates_tabs():
     from app.sheets_sync import (
         CHART_OF_ACCOUNTS_ROWS,
@@ -100,17 +124,25 @@ def test_repair_finance_workbook_updates_tabs():
     bank = MagicMock()
     setup = MagicMock()
     chart.get_all_values.return_value = []
-    # P&L already includes Barry so ensure_pl is a no-op insert.
+    # P&L already includes Loan + Barry so ensure_pl is a no-op insert.
     pl_labels = [""] * 45
     pl_labels[22] = "Rent"
     pl_labels[34] = "Claims recorded in Order (Daily_Sales)"
-    pl_labels[35] = "Barry Smokiebear"
-    pl_labels[36] = "Total operating expenses"
-    pl_labels[38] = "Net profit / (loss)"
-    pl_labels[42] = "Total expenses / Net sales"
-    pl_labels[43] = "Net margin"
+    pl_labels[35] = "Loan"
+    pl_labels[36] = "Barry Smokiebear"
+    pl_labels[37] = "Total operating expenses"
+    pl_labels[39] = "Net profit / (loss)"
+    pl_labels[43] = "Total expenses / Net sales"
+    pl_labels[44] = "Net margin"
     pl.col_values.return_value = pl_labels
-    bs.get_all_values.return_value = [["Loans payable (bank Nature Loan)", "-1"]]
+    bs_labels = [""] * 20
+    bs_labels[10] = "Total assets"
+    bs_labels[11] = "Loans payable (bank Nature Loan)"
+    bs_labels[12] = "Equity"
+    bs.col_values.return_value = bs_labels
+    bs.acell.return_value = MagicMock(
+        value='=SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Loan")'
+    )
     ss.worksheet.side_effect = lambda title: {
         "Chart_of_Accounts": chart,
         "Daily_Sales": daily,
@@ -136,7 +168,9 @@ def test_repair_finance_workbook_updates_tabs():
     assert result["report_month"] == 11
     assert any("restored Chart_of_Accounts" in a for a in result["actions"])
     assert "fixed KPI formulas (quoted P&L_Monthly)" in result["actions"]
+    assert any("P&L already has Loan" in a for a in result["actions"])
     assert any("P&L already has Barry Smokiebear" in a for a in result["actions"])
+    assert any("cleared SUMIFS(Loan)" in a for a in result["actions"])
 
     chart.update.assert_any_call(
         "A1",
