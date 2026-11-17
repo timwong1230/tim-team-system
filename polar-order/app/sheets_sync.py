@@ -778,7 +778,14 @@ CHART_OF_ACCOUNTS_ROWS: tuple[tuple[Any, ...], ...] = (
     ("1010", "HSBC CA", "Asset", "", "Current assets", "Current account"),
     ("1100", "Cash on hand", "Asset", "", "Current assets", "Till / float（參考 Cash Tilt）"),
     ("1200", "Deposits held", "Asset", "", "Non-current assets", "租約／水電按金"),
-    ("2000", "Loan", "Liability", "", "Liabilities", "貸款本金／還款（唔入 P&L expense）"),
+    (
+        "2000",
+        "Loan",
+        "Expense",
+        "Operating expenses",
+        "",
+        "每月還款入 P&L；本金大數喺 Balance Sheet 黃色格填",
+    ),
     ("3000", "Partner capital", "Equity", "", "Equity", "開業資本"),
     ("3100", "Partner drawings", "Equity", "", "Equity", "股東提取"),
     ("3200", "Partner cash in", "Equity", "", "Equity", "股東注資（銀行入數）"),
@@ -828,8 +835,8 @@ KPI_FORMULAS: dict[str, str] = {
     "B5": "='P&L_Monthly'!B5",
     "B7": "='P&L_Monthly'!B10",
     "B8": "='P&L_Monthly'!B20",
-    # Row map with Barry Smokiebear above Total opex (template / post-repair).
-    "B9": "='P&L_Monthly'!B39",
+    # Row map with Loan + Barry above Total opex (template / post-repair).
+    "B9": "='P&L_Monthly'!B40",
     "B10": "='P&L_Monthly'!B35",
     "B11": (
         '=IF(B7=0,0,ABS(SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Wages",'
@@ -837,7 +844,7 @@ KPI_FORMULAS: dict[str, str] = {
         'SUMIFS(Bank_Entries!E:E,Bank_Entries!F:F,"Wages",'
         "Bank_Entries!A:A,\">=\"&'P&L_Monthly'!D4,Bank_Entries!A:A,\"<=\"&'P&L_Monthly'!D5))/B7)"
     ),
-    "B12": "=IF(B7=0,0,'P&L_Monthly'!B37/B7)",
+    "B12": "=IF(B7=0,0,'P&L_Monthly'!B38/B7)",
 }
 
 
@@ -916,6 +923,62 @@ def sync_pl_expense_totals_and_kpi(pl_worksheet, kpi_worksheet=None) -> list[str
             )
         notes.append("KPI Net profit / Claims / Expense% row refs synced")
     return notes
+
+
+BS_LOAN_PRINCIPAL_LABEL = "Loan principal (大數 — 黃色格人手填)"
+_BS_LOAN_LEGACY_LABELS = (
+    "Loans payable (bank Nature Loan)",
+    "Loans payable",
+    "Loan principal",
+    BS_LOAN_PRINCIPAL_LABEL,
+)
+
+
+def ensure_bs_loan_principal(bs_worksheet) -> str:
+    """Show Loan principal as a manual yellow cell — never SUMIFS of monthly Loan rows.
+
+    Monthly Loan Nature bank outflows belong on P&L. Balance Sheet keeps the
+    outstanding / original big amount Tim types in.
+    """
+    col_a = bs_worksheet.col_values(1)
+    row = None
+    for label in _BS_LOAN_LEGACY_LABELS:
+        row = _pl_row_for_label(col_a, label)
+        if row:
+            break
+    if row is None:
+        # Prefer slot between Total assets and Equity (template A12).
+        total_assets = _pl_row_for_label(col_a, "Total assets")
+        equity = _pl_row_for_label(col_a, "Equity")
+        if total_assets and equity and equity == total_assets + 2:
+            row = total_assets + 1
+        else:
+            row = 12
+        bs_worksheet.update(
+            f"A{row}",
+            [[BS_LOAN_PRINCIPAL_LABEL]],
+            value_input_option="RAW",
+        )
+        bs_worksheet.update(f"B{row}", [[""]], value_input_option="RAW")
+        return f"Balance_Sheet added {BS_LOAN_PRINCIPAL_LABEL} at B{row} (manual)"
+
+    bs_worksheet.update(
+        f"A{row}",
+        [[BS_LOAN_PRINCIPAL_LABEL]],
+        value_input_option="RAW",
+    )
+    # Drop auto SUMIFS of Nature Loan (monthly repayments) — keep a typed number.
+    try:
+        b_val = bs_worksheet.acell(f"B{row}", value_render_option="FORMULA").value
+    except Exception:
+        b_val = bs_worksheet.acell(f"B{row}").value
+    formula = str(b_val or "")
+    if "SUMIFS" in formula.upper() and "Loan" in formula:
+        bs_worksheet.update(f"B{row}", [[""]], value_input_option="RAW")
+        return (
+            f"Balance_Sheet B{row} cleared SUMIFS(Loan) → yellow principal cell"
+        )
+    return f"Balance_Sheet Loan principal ready at B{row} (manual, not monthly repayments)"
 
 
 def ensure_pl_expense_nature(pl_worksheet, nature: str) -> str:
@@ -997,11 +1060,14 @@ def repair_finance_workbook(
         actions.append("created Chart_of_Accounts")
     existing = chart.get_all_values()
     flat = " ".join(c for row in existing for c in row) if existing else ""
+    # Force rewrite when Loan is still the old Liability / BS-only model.
     needs_chart = (
         ("HSBC SA" not in flat)
         or ("account_code" not in flat)
         or ("Loan" not in flat)
         or ("Barry Smokiebear" not in flat)
+        or ("唔入 P&L expense" in flat)
+        or ("每月還款入 P&L" not in flat)
     )
     if needs_chart:
         chart.clear()
@@ -1100,6 +1166,7 @@ def repair_finance_workbook(
     pl.update("B5", [[month]], value_input_option="USER_ENTERED")
     _apply_year_month_dropdowns(pl, year=today.year, month=month)
     actions.append("P&L_Monthly Year/Month dropdowns (pick, don't type)")
+    actions.append(ensure_pl_expense_nature(pl, "Loan"))
     actions.append(ensure_pl_expense_nature(pl, "Barry Smokiebear"))
     actions.extend(sync_pl_expense_totals_and_kpi(pl, kpi))
     pl.update(
@@ -1129,29 +1196,10 @@ def repair_finance_workbook(
             pass
     actions.append(f"P&L_Monthly month→{month} + sales/claims formulas")
 
-    # --- Balance Sheet as-of + Loans payable (Liability Nature) ---
+    # --- Balance Sheet as-of + Loan principal (manual big amount) ---
     bs = spreadsheet.worksheet("Balance_Sheet")
     bs.update("B4", [[today.isoformat()]], value_input_option="USER_ENTERED")
-    # Insert Loans between Assets total and Equity if missing.
-    bs_vals = bs.get_all_values()
-    bs_flat = " ".join(c for row in bs_vals for c in row)
-    if "Loan" not in bs_flat:
-        # Template layout: A11 Total assets, A13 Equity… — put Loans at A12/B12.
-        bs.update("A12", [["Loans payable (bank Nature Loan)"]], value_input_option="RAW")
-        bs.update(
-            "B12",
-            [[
-                # Net Loan bank movement: drawdown +, repayment −.
-                # Outstanding ≈ cumulative SUM (seed opening loan row if needed).
-                '=SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Loan",'
-                'Bank_Entries!A:A,"<="&$B$4)'
-                '+SUMIFS(Bank_Entries!E:E,Bank_Entries!F:F,"Loan",'
-                'Bank_Entries!A:A,"<="&$B$4)'
-            ]],
-            value_input_option="USER_ENTERED",
-        )
-        # Equity total / check still use plug RE — document Loans separately.
-        actions.append("Balance_Sheet added Loans payable (Nature Loan)")
+    actions.append(ensure_bs_loan_principal(bs))
     actions.append(f"Balance_Sheet as-of→{today.isoformat()}")
 
     # Setup note: bridge sheet id no longer needed
