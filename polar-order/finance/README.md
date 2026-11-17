@@ -58,7 +58,8 @@ https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9c
 - 經私人戶口中轉嘅截圖／note（CSV memo 唔夠分類）  
 - Nature 估錯時人手改一行（改完 `account_code` 會跟住自動變）  
 - `Loan` = 每月還款（code `2000`，**Expense**，入 P&L）；**唔好**用銀行每月還款合計去填 Balance Sheet  
-- `Balance_Sheet` → Polar 三條 installment **大數**（剩期 × 月供）：Loan1 …165、Loan2 …034、Loan3 …165；Repair 會寫入／更新  
+- `Balance_Sheet` → Polar 三條 installment **大數**（剩期 × 月供）：Loan1 …165、Loan2 …034、Loan3 …165  
+- 剩期跟黃色 **As of date** 自動減：改 As-of 到下個月 → 每條 loan 少 1 期、結欠跟住跌（公式，唔使人手改）  
 - `Barry Smokiebear` = Polar 代收再付返（code `6310`，**Expense**，入 P&L）  
 - `Balance_Sheet` 黃色 **As of date** 要設到你想對嘅日（銀行結餘 = 當日或之前 Bank_Entries 累計）  
 - 交會計／報稅／核數（正式帳仍交會計師）

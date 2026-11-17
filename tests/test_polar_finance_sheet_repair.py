@@ -84,13 +84,31 @@ def test_ensure_pl_expense_nature_skips_when_present():
     pl.insert_rows.assert_not_called()
 
 
-def test_polar_loan_outstanding_math():
-    from app.sheets_sync import POLAR_LOAN_SCHEDULE, polar_loan_outstanding
+def test_polar_loan_remaining_tracks_as_of_month():
+    from app.sheets_sync import (
+        POLAR_LOAN_SCHEDULE,
+        polar_loan_outstanding,
+        polar_loan_outstanding_formula,
+        polar_loan_remaining,
+    )
 
     assert len(POLAR_LOAN_SCHEDULE) == 3
-    assert polar_loan_outstanding(POLAR_LOAN_SCHEDULE[0]) == 384931.8
-    assert polar_loan_outstanding(POLAR_LOAN_SCHEDULE[1]) == 217000.0
-    assert polar_loan_outstanding(POLAR_LOAN_SCHEDULE[2]) == 721922.0
+    # Tim's Nov 2026 snapshot
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[0], as_of_year=2026, as_of_month=11) == 33
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[1], as_of_year=2026, as_of_month=11) == 31
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[2], as_of_year=2026, as_of_month=11) == 68
+    assert polar_loan_outstanding(
+        POLAR_LOAN_SCHEDULE[0], as_of_year=2026, as_of_month=11
+    ) == 384931.8
+    # One month later → each loan drops 1 period
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[0], as_of_year=2026, as_of_month=12) == 32
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[1], as_of_year=2026, as_of_month=12) == 30
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[2], as_of_year=2026, as_of_month=12) == 67
+    # Past final month → 0
+    assert polar_loan_remaining(POLAR_LOAN_SCHEDULE[1], as_of_year=2029, as_of_month=7) == 0
+    f0 = polar_loan_outstanding_formula(POLAR_LOAN_SCHEDULE[0])
+    assert f0.startswith("=MAX(0,(2029*12+8)-(YEAR($B$4)*12+MONTH($B$4)))*")
+    assert "11664.6" in f0
 
 
 def test_ensure_bs_loan_principal_writes_three_loans():
@@ -98,6 +116,8 @@ def test_ensure_bs_loan_principal_writes_three_loans():
         BS_LOAN_SECTION_LABEL,
         BS_LOAN_TOTAL_LABEL,
         ensure_bs_loan_principal,
+        polar_loan_outstanding_formula,
+        POLAR_LOAN_SCHEDULE,
     )
 
     bs = MagicMock()
@@ -108,7 +128,7 @@ def test_ensure_bs_loan_principal_writes_three_loans():
     bs.col_values.return_value = labels
     msg = ensure_bs_loan_principal(bs)
     assert "Polar loans ×3" in msg
-    assert "1,323,853.80" in msg
+    assert "remaining auto from As-of B4" in msg
     bs.insert_rows.assert_called_once()
     args, kwargs = bs.insert_rows.call_args
     assert len(args[0]) == 4  # need 5 block rows, gap was 1
@@ -119,11 +139,11 @@ def test_ensure_bs_loan_principal_writes_three_loans():
     block = update_args[1]
     assert block[0][0] == BS_LOAN_SECTION_LABEL
     assert "Loan 1 (…165)" in block[1][0]
-    assert block[1][1] == 384931.8
+    assert block[1][1] == polar_loan_outstanding_formula(POLAR_LOAN_SCHEDULE[0])
     assert "Loan 2 (…034)" in block[2][0]
-    assert block[2][1] == 217000.0
+    assert block[2][1] == polar_loan_outstanding_formula(POLAR_LOAN_SCHEDULE[1])
     assert "Loan 3 (…165)" in block[3][0]
-    assert block[3][1] == 721922.0
+    assert block[3][1] == polar_loan_outstanding_formula(POLAR_LOAN_SCHEDULE[2])
     assert block[4][0] == BS_LOAN_TOTAL_LABEL
     assert block[4][1] == "=SUM(B13:B15)"
     assert update_kwargs["value_input_option"] == "USER_ENTERED"
