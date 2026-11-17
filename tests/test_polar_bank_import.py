@@ -99,13 +99,21 @@ def test_append_bank_entries_skips_duplicates():
 
     ws = MagicMock()
     ws.title = "Bank_Entries"
-    ws.row_values.side_effect = lambda r: (
-        ["date", "memo", "chq_no", "hsbc_sa", "hsbc_ca", "nature", "account_code", "linked_sales_date", "notes"]
-        if r == 1
-        else []
-    )
+    header = [
+        "date",
+        "memo",
+        "chq_no",
+        "hsbc_sa",
+        "hsbc_ca",
+        "nature",
+        "account_code",
+        "linked_sales_date",
+        "notes",
+    ]
+    ws.row_values.side_effect = lambda r: header if r == 1 else []
+    ws.col_values.return_value = ["date", "2026-10-01"]
     ws.get_all_values.return_value = [
-        ["date", "memo", "chq_no", "hsbc_sa", "hsbc_ca", "nature", "account_code", "linked_sales_date", "notes"],
+        header,
         ["2026-10-01", "HKE Electricity", "", "", "-100.00", "Electricity", "6200", "", "imported"],
     ]
 
@@ -151,4 +159,72 @@ def test_append_bank_entries_skips_duplicates():
 
     assert result["skipped"] == 1
     assert result["added"] == 1
-    ws.append_rows.assert_called_once()
+    ws.append_rows.assert_not_called()
+    ws.update.assert_called()
+    # Must write under column A (not Sheets append_rows, which shifts right).
+    args, kwargs = ws.update.call_args
+    assert str(args[0]).startswith("A")
+
+
+def test_realign_bank_entries_pulls_shifted_imports_into_a_i():
+    """CSV append_rows historically wrote far right of helper cols — repair pulls back."""
+    import os
+
+    from app.sheets_sync import realign_bank_entries
+
+    header = [
+        "date",
+        "memo",
+        "chq_no",
+        "hsbc_sa",
+        "hsbc_ca",
+        "nature",
+        "account_code",
+        "linked_sales_date",
+        "notes",
+    ]
+    # Proper manual row + a shifted import starting at column S (index 18).
+    shifted = [""] * 18 + [
+        "2026-10-20",
+        "CR TO 064-196082-833",
+        "",
+        "-6415",
+        "",
+        "Miscellaneous",
+        "6900",
+        "",
+        "imported",
+    ]
+    ws = MagicMock()
+    ws.title = "Bank_Entries"
+    ws.row_values.side_effect = lambda r: (
+        header + ["", "HSBC SA balance (sum)", "421542.80"] if r == 1 else []
+    )
+    ws.get_all_values.return_value = [
+        header + ["", "HSBC SA balance (sum)", "421542.80"],
+        ["2026-11-01", "Opening balance seed", "", "447644.73", "", "Partner capital", "3000", "", ""],
+        shifted,
+    ]
+
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "POLAR_DAILY_SALES_SHEET_ID": "sheet123",
+                "POLAR_GSPREAD_KEY": '{"type":"service_account","client_email":"x@y.iam.gserviceaccount.com"}',
+            },
+            clear=False,
+        ),
+    ):
+        result = realign_bank_entries(ws)
+
+    assert result["rows_kept"] == 2
+    # Last meaningful update should write the two A–I rows.
+    write_calls = [
+        c for c in ws.update.call_args_list if str(c.args[0]).startswith("A") and isinstance(c.args[1], list) and c.args[1] and isinstance(c.args[1][0], list) and len(c.args[1][0]) == 9
+    ]
+    assert write_calls, "expected A-column rewrite of bank rows"
+    rows = write_calls[-1].args[1]
+    memos = {r[1] for r in rows}
+    assert "Opening balance seed" in memos
+    assert "CR TO 064-196082-833" in memos

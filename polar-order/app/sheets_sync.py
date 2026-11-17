@@ -463,8 +463,114 @@ def upsert_daily_sales_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _looks_like_bank_date(val: Any) -> bool:
+    return bool(_biz_date_candidates(val))
+
+
+def _bank_fingerprint_from_cells(
+    d: str,
+    memo: str,
+    sa: str,
+    ca: str,
+) -> str | None:
+    d = (d or "").strip()
+    memo = (memo or "").strip()
+    if not d or not memo or not _looks_like_bank_date(d):
+        return None
+    sa_s = (sa or "").strip()
+    ca_s = (ca or "").strip()
+    amt = sa_s or ca_s or "0"
+    acct = "hsbc_sa" if sa_s else "hsbc_ca"
+    try:
+        amt_f = float(str(amt).replace(",", ""))
+    except ValueError:
+        amt_f = 0.0
+    # Normalize date to ISO when possible so CSV re-uploads match sheet cells.
+    dates = _biz_date_candidates(d)
+    d_norm = sorted(dates)[0] if dates else d
+    return f"{d_norm}|{memo}|{amt_f:.2f}|{acct}"
+
+
+def _bank_entry_from_slice(row: list[Any], start: int = 0) -> dict[str, Any] | None:
+    """Parse a 9-cell Bank_Entries window starting at ``start`` (0-based)."""
+    need = start + len(BANK_ENTRY_HEADERS)
+    if len(row) < need:
+        return None
+    cells = [(row[start + i] if start + i < len(row) else "") for i in range(9)]
+    d = str(cells[0] or "").strip()
+    memo = str(cells[1] or "").strip()
+    if not d or not memo or not _looks_like_bank_date(d):
+        return None
+    sa_raw = str(cells[3] or "").strip()
+    ca_raw = str(cells[4] or "").strip()
+    nature = str(cells[5] or "").strip() or "Miscellaneous"
+    code = str(cells[6] or "").strip()
+    notes = str(cells[8] or "").strip()
+
+    def _num(raw: str) -> float | str:
+        if not raw:
+            return ""
+        try:
+            return float(raw.replace(",", ""))
+        except ValueError:
+            return raw
+
+    sa = _num(sa_raw)
+    ca = _num(ca_raw)
+    dates = _biz_date_candidates(d)
+    d_norm = sorted(dates)[0] if dates else d
+    amt = sa if sa != "" else ca
+    try:
+        amt_f = float(amt) if amt != "" else 0.0
+    except (TypeError, ValueError):
+        amt_f = 0.0
+    acct = "hsbc_sa" if sa != "" else "hsbc_ca"
+    return {
+        "date": d_norm,
+        "memo": memo,
+        "chq_no": str(cells[2] or "").strip(),
+        "hsbc_sa": sa,
+        "hsbc_ca": ca,
+        "nature": nature,
+        "account_code": code,
+        "linked_sales_date": str(cells[7] or "").strip(),
+        "notes": notes or "imported",
+        "fingerprint": f"{d_norm}|{memo}|{amt_f:.2f}|{acct}",
+    }
+
+
+def _collect_bank_fingerprints(all_vals: list[list[Any]], header_row: int) -> set[str]:
+    """Fingerprints from A–I and any mis-appended windows further right."""
+    existing: set[str] = set()
+    data_rows = all_vals[header_row:] if len(all_vals) >= header_row else []
+    for r in data_rows:
+        if not r:
+            continue
+        # Scan every possible 9-col window — catches column-shifted appends.
+        max_start = max(0, len(r) - 6)
+        for start in range(0, max_start + 1):
+            parsed = _bank_entry_from_slice(r, start)
+            if parsed and parsed.get("fingerprint"):
+                existing.add(str(parsed["fingerprint"]))
+    return existing
+
+
+def _next_bank_entries_row(worksheet, header_row: int) -> int:
+    """First empty row under Bank_Entries headers (column A). Never use append_rows."""
+    col_a = worksheet.col_values(1)
+    last = header_row
+    for idx in range(header_row, len(col_a)):
+        if str(col_a[idx] or "").strip():
+            last = idx + 1
+    return last + 1
+
+
 def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
-    """Append bank rows; skip fingerprints already present in notes/memo+date+amount."""
+    """Append bank rows into columns A–I under the header (never Sheets append_rows).
+
+    ``append_rows`` lands to the right of helper columns on this template — Tim
+    then sees \"uploaded\" with no visible data in the yellow A–I grid.
+    """
     from .bank_import import rows_for_sheet
 
     if not entries:
@@ -473,24 +579,8 @@ def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     worksheet = _open_named_worksheet(_bank_worksheet_title(), "date")
     header_row = _ensure_headers(worksheet, BANK_ENTRY_HEADERS)
 
-    # Build existing fingerprints from date|memo|sa|ca
-    existing: set[str] = set()
     all_vals = worksheet.get_all_values()
-    data_rows = all_vals[header_row:] if len(all_vals) >= header_row else []
-    for r in data_rows:
-        if len(r) < 6:
-            continue
-        d, memo = (r[0] or "").strip(), (r[1] or "").strip()
-        sa, ca = (r[3] or "").strip(), (r[4] or "").strip()
-        if not d or not memo:
-            continue
-        amt = sa or ca or "0"
-        acct = "hsbc_sa" if sa else "hsbc_ca"
-        try:
-            amt_f = float(amt)
-        except ValueError:
-            amt_f = 0.0
-        existing.add(f"{d}|{memo}|{amt_f:.2f}|{acct}")
+    existing = _collect_bank_fingerprints(all_vals, header_row)
 
     to_add: list[dict[str, Any]] = []
     skipped = 0
@@ -503,15 +593,108 @@ def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         if fp:
             existing.add(fp)
 
+    start_row = None
     if to_add:
-        worksheet.append_rows(rows_for_sheet(to_add), value_input_option="USER_ENTERED")
+        start_row = _next_bank_entries_row(worksheet, header_row)
+        values = rows_for_sheet(to_add)
+        worksheet.update(
+            f"A{start_row}",
+            values,
+            value_input_option="USER_ENTERED",
+        )
 
     return {
         "ok": True,
         "added": len(to_add),
         "skipped": skipped,
         "sheet_id": _sheet_id(),
-        "worksheet": _bank_worksheet_title(),
+        "worksheet": worksheet.title,
+        "header_row": header_row,
+        "start_row": start_row,
+    }
+
+
+def realign_bank_entries(worksheet=None) -> dict[str, Any]:
+    """Pull mis-appended CSV rows back into A–I and clear right-side junk.
+
+    Keeps manual A–I rows and unique imported windows found anywhere on the tab.
+    Preserves Bank helpers in K/L on the header block.
+    """
+    from .bank_import import rows_for_sheet
+
+    if worksheet is None:
+        worksheet = _open_named_worksheet(_bank_worksheet_title(), "date")
+    header_row = _ensure_headers(worksheet, BANK_ENTRY_HEADERS)
+    all_vals = worksheet.get_all_values()
+
+    # Snapshot helper block K:L for the first few rows under the title.
+    helper_kl: dict[int, list[Any]] = {}
+    for r_idx, row in enumerate(all_vals[: header_row + 6], start=1):
+        k = row[10] if len(row) > 10 else ""
+        l = row[11] if len(row) > 11 else ""
+        if str(k or "").strip() or str(l or "").strip():
+            helper_kl[r_idx] = [k, l]
+
+    kept: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    data_rows = all_vals[header_row:] if len(all_vals) >= header_row else []
+    for r in data_rows:
+        if not r:
+            continue
+        # Prefer the proper A–I window when it is a real entry.
+        primary = _bank_entry_from_slice(r, 0)
+        windows: list[dict[str, Any]] = []
+        if primary:
+            windows.append(primary)
+        max_start = max(0, len(r) - 6)
+        for start in range(1, max_start + 1):
+            parsed = _bank_entry_from_slice(r, start)
+            if parsed:
+                windows.append(parsed)
+        for parsed in windows:
+            fp = str(parsed.get("fingerprint") or "")
+            if not fp or fp in seen:
+                continue
+            seen.add(fp)
+            kept.append(parsed)
+
+    # Rewrite A–I cleanly under the header.
+    values = rows_for_sheet(kept)
+    # Clear a wide block (data + old shifted junk), then restore helpers.
+    clear_rows = max(len(values) + 5, len(data_rows) + 5, 80)
+    clear_cols = 40  # A–AN
+    blank = [[""] * clear_cols for _ in range(clear_rows)]
+    start = header_row + 1
+    end = header_row + clear_rows
+    worksheet.update(
+        f"A{start}:AN{end}",
+        blank,
+        value_input_option="RAW",
+    )
+    if values:
+        worksheet.update(
+            f"A{start}",
+            values,
+            value_input_option="USER_ENTERED",
+        )
+
+    for r_idx, kl in helper_kl.items():
+        if r_idx <= header_row:
+            # Header row helpers stay with the header line — rewrite K:L only.
+            worksheet.update(f"K{r_idx}", [kl], value_input_option="USER_ENTERED")
+        elif r_idx > header_row + len(values):
+            worksheet.update(f"K{r_idx}", [kl], value_input_option="USER_ENTERED")
+        else:
+            # Helpers that sat on early data rows — put them back on those rows' K:L.
+            worksheet.update(f"K{r_idx}", [kl], value_input_option="USER_ENTERED")
+
+    return {
+        "ok": True,
+        "worksheet": worksheet.title,
+        "header_row": header_row,
+        "rows_kept": len(kept),
+        "start_row": start,
     }
 
 
@@ -645,9 +828,9 @@ def repair_finance_workbook(
     report_month: int | None = None,
     as_of: date | None = None,
 ) -> dict[str, Any]:
-    """Fix KPI #NAME?, Helpers $0, empty Chart_of_Accounts, and Daily_Sales junk cols.
+    """Fix KPI #NAME?, Helpers $0, Chart_of_Accounts, Daily_Sales junk, Bank_Entries shift.
 
-    Safe to re-run. Does not touch Daily_Sales A5:N data rows.
+    Safe to re-run. Does not wipe Daily_Sales A5:N number columns.
     """
     spreadsheet = _open_spreadsheet()
     actions: list[str] = []
@@ -704,6 +887,16 @@ def repair_finance_workbook(
     blank = [[""] * 14 for _ in range(40)]
     daily.update("P11:AC50", blank, value_input_option="RAW")
     actions.append("cleared Daily_Sales P11:AC50 junk")
+
+    # --- Bank_Entries: pull column-shifted CSV imports back into A–I ---
+    try:
+        bank = spreadsheet.worksheet("Bank_Entries")
+    except Exception:
+        bank = _open_named_worksheet(_bank_worksheet_title(), "date")
+    bank_fix = realign_bank_entries(bank)
+    actions.append(
+        f"realigned Bank_Entries → {bank_fix.get('rows_kept', 0)} rows in A–I"
+    )
 
     # --- KPI quoted sheet refs ---
     kpi = spreadsheet.worksheet("KPI")
