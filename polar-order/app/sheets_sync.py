@@ -796,6 +796,14 @@ CHART_OF_ACCOUNTS_ROWS: tuple[tuple[Any, ...], ...] = (
     ("6210", "Water", "Expense", "Utilities", "", ""),
     ("6220", "Internet", "Expense", "Utilities", "", "HKBN"),
     ("6300", "Marketing fee", "Expense", "Operating expenses", "", ""),
+    (
+        "6310",
+        "Barry Smokiebear",
+        "Expense",
+        "Operating expenses",
+        "",
+        "Polar 代收再付返 Smokiebear",
+    ),
     ("6400", "Claim", "Expense", "Claims", "", "員工墊支報銷（銀行／現金）"),
     ("6500", "Repairs & maintenance", "Expense", "Operating expenses", "", ""),
     ("6900", "Miscellaneous", "Expense", "Operating expenses", "", ""),
@@ -830,6 +838,64 @@ KPI_FORMULAS: dict[str, str] = {
     ),
     "B12": "=IF(B7=0,0,'P&L_Monthly'!B36/B7)",
 }
+
+
+def _pl_bank_nature_expense_formula(row: int) -> str:
+    """ABS(SUMIFS SA+CA) for P&L expense row whose label is in column A."""
+    return (
+        f'=ABS(SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,A{row},'
+        f'Bank_Entries!A:A,">="&$D$4,Bank_Entries!A:A,"<="&$D$5)'
+        f'+SUMIFS(Bank_Entries!E:E,Bank_Entries!F:F,A{row},'
+        f'Bank_Entries!A:A,">="&$D$4,Bank_Entries!A:A,"<="&$D$5))'
+    )
+
+
+def ensure_pl_expense_nature(pl_worksheet, nature: str) -> str:
+    """Insert a P&L operating-expense line for ``nature`` if missing.
+
+    Inserts just above ``Total operating expenses`` so KPI refs to Claims
+    (Daily_Sales) stay on their existing row when possible.
+    """
+    col_a = pl_worksheet.col_values(1)
+    for raw in col_a:
+        if (raw or "").strip() == nature:
+            return f"P&L already has {nature}"
+
+    total_idx = None  # 0-based
+    for i, raw in enumerate(col_a):
+        if (raw or "").strip() == "Total operating expenses":
+            total_idx = i
+            break
+    if total_idx is None:
+        return f"P&L missing Total operating expenses — skip {nature}"
+
+    insert_at = total_idx + 1  # 1-based row to insert before Total
+    pl_worksheet.insert_rows(insert_at)
+    pl_worksheet.update(
+        f"A{insert_at}",
+        [[nature, _pl_bank_nature_expense_formula(insert_at)]],
+        value_input_option="USER_ENTERED",
+    )
+    # Refresh Total SUM to include the new row (Sheets may auto-adjust; be explicit).
+    col_a2 = pl_worksheet.col_values(1)
+    rent_row = next(
+        (i + 1 for i, v in enumerate(col_a2) if (v or "").strip() == "Rent"),
+        23,
+    )
+    total_row = next(
+        (
+            i + 1
+            for i, v in enumerate(col_a2)
+            if (v or "").strip() == "Total operating expenses"
+        ),
+        insert_at + 1,
+    )
+    pl_worksheet.update(
+        f"B{total_row}",
+        [[f"=SUM(B{rent_row}:B{total_row - 1})"]],
+        value_input_option="USER_ENTERED",
+    )
+    return f"P&L added expense {nature} at row {insert_at}"
 
 
 def _apply_year_month_dropdowns(pl_worksheet, *, year: int, month: int) -> None:
@@ -883,7 +949,12 @@ def repair_finance_workbook(
         actions.append("created Chart_of_Accounts")
     existing = chart.get_all_values()
     flat = " ".join(c for row in existing for c in row) if existing else ""
-    needs_chart = ("HSBC SA" not in flat) or ("account_code" not in flat) or ("Loan" not in flat)
+    needs_chart = (
+        ("HSBC SA" not in flat)
+        or ("account_code" not in flat)
+        or ("Loan" not in flat)
+        or ("Barry Smokiebear" not in flat)
+    )
     if needs_chart:
         chart.clear()
         chart.update(
@@ -891,7 +962,7 @@ def repair_finance_workbook(
             [list(r) for r in CHART_OF_ACCOUNTS_ROWS],
             value_input_option="RAW",
         )
-        actions.append("restored Chart_of_Accounts (incl. Loan)")
+        actions.append("restored Chart_of_Accounts (incl. Loan / Barry Smokiebear)")
     # Nature dropdown list (column H) — always refresh so new natures appear.
     nature_names = [
         str(r[1])
@@ -903,7 +974,7 @@ def repair_finance_workbook(
         [["Nature list (for dropdown)"]] + [[n] for n in nature_names],
         value_input_option="RAW",
     )
-    actions.append(f"Chart Nature dropdown list ({len(nature_names)} incl. Loan)")
+    actions.append(f"Chart Nature dropdown list ({len(nature_names)})")
     # Bank_Entries Nature dropdown → Chart H list (covers Loan + future natures).
     try:
         from gspread.utils import ValidationConditionType
@@ -915,7 +986,7 @@ def repair_finance_workbook(
             ["=Chart_of_Accounts!$H$5:$H$40"],
             strict=False,
             showCustomUi=True,
-            inputMessage="揀 Nature（含 Loan）",
+            inputMessage="揀 Nature（含 Loan / Barry Smokiebear）",
         )
         actions.append("Bank_Entries Nature dropdown → Chart H5:H40")
     except Exception as exc:  # noqa: BLE001 — non-fatal
@@ -981,6 +1052,7 @@ def repair_finance_workbook(
     pl.update("B5", [[month]], value_input_option="USER_ENTERED")
     _apply_year_month_dropdowns(pl, year=today.year, month=month)
     actions.append("P&L_Monthly Year/Month dropdowns (pick, don't type)")
+    actions.append(ensure_pl_expense_nature(pl, "Barry Smokiebear"))
     pl.update(
         "B8",
         [[
@@ -989,14 +1061,29 @@ def repair_finance_workbook(
         ]],
         value_input_option="USER_ENTERED",
     )
-    pl.update(
-        "B35",
-        [[
-            f'=SUMPRODUCT((LEFT(Daily_Sales!$A$5:$A$1000,7)={_PL_MONTH})'
-            f'*(Daily_Sales!$J$5:$J$1000))'
-        ]],
-        value_input_option="USER_ENTERED",
+    # Claims-from-Order row label may have shifted after expense inserts.
+    claims_row = next(
+        (
+            i + 1
+            for i, v in enumerate(pl.col_values(1))
+            if (v or "").strip() == "Claims recorded in Order (Daily_Sales)"
+        ),
+        None,
     )
+    if claims_row:
+        pl.update(
+            f"B{claims_row}",
+            [[
+                f'=SUMPRODUCT((LEFT(Daily_Sales!$A$5:$A$1000,7)={_PL_MONTH})'
+                f'*(Daily_Sales!$J$5:$J$1000))'
+            ]],
+            value_input_option="USER_ENTERED",
+        )
+        # Keep KPI Claims pointer in sync when possible.
+        try:
+            kpi.update("B10", [[f"='P&L_Monthly'!B{claims_row}"]], value_input_option="USER_ENTERED")
+        except Exception:
+            pass
     actions.append(f"P&L_Monthly month→{month} + sales/claims formulas")
 
     # --- Balance Sheet as-of + Loans payable (Liability Nature) ---
