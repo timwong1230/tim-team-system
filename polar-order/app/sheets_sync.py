@@ -534,7 +534,7 @@ def _bank_entry_from_slice(row: list[Any], start: int = 0) -> dict[str, Any] | N
         "nature": nature,
         "account_code": code,
         "linked_sales_date": str(cells[7] or "").strip(),
-        "notes": notes or "imported",
+        "notes": notes,
         "fingerprint": f"{d_norm}|{memo}|{amt_f:.2f}|{acct}",
     }
 
@@ -596,12 +596,14 @@ def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     start_row = None
     if to_add:
         start_row = _next_bank_entries_row(worksheet, header_row)
-        values = rows_for_sheet(to_add)
+        values = rows_for_sheet(to_add, start_row=start_row)
         worksheet.update(
             f"A{start_row}",
             values,
             value_input_option="USER_ENTERED",
         )
+        # Keep helper SUM formulas in sync after large imports.
+        restore_bank_entry_helpers(worksheet, header_row)
 
     return {
         "ok": True,
@@ -614,11 +616,59 @@ def append_bank_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def restore_bank_entry_helpers(worksheet, header_row: int) -> None:
+    """Rewrite Bank helpers with live SUM formulas (never paste cached numbers)."""
+    first = header_row + 1
+    sa_row = header_row
+    ca_row = header_row + 1
+    labels_formulas = [
+        ("HSBC SA balance (sum)", f"=SUM(D{first}:D2000)"),
+        ("HSBC CA balance (sum)", f"=SUM(E{first}:E2000)"),
+        ("Total bank", f"=L{sa_row}+L{ca_row}"),
+        ("Selected month bank outflows (expenses/cogs)", "(see P&L)"),
+    ]
+    # Labels in K, formulas/values in L — aligned to header row block.
+    for offset, (label, formula) in enumerate(labels_formulas):
+        r = header_row + offset
+        worksheet.update(
+            f"K{r}",
+            [[label, formula]],
+            value_input_option="USER_ENTERED",
+        )
+    # Keep a small title above helpers when the template had one.
+    if header_row >= 2:
+        worksheet.update(
+            f"K{header_row - 1}",
+            [["Bank helpers"]],
+            value_input_option="RAW",
+        )
+
+
+def restore_bank_account_code_formulas(
+    worksheet,
+    header_row: int,
+    *,
+    row_count: int,
+) -> int:
+    """Fill G with Nature→account_code formulas for each data row (+ buffer)."""
+    from .bank_import import account_code_formula
+
+    first = header_row + 1
+    last = header_row + max(row_count, 0) + 50  # spare rows for Tim to type
+    formulas = [[account_code_formula(r)] for r in range(first, last + 1)]
+    worksheet.update(
+        f"G{first}:G{last}",
+        formulas,
+        value_input_option="USER_ENTERED",
+    )
+    return len(formulas)
+
+
 def realign_bank_entries(worksheet=None) -> dict[str, Any]:
     """Pull mis-appended CSV rows back into A–I and clear right-side junk.
 
     Keeps manual A–I rows and unique imported windows found anywhere on the tab.
-    Preserves Bank helpers in K/L on the header block.
+    Restores Bank helper SUM formulas and Nature→account_code formulas.
     """
     from .bank_import import rows_for_sheet
 
@@ -626,14 +676,6 @@ def realign_bank_entries(worksheet=None) -> dict[str, Any]:
         worksheet = _open_named_worksheet(_bank_worksheet_title(), "date")
     header_row = _ensure_headers(worksheet, BANK_ENTRY_HEADERS)
     all_vals = worksheet.get_all_values()
-
-    # Snapshot helper block K:L for the first few rows under the title.
-    helper_kl: dict[int, list[Any]] = {}
-    for r_idx, row in enumerate(all_vals[: header_row + 6], start=1):
-        k = row[10] if len(row) > 10 else ""
-        l = row[11] if len(row) > 11 else ""
-        if str(k or "").strip() or str(l or "").strip():
-            helper_kl[r_idx] = [k, l]
 
     kept: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -659,10 +701,8 @@ def realign_bank_entries(worksheet=None) -> dict[str, Any]:
             seen.add(fp)
             kept.append(parsed)
 
-    # Rewrite A–I cleanly under the header.
-    values = rows_for_sheet(kept)
-    # Clear a wide block (data + old shifted junk), then restore helpers.
-    clear_rows = max(len(values) + 5, len(data_rows) + 5, 80)
+    # Clear a wide block (data + old shifted junk), then rewrite A–I + formulas.
+    clear_rows = max(len(kept) + 5, len(data_rows) + 5, 80)
     clear_cols = 40  # A–AN
     blank = [[""] * clear_cols for _ in range(clear_rows)]
     start = header_row + 1
@@ -672,22 +712,18 @@ def realign_bank_entries(worksheet=None) -> dict[str, Any]:
         blank,
         value_input_option="RAW",
     )
-    if values:
+    if kept:
+        values = rows_for_sheet(kept, start_row=start)
         worksheet.update(
             f"A{start}",
             values,
             value_input_option="USER_ENTERED",
         )
-
-    for r_idx, kl in helper_kl.items():
-        if r_idx <= header_row:
-            # Header row helpers stay with the header line — rewrite K:L only.
-            worksheet.update(f"K{r_idx}", [kl], value_input_option="USER_ENTERED")
-        elif r_idx > header_row + len(values):
-            worksheet.update(f"K{r_idx}", [kl], value_input_option="USER_ENTERED")
-        else:
-            # Helpers that sat on early data rows — put them back on those rows' K:L.
-            worksheet.update(f"K{r_idx}", [kl], value_input_option="USER_ENTERED")
+    # Extra blank rows still get account_code formulas so Tim can add lines.
+    formulas_written = restore_bank_account_code_formulas(
+        worksheet, header_row, row_count=len(kept)
+    )
+    restore_bank_entry_helpers(worksheet, header_row)
 
     return {
         "ok": True,
@@ -695,6 +731,7 @@ def realign_bank_entries(worksheet=None) -> dict[str, Any]:
         "header_row": header_row,
         "rows_kept": len(kept),
         "start_row": start,
+        "account_code_formulas": formulas_written,
     }
 
 
@@ -895,7 +932,8 @@ def repair_finance_workbook(
         bank = _open_named_worksheet(_bank_worksheet_title(), "date")
     bank_fix = realign_bank_entries(bank)
     actions.append(
-        f"realigned Bank_Entries → {bank_fix.get('rows_kept', 0)} rows in A–I"
+        f"realigned Bank_Entries → {bank_fix.get('rows_kept', 0)} rows in A–I; "
+        f"helpers SUM + account_code×{bank_fix.get('account_code_formulas', 0)}"
     )
 
     # --- KPI quoted sheet refs ---
