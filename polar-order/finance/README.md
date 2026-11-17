@@ -56,5 +56,6 @@ https://docs.google.com/spreadsheets/d/1WRTjFrzLXvL0OTWv-FE8uPF-UWBSFJe6gNuFnB9c
 
 - 銀行登入／download CSV（系統 access 唔到銀行）  
 - 經私人戶口中轉嘅截圖／note（CSV memo 唔夠分類）  
-- Nature 估錯時人手改一行  
+- Nature 估錯時人手改一行（改完 `account_code` 會跟住自動變）  
+- `Balance_Sheet` 黃色 **As of date** 要設到你想對嘅日（銀行結餘 = 當日或之前 Bank_Entries 累計）  
 - 交會計／報稅／核數（正式帳仍交會計師）

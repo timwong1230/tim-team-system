@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Cache-bust so Render rebuilds app layers after finance-repair merges.
-ARG POLAR_BUILD_STAMP=2026-11-17-bank-entries-realign
+ARG POLAR_BUILD_STAMP=2026-11-17-bank-balance-account-code
 RUN echo "polar-build ${POLAR_BUILD_STAMP}"
 
 RUN apt-get update \

@@ -146,7 +146,7 @@ async def lifespan(_: FastAPI):
         )
     # One-shot Finance workbook repair on boot (KPI #NAME?, Helpers $0, Chart,
     # junk, Year/Month dropdowns). Bump marker filename when repair gains new steps.
-    marker = DATA_DIR / ".finance_sheet_repaired_v3"
+    marker = DATA_DIR / ".finance_sheet_repaired_v4"
     if sheets_configured() and not marker.exists():
         try:
             as_of = business_date(datetime.now(HK))
@@ -3142,7 +3142,7 @@ def staff_sync_daily_sales(pin: str = Form(...), day: str = Form("")):
 
     # One-shot workbook repair after first successful sync post-deploy
     # (KPI #NAME?, Helpers $0, empty Chart, Bank_Entries column shift, dropdowns).
-    marker = DATA_DIR / ".finance_sheet_repaired_v3"
+    marker = DATA_DIR / ".finance_sheet_repaired_v4"
     if not marker.exists():
         try:
             repair = repair_finance_workbook(

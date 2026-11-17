@@ -18,6 +18,10 @@ def test_infer_nature_and_parse_amount_csv():
     from app.bank_import import infer_nature, parse_bank_csv
 
     assert infer_nature("HKE ELECTRICITY OCT") == "Electricity"
+    assert infer_nature("PPS HONGKONG ELECTRIC") == "Electricity"
+    assert infer_nature("WATER SUPPLIES DEPAR") == "Water"
+    assert infer_nature("Water bill") == "Water"
+    assert infer_nature("HONG KONG BROADBAND") == "Internet"
     assert infer_nature("Monthly rent Causeway Bay") == "Rent"
     assert infer_nature("Staff wages Sep") == "Wages"
     assert infer_nature("Random shop") == "Miscellaneous"
@@ -160,10 +164,25 @@ def test_append_bank_entries_skips_duplicates():
     assert result["skipped"] == 1
     assert result["added"] == 1
     ws.append_rows.assert_not_called()
-    ws.update.assert_called()
     # Must write under column A (not Sheets append_rows, which shifts right).
-    args, kwargs = ws.update.call_args
-    assert str(args[0]).startswith("A")
+    a_writes = [c for c in ws.update.call_args_list if str(c.args[0]).startswith("A")]
+    assert a_writes
+    rows = a_writes[0].args[1]
+    assert str(rows[0][6]).startswith("=IF(F")  # account_code follows Nature
+
+
+def test_account_code_formula_follows_nature_row():
+    from app.bank_import import account_code_formula, rows_for_sheet
+
+    f = account_code_formula(12)
+    assert "F12" in f
+    assert "Chart_of_Accounts" in f
+    rows = rows_for_sheet(
+        [{"date": "2026-11-01", "memo": "x", "nature": "Wages", "hsbc_sa": -1, "hsbc_ca": "", "notes": "imported"}],
+        start_row=20,
+    )
+    assert rows[0][5] == "Wages"
+    assert rows[0][6] == account_code_formula(20)
 
 
 def test_realign_bank_entries_pulls_shifted_imports_into_a_i():
@@ -219,12 +238,32 @@ def test_realign_bank_entries_pulls_shifted_imports_into_a_i():
         result = realign_bank_entries(ws)
 
     assert result["rows_kept"] == 2
-    # Last meaningful update should write the two A–I rows.
+    assert result.get("account_code_formulas", 0) >= 2
+    # A–I rewrite + helper / account_code formula restores.
     write_calls = [
-        c for c in ws.update.call_args_list if str(c.args[0]).startswith("A") and isinstance(c.args[1], list) and c.args[1] and isinstance(c.args[1][0], list) and len(c.args[1][0]) == 9
+        c
+        for c in ws.update.call_args_list
+        if str(c.args[0]).startswith("A")
+        and isinstance(c.args[1], list)
+        and c.args[1]
+        and isinstance(c.args[1][0], list)
+        and len(c.args[1][0]) == 9
     ]
     assert write_calls, "expected A-column rewrite of bank rows"
     rows = write_calls[-1].args[1]
     memos = {r[1] for r in rows}
     assert "Opening balance seed" in memos
     assert "CR TO 064-196082-833" in memos
+    assert all(str(r[6]).startswith("=IF(F") for r in rows)
+    # Helper SUM formulas restored (not a frozen number like 421542.80).
+    helper_writes = [
+        c for c in ws.update.call_args_list if str(c.args[0]).startswith("K")
+    ]
+    assert helper_writes
+    flat = " ".join(
+        str(cell)
+        for c in helper_writes
+        for row in (c.args[1] if isinstance(c.args[1], list) else [])
+        for cell in (row if isinstance(row, list) else [row])
+    )
+    assert "SUM(" in flat

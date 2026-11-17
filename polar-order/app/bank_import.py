@@ -14,9 +14,9 @@ NATURE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Rates (差餉)", ("rates", "差餉", "rating")),
     ("Management fee", ("management fee", "mgmt fee", "管理費")),
     ("Wages", ("wage", "salary", "payroll", "mpf", "人工", "薪")),
-    ("Electricity", ("electric", "hke", "clp", "電費", "中電")),
-    ("Water", ("water", "wsd", "水務", "水費")),
-    ("Internet", ("hkbn", "internet", "broadband", "網上", "寬頻")),
+    ("Electricity", ("electric", "hke", "clp", "hongkong electric", "hong kong electric", "電費", "中電")),
+    ("Water", ("water supplies", "water supply", "water bill", "wsd", "水務", "水費")),
+    ("Internet", ("hkbn", "hong kong broadband", "internet", "broadband", "網上", "寬頻")),
     ("Marketing fee", ("marketing", "ads", "facebook", "meta ads", "google ads")),
     ("Wine cost", ("wine", "葡萄酒")),
     ("Drink / Alcohol", ("alcohol", "beer", "liquor", "spirit", "drink", "ypasta", "smokie")),
@@ -286,9 +286,31 @@ def parse_bank_csv(
     return rows
 
 
-def rows_for_sheet(entries: list[dict[str, Any]]) -> list[list[Any]]:
+def account_code_formula(sheet_row: int) -> str:
+    """Sheet formula: account_code follows Nature via Chart_of_Accounts."""
+    r = int(sheet_row)
+    return (
+        f'=IF(F{r}="","",IFERROR(INDEX(Chart_of_Accounts!$A$5:$A$40,'
+        f'MATCH(F{r},Chart_of_Accounts!$B$5:$B$40,0)),""))'
+    )
+
+
+def rows_for_sheet(
+    entries: list[dict[str, Any]],
+    *,
+    start_row: int | None = None,
+) -> list[list[Any]]:
+    """Build A–I values. Column G is always a Nature→code formula when start_row set."""
     out: list[list[Any]] = []
-    for e in entries:
+    for i, e in enumerate(entries):
+        if start_row is not None:
+            code: Any = account_code_formula(start_row + i)
+        else:
+            # Fallback static code (tests / callers without a sheet row).
+            code = e.get("account_code", "") or ACCOUNT_CODES.get(
+                str(e.get("nature") or "Miscellaneous"),
+                "6900",
+            )
         out.append(
             [
                 e.get("date", ""),
@@ -297,7 +319,7 @@ def rows_for_sheet(entries: list[dict[str, Any]]) -> list[list[Any]]:
                 e.get("hsbc_sa", "") if e.get("hsbc_sa", "") != "" else "",
                 e.get("hsbc_ca", "") if e.get("hsbc_ca", "") != "" else "",
                 e.get("nature", "Miscellaneous"),
-                e.get("account_code", ""),
+                code,
                 e.get("linked_sales_date", ""),
                 e.get("notes", "imported"),
             ]
