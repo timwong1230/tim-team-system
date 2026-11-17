@@ -37,8 +37,50 @@ def test_chart_of_accounts_rows_cover_natures():
     from app.sheets_sync import CHART_OF_ACCOUNTS_ROWS
 
     natures = {row[1] for row in CHART_OF_ACCOUNTS_ROWS if row[0] and row[0][0].isdigit()}
-    for need in ("Sales", "Wages", "Rent", "HSBC SA", "Partner cash in"):
+    for need in (
+        "Sales",
+        "Wages",
+        "Rent",
+        "HSBC SA",
+        "Partner cash in",
+        "Loan",
+        "Barry Smokiebear",
+    ):
         assert need in natures
+    loan = next(r for r in CHART_OF_ACCOUNTS_ROWS if r[1] == "Loan")
+    assert loan[0] == "2000"
+    assert loan[2] == "Liability"
+
+
+def test_ensure_pl_expense_nature_uses_gspread6_insert_rows():
+    from app.sheets_sync import ensure_pl_expense_nature
+
+    pl = MagicMock()
+    # No Barry yet; Total opex at 1-based row 36 (0-based index 35).
+    labels = [""] * 40
+    labels[22] = "Rent"
+    labels[34] = "Claims recorded in Order (Daily_Sales)"
+    labels[35] = "Total operating expenses"
+    labels[37] = "Net profit / (loss)"
+    pl.col_values.return_value = labels
+
+    msg = ensure_pl_expense_nature(pl, "Barry Smokiebear")
+    assert "added expense Barry Smokiebear at row 36" in msg
+    pl.insert_rows.assert_called_once()
+    args, kwargs = pl.insert_rows.call_args
+    assert args[0][0][0] == "Barry Smokiebear"
+    assert kwargs["row"] == 36
+    assert kwargs["value_input_option"] == "USER_ENTERED"
+
+
+def test_ensure_pl_expense_nature_skips_when_present():
+    from app.sheets_sync import ensure_pl_expense_nature
+
+    pl = MagicMock()
+    pl.col_values.return_value = ["Rent", "Barry Smokiebear", "Total operating expenses"]
+    msg = ensure_pl_expense_nature(pl, "Barry Smokiebear")
+    assert msg == "P&L already has Barry Smokiebear"
+    pl.insert_rows.assert_not_called()
 
 
 def test_repair_finance_workbook_updates_tabs():
@@ -55,28 +97,46 @@ def test_repair_finance_workbook_updates_tabs():
     kpi = MagicMock()
     pl = MagicMock()
     bs = MagicMock()
+    bank = MagicMock()
     setup = MagicMock()
     chart.get_all_values.return_value = []
+    # P&L already includes Barry so ensure_pl is a no-op insert.
+    pl_labels = [""] * 45
+    pl_labels[22] = "Rent"
+    pl_labels[34] = "Claims recorded in Order (Daily_Sales)"
+    pl_labels[35] = "Barry Smokiebear"
+    pl_labels[36] = "Total operating expenses"
+    pl_labels[38] = "Net profit / (loss)"
+    pl_labels[42] = "Total expenses / Net sales"
+    pl_labels[43] = "Net margin"
+    pl.col_values.return_value = pl_labels
+    bs.get_all_values.return_value = [["Loans payable (bank Nature Loan)", "-1"]]
     ss.worksheet.side_effect = lambda title: {
         "Chart_of_Accounts": chart,
         "Daily_Sales": daily,
         "KPI": kpi,
         "P&L_Monthly": pl,
         "Balance_Sheet": bs,
+        "Bank_Entries": bank,
         "Setup": setup,
     }[title]
     ss.title = "Polar Lounge — Finance"
 
     with patch("app.sheets_sync._open_spreadsheet", return_value=ss):
         with patch("app.sheets_sync._sheet_id", return_value="sheet123"):
-            result = repair_finance_workbook(
-                report_month=11, as_of=date(2026, 11, 4)
-            )
+            with patch(
+                "app.sheets_sync.realign_bank_entries",
+                return_value={"rows_kept": 0, "account_code_formulas": 0},
+            ):
+                result = repair_finance_workbook(
+                    report_month=11, as_of=date(2026, 11, 4)
+                )
 
     assert result["ok"] is True
     assert result["report_month"] == 11
-    assert "restored Chart_of_Accounts" in result["actions"]
+    assert any("restored Chart_of_Accounts" in a for a in result["actions"])
     assert "fixed KPI formulas (quoted P&L_Monthly)" in result["actions"]
+    assert any("P&L already has Barry Smokiebear" in a for a in result["actions"])
 
     chart.update.assert_any_call(
         "A1",
