@@ -22,9 +22,14 @@ def test_infer_nature_and_parse_amount_csv():
     assert infer_nature("WATER SUPPLIES DEPAR") == "Water"
     assert infer_nature("Water bill") == "Water"
     assert infer_nature("HONG KONG BROADBAND") == "Internet"
+    assert infer_nature("LOAN REPAYMENT") == "Loan"
+    assert infer_nature("LKF loan") == "Loan"
     assert infer_nature("Monthly rent Causeway Bay") == "Rent"
     assert infer_nature("Staff wages Sep") == "Wages"
     assert infer_nature("Random shop") == "Miscellaneous"
+    from app.bank_import import ACCOUNT_CODES
+
+    assert ACCOUNT_CODES["Loan"] == "2000"
 
     csv_text = """Date,Description,Amount
 01/10/2026,HKE Electricity,-1200.50

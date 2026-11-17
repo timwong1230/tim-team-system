@@ -778,6 +778,7 @@ CHART_OF_ACCOUNTS_ROWS: tuple[tuple[Any, ...], ...] = (
     ("1010", "HSBC CA", "Asset", "", "Current assets", "Current account"),
     ("1100", "Cash on hand", "Asset", "", "Current assets", "Till / float（參考 Cash Tilt）"),
     ("1200", "Deposits held", "Asset", "", "Non-current assets", "租約／水電按金"),
+    ("2000", "Loan", "Liability", "", "Liabilities", "貸款本金／還款（唔入 P&L expense）"),
     ("3000", "Partner capital", "Equity", "", "Equity", "開業資本"),
     ("3100", "Partner drawings", "Equity", "", "Equity", "股東提取"),
     ("3200", "Partner cash in", "Equity", "", "Equity", "股東注資（銀行入數）"),
@@ -881,11 +882,8 @@ def repair_finance_workbook(
         chart = spreadsheet.add_worksheet("Chart_of_Accounts", rows=40, cols=8)
         actions.append("created Chart_of_Accounts")
     existing = chart.get_all_values()
-    needs_chart = True
-    if existing:
-        flat = " ".join(c for row in existing for c in row)
-        if "HSBC SA" in flat and "account_code" in flat:
-            needs_chart = False
+    flat = " ".join(c for row in existing for c in row) if existing else ""
+    needs_chart = ("HSBC SA" not in flat) or ("account_code" not in flat) or ("Loan" not in flat)
     if needs_chart:
         chart.clear()
         chart.update(
@@ -893,7 +891,35 @@ def repair_finance_workbook(
             [list(r) for r in CHART_OF_ACCOUNTS_ROWS],
             value_input_option="RAW",
         )
-        actions.append("restored Chart_of_Accounts")
+        actions.append("restored Chart_of_Accounts (incl. Loan)")
+    # Nature dropdown list (column H) — always refresh so new natures appear.
+    nature_names = [
+        str(r[1])
+        for r in CHART_OF_ACCOUNTS_ROWS
+        if len(r) > 1 and str(r[0]).isdigit()
+    ]
+    chart.update(
+        "H4",
+        [["Nature list (for dropdown)"]] + [[n] for n in nature_names],
+        value_input_option="RAW",
+    )
+    actions.append(f"Chart Nature dropdown list ({len(nature_names)} incl. Loan)")
+    # Bank_Entries Nature dropdown → Chart H list (covers Loan + future natures).
+    try:
+        from gspread.utils import ValidationConditionType
+
+        bank_dv = spreadsheet.worksheet("Bank_Entries")
+        bank_dv.add_validation(
+            "F6:F2000",
+            ValidationConditionType.one_of_range,
+            ["=Chart_of_Accounts!$H$5:$H$40"],
+            strict=False,
+            showCustomUi=True,
+            inputMessage="揀 Nature（含 Loan）",
+        )
+        actions.append("Bank_Entries Nature dropdown → Chart H5:H40")
+    except Exception as exc:  # noqa: BLE001 — non-fatal
+        actions.append(f"Bank_Entries Nature dropdown skipped: {exc}")
 
     # --- Daily_Sales helpers + junk clear + bridge note ---
     daily = spreadsheet.worksheet("Daily_Sales")
@@ -973,9 +999,29 @@ def repair_finance_workbook(
     )
     actions.append(f"P&L_Monthly month→{month} + sales/claims formulas")
 
-    # --- Balance Sheet as-of ---
+    # --- Balance Sheet as-of + Loans payable (Liability Nature) ---
     bs = spreadsheet.worksheet("Balance_Sheet")
     bs.update("B4", [[today.isoformat()]], value_input_option="USER_ENTERED")
+    # Insert Loans between Assets total and Equity if missing.
+    bs_vals = bs.get_all_values()
+    bs_flat = " ".join(c for row in bs_vals for c in row)
+    if "Loan" not in bs_flat:
+        # Template layout: A11 Total assets, A13 Equity… — put Loans at A12/B12.
+        bs.update("A12", [["Loans payable (bank Nature Loan)"]], value_input_option="RAW")
+        bs.update(
+            "B12",
+            [[
+                # Net Loan bank movement: drawdown +, repayment −.
+                # Outstanding ≈ cumulative SUM (seed opening loan row if needed).
+                '=SUMIFS(Bank_Entries!D:D,Bank_Entries!F:F,"Loan",'
+                'Bank_Entries!A:A,"<="&$B$4)'
+                '+SUMIFS(Bank_Entries!E:E,Bank_Entries!F:F,"Loan",'
+                'Bank_Entries!A:A,"<="&$B$4)'
+            ]],
+            value_input_option="USER_ENTERED",
+        )
+        # Equity total / check still use plug RE — document Loans separately.
+        actions.append("Balance_Sheet added Loans payable (Nature Loan)")
     actions.append(f"Balance_Sheet as-of→{today.isoformat()}")
 
     # Setup note: bridge sheet id no longer needed
