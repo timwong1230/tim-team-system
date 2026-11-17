@@ -13,6 +13,8 @@ NATURE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Rent", ("rent", "landlord", "租")),
     ("Rates (差餉)", ("rates", "差餉", "rating")),
     ("Management fee", ("management fee", "mgmt fee", "管理費")),
+    # Before Wages / Drink — memos like "Barry smokiebear & wages" / "smokie".
+    ("Barry Smokiebear", ("barry smokiebear", "smokiebear", "smokie bear", "barry smokie")),
     ("Wages", ("wage", "salary", "payroll", "mpf", "人工", "薪")),
     ("Electricity", ("electric", "hke", "clp", "hongkong electric", "hong kong electric", "電費", "中電")),
     ("Water", ("water supplies", "water supply", "water bill", "wsd", "水務", "水費")),
@@ -58,6 +60,7 @@ ACCOUNT_CODES: dict[str, str] = {
     "Water": "6210",
     "Internet": "6220",
     "Marketing fee": "6300",
+    "Barry Smokiebear": "6310",
     "Claim": "6400",
     "Repairs & maintenance": "6500",
     "Miscellaneous": "6900",
