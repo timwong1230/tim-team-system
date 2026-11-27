@@ -305,38 +305,90 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  document.getElementById("nomAdd")?.addEventListener("click", () => {
-    const name = (document.getElementById("nomName")?.value || "").trim();
-    const price = Number(document.getElementById("nomPrice")?.value);
-    const qty = Math.max(1, Number(document.getElementById("nomQty")?.value || 1));
-    if (!name) return showToast("Enter product name");
-    if (Number.isNaN(price) || price < 0) return showToast("Enter a valid price");
-    const id = `nom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
-    const existing = cart.get(id);
-    if (existing) existing.qty += qty;
-    else {
-      cart.set(id, {
-        id,
-        name,
-        price,
-        listPrice: price,
-        promoType: "",
-        comboPrice: null,
-        qty,
-        note: "",
-        allowNote: false,
-        custom: true,
-        customName: name,
-        customPrice: price,
-      });
+  function addNomLine(name, price, qty) {
+    // Match on name + price, not a slug. Chinese names all collapsed to "nom-"
+    // and the second product vanished into the first line.
+    let existing = null;
+    for (const line of cart.values()) {
+      if (
+        line.custom &&
+        line.customName === name &&
+        Number(line.customPrice) === Number(price)
+      ) {
+        existing = line;
+        break;
+      }
     }
+    if (existing) {
+      existing.qty += qty;
+      return;
+    }
+    const id = `nom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    cart.set(id, {
+      id,
+      name,
+      price,
+      listPrice: price,
+      promoType: "",
+      comboPrice: null,
+      qty,
+      note: "",
+      allowNote: false,
+      custom: true,
+      customName: name,
+      customPrice: price,
+    });
+  }
+
+  // Staff often type name + price and hit Send without tapping Add.
+  // required=false: empty fields are fine (nothing pending). A half-filled
+  // row must not be dropped — Send stops and asks for the missing bit.
+  function commitPendingNom({ required = false, toast = false } = {}) {
+    const nameEl = document.getElementById("nomName");
+    const priceEl = document.getElementById("nomPrice");
+    const qtyEl = document.getElementById("nomQty");
+    if (!nameEl || !priceEl) return true;
+    const name = (nameEl.value || "").trim();
+    const priceRaw = (priceEl.value || "").trim();
+    if (!name && !priceRaw) {
+      if (!required) return true;
+      showToast("Enter product name");
+      nameEl.focus();
+      return false;
+    }
+    if (!name) {
+      showToast("Enter product name");
+      nameEl.focus();
+      return false;
+    }
+    const price = Number(priceRaw);
+    if (priceRaw === "" || Number.isNaN(price) || price < 0) {
+      showToast("Enter a valid price");
+      priceEl.focus();
+      return false;
+    }
+    const qty = Math.max(1, Math.min(50, Number(qtyEl?.value || 1) || 1));
+    addNomLine(name, price, qty);
+    nameEl.value = "";
+    priceEl.value = "";
+    if (qtyEl) qtyEl.value = "1";
     renderCartBar();
     renderCartLines();
-    document.getElementById("nomName").value = "";
-    document.getElementById("nomPrice").value = "";
-    document.getElementById("nomQty").value = "1";
-    showToast("Added");
+    if (toast) showToast("Added");
+    return true;
+  }
+
+  document.getElementById("nomAdd")?.addEventListener("click", () => {
+    commitPendingNom({ required: true, toast: true });
   });
+
+  for (const fieldId of ["nomName", "nomPrice", "nomQty"]) {
+    document.getElementById(fieldId)?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      commitPendingNom({ required: true, toast: true });
+    });
+  }
 
   const staffSections = Array.from(document.querySelectorAll("#staffOrderMain .section-products"));
   const staffMain = document.getElementById("staffOrderMain");
@@ -539,6 +591,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("submitOrder").addEventListener("click", async () => {
+    // Include a Not on Menu row that was typed but not tapped Add.
+    if (!commitPendingNom()) return;
     if (!cart.size) return showToast("Cart is empty");
     const payload = {
       pin,
