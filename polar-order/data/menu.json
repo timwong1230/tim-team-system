@@ -23,6 +23,15 @@
           "note": "Omakase — tell staff your flavour. Please wait for our packer to serve you personally after your order",
           "allow_note": true,
           "image": "/static/images/menu/shisha-regular.jpg"
+        },
+        {
+          "id": "shisha-meditation",
+          "name": "Meditation Hour Shisha",
+          "price": 250,
+          "note": "Staff only. Still $250 when the order missed 2–5pm. Tell us the flavour.",
+          "allow_note": true,
+          "staff_only": true,
+          "image": "/static/images/menu/shisha-regular.jpg"
         }
       ]
     },

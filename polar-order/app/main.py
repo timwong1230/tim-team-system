@@ -70,7 +70,7 @@ from .ops_constants import (
 )
 from .pricing import (
     SHISHA_COMBO_SNACK_PRICE,
-    SHISHA_REGULAR_ID,
+    SHISHA_COMBO_IDS,
     business_date,
     compute_bill,
     current_promo,
@@ -120,7 +120,7 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 STAFF_PIN = os.getenv("POLAR_STAFF_PIN", "polar2026")
 # Bump when shipping guest UI/CSS/JS so iPhone Safari cannot keep a stale bundle.
-ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261116b").strip() or "20261116b"
+ASSET_VERSION = os.getenv("POLAR_ASSET_VERSION", "20261127a").strip() or "20261127a"
 templates.env.globals["asset_v"] = ASSET_VERSION
 _subscribers: list[asyncio.Queue] = []
 
@@ -318,15 +318,17 @@ def _session_snack_waived(session: sqlite3.Row | dict | None) -> bool:
 
 def _session_shisha_combo_slots(conn: sqlite3.Connection, session_id: int) -> int:
     """Unused shisha→$40 snack slots already earned in this open session."""
+    combo_ids = tuple(SHISHA_COMBO_IDS)
+    placeholders = ",".join("?" * len(combo_ids))
     shisha = conn.execute(
-        """
+        f"""
         SELECT COALESCE(SUM(oi.qty), 0) AS c
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         WHERE o.session_id = ? AND o.status != 'cancelled'
-          AND oi.item_id = ?
+          AND oi.item_id IN ({placeholders})
         """,
-        (session_id, SHISHA_REGULAR_ID),
+        (session_id, *combo_ids),
     ).fetchone()["c"]
     combo_snacks = conn.execute(
         """
@@ -371,10 +373,9 @@ def _staff_only_item_ids() -> set[str]:
         return set()
     ids: set[str] = set()
     for cat in meta.get("categories") or []:
-        if not cat.get("staff_only"):
-            continue
+        cat_hidden = bool(cat.get("staff_only"))
         for item in cat.get("items") or []:
-            if item.get("id"):
+            if item.get("id") and (cat_hidden or item.get("staff_only")):
                 ids.add(str(item["id"]))
     return ids
 
@@ -387,6 +388,7 @@ def _menu_payload(
 ) -> list[dict[str, Any]]:
     promo = current_promo()
     staff_only_ids = _staff_only_category_ids()
+    hidden_items = set() if include_staff_only else _staff_only_item_ids()
     cats = conn.execute(
         "SELECT * FROM menu_categories ORDER BY sort_order ASC"
     ).fetchall()
@@ -400,6 +402,8 @@ def _menu_payload(
         ).fetchall()
         row_items = []
         for item in items:
+            if item["id"] in hidden_items:
+                continue
             final, tag = price_item(
                 float(item["price"]),
                 cat["promo"],
@@ -803,7 +807,7 @@ async def place_order(table_code: str, body: OrderIn):
     for entry in body.items:
         if (entry.item_id or "") in blocked:
             conn.close()
-            raise HTTPException(400, "Ask staff to add Free Flow")
+            raise HTTPException(400, "Ask staff to add this item")
 
     try:
         order_id, payload = _create_order(
@@ -839,6 +843,7 @@ def guest_ask_ai(table_code: str, body: AskAIIn):
         history=body.history,
         guest_name=guest_name,
         exclude_category_ids=_staff_only_category_ids(),
+        exclude_item_ids=_staff_only_item_ids(),
     )
     conn.close()
     return {"ok": True, **result}

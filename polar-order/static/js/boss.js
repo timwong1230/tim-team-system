@@ -169,7 +169,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function pricedCart() {
     let shishaSlots = 0;
     for (const line of cart.values()) {
-      if ((line.itemId || line.id) === "shisha-regular") shishaSlots += line.qty;
+      const comboId = line.itemId || line.id;
+      if (comboId === "shisha-regular" || comboId === "shisha-meditation") {
+        shishaSlots += line.qty;
+      }
     }
     const out = [];
     for (const line of cart.values()) {

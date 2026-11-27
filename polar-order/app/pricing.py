@@ -10,6 +10,9 @@ HK = ZoneInfo("Asia/Hong_Kong")
 
 SHISHA_COMBO_SNACK_PRICE = 40.0
 SHISHA_REGULAR_ID = "shisha-regular"
+# Staff can ring this after 5pm so a missed Meditation Hour order stays $250.
+SHISHA_MEDITATION_ID = "shisha-meditation"
+SHISHA_COMBO_IDS = frozenset({SHISHA_REGULAR_ID, SHISHA_MEDITATION_ID})
 FREE_FLOW_CATEGORY_ID = "free-flow"
 
 
@@ -91,8 +94,8 @@ def price_order_lines(
       item_id, name, category_id, promo, base_price, qty, note?
     }
 
-    Shisha combo: each Regular Shisha unlocks one bar snack at $40
-    (slots from this cart + extra_shisha_slots from open session).
+    Shisha combo: each Regular Shisha or Meditation Hour Shisha unlocks
+    one bar snack at $40 (slots from this cart + extra_shisha_slots).
     """
     promo = promo or current_promo()
     combo_price = float(promo.get("snack_combo_price") or SHISHA_COMBO_SNACK_PRICE)
@@ -100,7 +103,7 @@ def price_order_lines(
     cart_shisha = sum(
         int(e["qty"])
         for e in entries
-        if e["item_id"] == SHISHA_REGULAR_ID
+        if e["item_id"] in SHISHA_COMBO_IDS
     )
     slots = max(0, int(extra_shisha_slots) + cart_shisha)
 

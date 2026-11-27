@@ -75,8 +75,10 @@ def menu_catalog(
     conn: sqlite3.Connection,
     *,
     exclude_category_ids: set[str] | None = None,
+    exclude_item_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     skip = exclude_category_ids or set()
+    skip_items = exclude_item_ids or set()
     cats = conn.execute(
         "SELECT id, name FROM menu_categories ORDER BY sort_order ASC"
     ).fetchall()
@@ -106,6 +108,7 @@ def menu_catalog(
                         "unit": i["unit"] or "",
                     }
                     for i in items
+                    if i["id"] not in skip_items
                 ],
             }
         )
@@ -163,6 +166,7 @@ SKIP_AI_IDS = {
     "not-on-menu",
     "free-flow-with-shisha",
     "free-flow-without-shisha",
+    "shisha-meditation",
 }
 
 
@@ -466,10 +470,18 @@ def ask_ai(
     history: list[dict[str, str]] | None = None,
     guest_name: str | None = None,
     exclude_category_ids: set[str] | None = None,
+    exclude_item_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     skip = exclude_category_ids or set()
-    catalog = menu_catalog(conn, exclude_category_ids=skip)
-    hot = [row for row in bestsellers(conn) if row.get("category_id") not in skip]
+    skip_items = exclude_item_ids or set()
+    catalog = menu_catalog(
+        conn, exclude_category_ids=skip, exclude_item_ids=skip_items
+    )
+    hot = [
+        row
+        for row in bestsellers(conn)
+        if row.get("category_id") not in skip and row.get("item_id") not in skip_items
+    ]
     promo = current_promo()
     history = history or []
     # Mood chips use the deterministic playbook (no OpenAI drift).
