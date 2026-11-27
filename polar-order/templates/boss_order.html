@@ -146,5 +146,5 @@
   window.POLAR_BOSS_NAME = {{ boss.name|tojson }};
   window.POLAR_SINGLE_MIX_SPIRITS = {{ (single_mix_spirits or [])|tojson }};
 </script>
-<script src="/static/js/boss.js"></script>
+<script src="/static/js/boss.js?v={{ asset_v }}"></script>
 {% endblock %}
