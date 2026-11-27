@@ -18,6 +18,7 @@ SEED_USERS = [
     ("Tim", "1234", "Member"),
     ("Oscar", "1234", "Member"),
     ("KK", "1234", "Member"),
+    ("Royce", "1234", "Member"),
     ("guest", "1234", "Guest"),
 ]
 

@@ -439,6 +439,7 @@ def init_db_gs():
                     ("Tim", "1234", "Member"),
                     ("Oscar", "1234", "Member"),
                     ("KK", "1234", "Member"),
+                    ("Royce", "1234", "Member"),
                     ("guest", "1234", "Guest"),
                 ]
             existing_l = {str(x).strip().lower() for x in existing}
